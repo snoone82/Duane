@@ -12,8 +12,20 @@
  * handed `undefined`.
  */
 
-function readRequired(name: "NEXT_PUBLIC_SUPABASE_URL" | "NEXT_PUBLIC_SUPABASE_ANON_KEY"): string {
-  const value = process.env[name];
+/**
+ * `process.env.NEXT_PUBLIC_X` must appear as a literal, static property
+ * access — not `process.env[name]` through a variable — because Next.js
+ * inlines NEXT_PUBLIC_* values into the Edge Runtime (middleware) and
+ * client bundles via static analysis at build time, not a live `process.env`
+ * at runtime. A dynamic/computed lookup is invisible to that scanner, so the
+ * value silently never gets inlined there (Node-runtime contexts still work,
+ * since they have a real process.env — only middleware/client breaks, which
+ * is exactly the confusing failure mode this two-liner exists to avoid).
+ */
+function readRequired(
+  name: "NEXT_PUBLIC_SUPABASE_URL" | "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+  value: string | undefined
+): string {
   if (!value || value.trim() === "") {
     throw new Error(
       `Missing environment variable ${name}. Add it to .env.local — see the ` +
@@ -53,12 +65,12 @@ function assertPlausibleAnonKey(name: string, value: string): string {
 
 const supabaseUrl = assertPlausibleUrl(
   "NEXT_PUBLIC_SUPABASE_URL",
-  readRequired("NEXT_PUBLIC_SUPABASE_URL")
+  readRequired("NEXT_PUBLIC_SUPABASE_URL", process.env.NEXT_PUBLIC_SUPABASE_URL)
 );
 
 const supabaseAnonKey = assertPlausibleAnonKey(
   "NEXT_PUBLIC_SUPABASE_ANON_KEY",
-  readRequired("NEXT_PUBLIC_SUPABASE_ANON_KEY")
+  readRequired("NEXT_PUBLIC_SUPABASE_ANON_KEY", process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
 );
 
 export const env = {
