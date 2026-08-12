@@ -1,0 +1,40 @@
+import { createServerClient } from "@supabase/ssr";
+import { NextResponse, type NextRequest } from "next/server";
+import { env } from "@/lib/env";
+
+/**
+ * Refreshes the Supabase auth session on every request so server components
+ * always see a valid, up-to-date session. This is what makes "session
+ * expired" a rare edge case rather than the normal experience of an hour-long
+ * audit — the refresh token cycles the access token transparently.
+ */
+export async function updateSession(request: NextRequest) {
+  let supabaseResponse = NextResponse.next({ request });
+
+  const supabase = createServerClient(
+    env.NEXT_PUBLIC_SUPABASE_URL,
+    env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll();
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value }) =>
+            request.cookies.set(name, value)
+          );
+          supabaseResponse = NextResponse.next({ request });
+          cookiesToSet.forEach(({ name, value, options }) =>
+            supabaseResponse.cookies.set(name, value, options)
+          );
+        },
+      },
+    }
+  );
+
+  // Do not remove — this call refreshes the session and must run before any
+  // other Supabase calls in this request lifecycle.
+  await supabase.auth.getUser();
+
+  return supabaseResponse;
+}

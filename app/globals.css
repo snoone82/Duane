@@ -1,0 +1,122 @@
+@import "tailwindcss";
+@import "../styles/design-tokens.css";
+
+/*
+ * `inline` because design-tokens.css already defines these as real CSS
+ * variables on :root — this just tells Tailwind to generate utilities
+ * (bg-paper, text-ink, rounded-lg, shadow-md, gap-4, text-score, ...)
+ * that reference those variables directly, instead of creating a second,
+ * redundant (and self-referential) copy of each one.
+ */
+@theme inline {
+  --color-paper: var(--color-paper);
+  --color-paper-raised: var(--color-paper-raised);
+  --color-paper-muted: var(--color-paper-muted);
+  --color-ink: var(--color-ink);
+  --color-ink-soft: var(--color-ink-soft);
+  --color-ink-faint: var(--color-ink-faint);
+  --color-border: var(--color-border);
+  --color-border-strong: var(--color-border-strong);
+
+  --color-gold: var(--color-gold);
+  --color-gold-strong: var(--color-gold-strong);
+  --color-gold-soft: var(--color-gold-soft);
+  --color-gold-ink: var(--color-gold-ink);
+
+  --color-status-low: var(--color-status-low);
+  --color-status-mid: var(--color-status-mid);
+  --color-status-high: var(--color-status-high);
+
+  --color-info: var(--color-info);
+  --color-info-bg: var(--color-info-bg);
+  --color-error: var(--color-error);
+  --color-error-bg: var(--color-error-bg);
+  --color-success: var(--color-success);
+  --color-success-bg: var(--color-success-bg);
+  --color-focus-ring: var(--color-focus-ring);
+
+  --font-heading: var(--font-heading);
+  --font-body: var(--font-body);
+
+  --text-xs: var(--text-xs);
+  --text-sm: var(--text-sm);
+  --text-base: var(--text-base);
+  --text-lg: var(--text-lg);
+  --text-xl: var(--text-xl);
+  --text-2xl: var(--text-2xl);
+  --text-3xl: var(--text-3xl);
+  --text-score: var(--text-score);
+
+  --leading-tight: var(--leading-tight);
+  --leading-snug: var(--leading-snug);
+  --leading-normal: var(--leading-normal);
+
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+  --radius-full: var(--radius-full);
+
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+
+  --spacing-1: var(--space-1);
+  --spacing-2: var(--space-2);
+  --spacing-3: var(--space-3);
+  --spacing-4: var(--space-4);
+  --spacing-5: var(--space-5);
+  --spacing-6: var(--space-6);
+  --spacing-8: var(--space-8);
+  --spacing-10: var(--space-10);
+  --spacing-12: var(--space-12);
+  --spacing-16: var(--space-16);
+  --spacing-20: var(--space-20);
+  --spacing-24: var(--space-24);
+}
+
+* {
+  border-color: var(--color-border);
+}
+
+html {
+  background: var(--color-paper);
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  -webkit-tap-highlight-color: transparent;
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-heading);
+}
+
+/* Uppercase labels always use the heading face with a touch of tracking. */
+.label-caps {
+  font-family: var(--font-heading);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+}
+
+/* ============================================================================
+   View Transitions — a soft cross-fade between audit steps, opted into per
+   navigation via lib/view-transition.ts (components/audit/AuditAreaClient.tsx,
+   components/audit/LeverageClient.tsx), not applied globally. This only
+   overrides the browser's default cross-fade timing/easing so it matches
+   the app's own motion tokens instead of the UA default (~250ms linear-ish);
+   it is deliberately still just a fade — no slide, no zoom.
+   lib/view-transition.ts already skips calling startViewTransition entirely
+   when prefers-reduced-motion is set, so a transition never starts for those
+   users in the first place — but the duration is also capped to ~0 by the
+   global reduced-motion override above as a second line of defence.
+   ========================================================================== */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: var(--duration-slow);
+  animation-timing-function: var(--ease-standard);
+}
