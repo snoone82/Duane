@@ -51,7 +51,7 @@ export default function GlobalError({
             fontSize: "0.875rem",
             letterSpacing: "0.08em",
             textTransform: "uppercase",
-            color: "#B08D3F",
+            color: "#D3A758",
           }}
         >
           Aligned
@@ -69,7 +69,7 @@ export default function GlobalError({
               padding: "0 1.5rem",
               borderRadius: "0.625rem",
               border: "none",
-              background: "#B08D3F",
+              background: "#D3A758",
               color: "#241D0C",
               fontWeight: 500,
               cursor: "pointer",

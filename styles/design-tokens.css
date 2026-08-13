@@ -16,11 +16,19 @@
   --color-border:         #E4DFD1; /* default hairline border */
   --color-border-strong:  #C9C2AC; /* emphasised border, e.g. input focus rest state */
 
-  /* --- Colour: gold accent (sparingly — buttons, active state, score, logo) */
-  --color-gold:           #B08D3F;
-  --color-gold-strong:    #93732F;
-  --color-gold-soft:      #E9DDBB; /* gold-tinted background, e.g. selected chip */
+  /* --- Colour: gold accent (sparingly — buttons, active state, score, logo)
+     Sampled directly from the approved brand mark (Aligned Logo 2.png) —
+     this is the canonical gold, not an approximation. */
+  --color-gold:           #D3A758;
+  --color-gold-strong:    #AD8948;
+  --color-gold-soft:      #F0E0C5; /* gold-tinted background, e.g. selected chip */
   --color-gold-ink:       #241D0C; /* text placed on top of gold */
+
+  /* --- Colour: brand mark — the icon/favicon's own fixed navy background.
+     Not used elsewhere in the (light) app UI; scoped to app/icon.tsx and
+     app/apple-icon.tsx, which can't import this file (see those files). */
+  --color-brand-navy:     #100F18;
+  --color-brand-cream:    #FBF8F2; /* the wordmark colour on that navy ground */
 
   /* --- Colour: status (deliberately muted — never a verdict on the person) */
   --color-status-low:     #B0755F; /* muted terracotta, not red */
