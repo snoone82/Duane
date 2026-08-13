@@ -22,11 +22,11 @@ export function Logo({
   size?: "sm" | "lg";
 }) {
   const isLarge = size === "lg";
-  const iconSize = isLarge ? 56 : 20;
+  const iconSize = isLarge ? 92 : 20;
 
   return (
     <span
-      className={`inline-flex items-center ${isLarge ? "flex-col gap-3" : "gap-2"} ${className}`}
+      className={`inline-flex items-center ${isLarge ? "flex-col gap-2" : "gap-2"} ${className}`}
     >
       <svg
         width={iconSize}
@@ -48,7 +48,7 @@ export function Logo({
       <span
         className={
           isLarge
-            ? "font-heading text-2xl font-semibold leading-none tracking-wide text-gold"
+            ? "font-heading text-4xl font-semibold leading-none tracking-wide text-gold"
             : "font-heading text-base font-medium leading-none text-gold"
         }
       >
