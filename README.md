@@ -101,16 +101,48 @@ of the brief's nine acceptance tests):
   importance and (correctly derived) `priority_score`; and confirms the
   database itself rejects an `importance_score` of 6.
 
-**Two things worth knowing before trusting a run:**
-- If the Supabase project has **Authentication → Providers → Email → "Confirm
-  email"** turned on, `database.spec.ts`'s re-sign-in step may fail until the
-  confirmation link is clicked — see the "Decisions I made" section below.
-  Turn it off for whichever project you point the suite at.
-- None of this has actually been run (no Node.js in the environment these
-  tests were written in — see "What I couldn't verify"). The specs are
-  written carefully against the real acceptance criteria and the app's
-  actual DOM/roles/labels, but they need a real run to confirm they pass as
-  written.
+### Actual results from the first real run (2026-08-13)
+
+Node.js finally got installed locally, so this has now genuinely been run —
+`npm install`, `tsc`, `eslint`, a manual click-through of the whole flow in a
+real browser, and the full Playwright suite. Real bugs turned up and got
+fixed (see git log for the full list — mistyped Supabase types causing
+query results to silently collapse to `never`, a stale `@supabase/ssr`
+version, a schema/type mismatch on `audits.sequence_number`, a couple of
+genuine bugs in the test suite itself). Current state:
+
+**`npm run test:e2e`: 10 of 14 passing.** All four remaining failures share
+one identical cause, confirmed directly against the Supabase Auth API:
+
+```json
+{ "code": 429, "error_code": "over_email_send_rate_limit", "msg": "email rate limit exceeded" }
+```
+
+This project has **Authentication → Providers → Email → "Confirm email"**
+turned on. That means every single account-creation attempt — including
+every real signup once this ships — sends an actual confirmation email
+through Supabase's built-in email service, which has a low default rate
+limit (a handful of emails per hour). Testing today exhausted it, which is
+exactly the failure mode real signup traffic would eventually hit too, not
+just an artifact of automated testing.
+
+Two things to decide, not code to write:
+
+1. **Turn "Confirm email" off** for this flow. The app already handles the
+   anonymous→permanent conversion correctly regardless of this setting —
+   `is_anonymous` just won't flip to `false` until confirmed, and a
+   password-based sign-in on a later device won't work until then either
+   (confirmed directly: `signInWithPassword` returns "Invalid login
+   credentials" for an unconfirmed account). Given the product's whole
+   design is "resume seamlessly, no friction," this is the setting that
+   matches that intent.
+2. **Or keep it on**, but configure a custom SMTP provider (Supabase's
+   dashboard has a spot for this) with real headroom before real traffic —
+   the built-in email service was never meant for production volume.
+
+Either way, this needs a deliberate choice — I'm flagging it rather than
+picking one silently, per the brief's own instruction to surface exactly
+this kind of thing.
 
 ## What's built
 
