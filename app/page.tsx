@@ -8,13 +8,14 @@ export default async function LandingPage() {
 
   return (
     <main className="mx-auto flex min-h-dvh max-w-[var(--content-max-width)] flex-col justify-center px-6 py-16">
-      <Logo />
+      <div className="flex flex-col items-center text-center">
+        <Logo size="lg" />
+        <h1 className="mt-6 font-heading text-3xl leading-tight text-ink">
+          The Audit
+        </h1>
+      </div>
 
-      <h1 className="mt-8 font-heading text-3xl leading-tight text-ink">
-        The Audit
-      </h1>
-
-      <p className="mt-6 text-lg leading-snug text-ink-soft">
+      <p className="mt-8 text-lg leading-snug text-ink-soft">
         Ten honest questions about where your life actually stands right now.
         It takes about twenty minutes. At the end you get your Alignment
         Score, and a human coach — not an algorithm — reads every single
