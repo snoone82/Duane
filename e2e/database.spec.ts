@@ -4,6 +4,7 @@ import {
   createAccountOnCompleteScreen,
   getRevealedScore,
   selectLeverageArea,
+  startFreshAudit,
   testPassword,
   uniqueTestEmail,
 } from "./helpers";
@@ -32,8 +33,7 @@ test.describe("acceptance test 8: a completed audit produces exactly the rows th
     const password = testPassword();
 
     await page.goto("/");
-    await page.getByRole("button", { name: /start the audit/i }).click();
-    await page.waitForURL(/\/audit(\?.*)?$/);
+    await startFreshAudit(page);
 
     const satisfactions = await completeAllAuditAreas(page);
     const expectedTotal = satisfactions.reduce((sum, s) => sum + s, 0);

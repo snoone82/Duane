@@ -18,6 +18,23 @@ export function testPassword(): string {
 }
 
 /**
+ * Clicks "Start the Audit" on the landing page, reads through the intro
+ * screen (the scoring guide / "before you begin" framing), and clicks
+ * "Begin the Audit" — landing on /audit at the first life area. This is the
+ * real path a cold visitor takes now; call `page.goto("/")` first. Resuming
+ * an in-progress audit ("Continue the Audit") skips the intro entirely and
+ * isn't covered by this helper.
+ */
+export async function startFreshAudit(page: Page): Promise<void> {
+  await page.getByRole("button", { name: /start the audit/i }).click();
+  await page.waitForURL(/\/audit\/intro$/);
+  await expect(page.getByRole("heading", { name: "The Aligned Audit" })).toBeVisible();
+
+  await page.getByRole("button", { name: /begin the audit/i }).click();
+  await page.waitForURL(/\/audit(\?.*)?$/);
+}
+
+/**
  * Answers every currently-unanswered life area on /audit, in order, using
  * the given (or default) satisfaction/importance generators, clicking
  * Continue after each. Stops as soon as the app navigates to

@@ -4,6 +4,7 @@ import {
   createAccountOnCompleteScreen,
   getRevealedScore,
   selectLeverageArea,
+  startFreshAudit,
   testPassword,
   uniqueTestEmail,
 } from "./helpers";
@@ -32,10 +33,11 @@ test("full audit journey: anonymous start → ten areas → leverage → score r
     await expect(page.getByLabel(/email/i)).toHaveCount(0);
     await expect(page.getByLabel(/password/i)).toHaveCount(0);
 
-    await page.getByRole("button", { name: /start the audit/i }).click();
-    await page.waitForURL(/\/audit(\?.*)?$/);
+    await startFreshAudit(page);
 
-    // Landed straight on the first life area — no account prompt in the way.
+    // Landed on the first life area — no account prompt in the way (the
+    // intro screen in between explains the scoring, but never asks for
+    // signup either).
     await expect(page.getByText("1 of 10")).toBeVisible();
   });
 

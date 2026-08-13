@@ -147,6 +147,7 @@ this kind of thing.
 ## What's built
 
 - `/` — landing, one button, resumes an in-progress audit if one exists for the current session.
+- `/audit/intro` — shown once, only on a fresh start ("Continue the Audit" skips straight past it). Duane's framing for someone arriving cold: why the audit exists, "score where you genuinely are today, not where you think you should be", and a 1–10 scoring guide (1–2 "deeply out of alignment" through 9–10 "fully aligned/thriving") so a bare number has meaning before they're asked to give one. The audit itself isn't created until "Begin the Audit" is clicked here — reading the intro and leaving doesn't leave a stray in-progress row.
 - `/audit` — one life area per screen, fetched from `life_areas` (never hardcoded), satisfaction (1–10, number grid) and importance (1–5, pill row — deliberately different shape) as two distinct questions, optional note, autosave on every rating change (debounced on the note field), progress bar, working back navigation.
 - `/audit/leverage` — the ten areas as single-select options, saved on tap.
 - `/audit/complete` — completes the audit (sum of the ten satisfaction scores → `total_score`), reveals the score, then account creation that converts the anonymous user in place via `supabase.auth.updateUser` (never a second user).
@@ -154,7 +155,7 @@ this kind of thing.
 - `/login` — not in the brief's route list, added because acceptance test 5 ("sign out, sign back in") needs somewhere to do that. Minimal email/password form.
 - Sign-out button on the dashboard.
 - Every table write goes through Server Actions (`app/actions/`) using the `@supabase/ssr` server client, scoped entirely by RLS — no service-role key anywhere.
-- Password fields (account creation, `/login`) have a show/hide toggle, and navigation between audit steps has a soft cross-fade — see "Polish pass" below.
+- Password fields (account creation, `/login`) have a show/hide toggle — see "Polish pass" below. (An earlier soft cross-fade between audit steps was removed; see "Decisions I made" for why.)
 
 ## Production-reliability hardening
 
@@ -216,6 +217,8 @@ Coach dashboard, CLEAR, goals, tracker, comparison views — not built, not stub
 - **Email confirmation**: if your Supabase project has "Confirm email" turned on, the new email/password is set but `is_anonymous` won't flip to `false` (and future sign-in requires their password to work either way) until they click the confirmation link. The user *does* still land straight on `/dashboard` with their results, so acceptance test 4 holds — but it's worth deciding deliberately whether that setting should be on or off for this flow.
 - **`ScoreRing` is a static, non-achievement dial, not a "fill" progress ring**: a ring that fills proportionally to the score (or colour-codes by tier) reads as "you're X% of the way to a good outcome" — an achievement/progress metaphor that conflicts with the product rule that a score must never read as a verdict or grade on the person. So `components/ui/ScoreRing.tsx` draws a single complete circle whose stroke weight and colour never depend on `value` at all — it's a quiet, constant frame around the number, identical whether the score is 12 or 98. `value`/`max` only drive the centered number and the accessible label.
 - **No per-area icons/initials on the leverage list**: the ten life areas are pure database content (`getLifeAreas()` from Supabase `life_areas`) that Duane can reword, reorder, or add to without a redeploy — any icon or letter badge derived from an area's name is a fixed mapping that will eventually collide (e.g. two areas starting with the same letter) or silently go stale. `components/audit/LeverageClient.tsx` instead uses a plain radio-style dot indicator that carries no information derived from the area's content — just the standard selected/unselected state already used elsewhere in the app.
+- **The audit-step cross-fade (`lib/view-transition.ts`) was removed**: it looked calm, but wrapping `router.push` in `document.startViewTransition` introduced a real timing gap against Next.js's own async client navigation — a risk on the single most important interaction in the product. Reliability won over the polish; navigation between audit steps is a plain, instant `router.push` again. (The "Polish pass" section above still describes the feature as originally built and hasn't been rewritten out — kept for the reasoning, not as a description of what's currently live.)
+- **`/audit/intro` added, per Duane's own review of this build against his The-Aligned.com version**: he was right that the Audit itself should stay a snapshot, but flagged that someone arriving cold has no context for what a 4 versus a 7 means. This screen carries his intro framing and 1–10 scoring guide, sitting between landing and the first question — shown once, only on a fresh start, and it's the point where the audit row (and anonymous session) actually gets created, not the landing click.
 
 ## What I couldn't verify
 

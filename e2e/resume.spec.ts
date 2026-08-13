@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { startFreshAudit } from "./helpers";
 
 /**
  * Acceptance test 2: answer three areas, close the tab, reopen it, and the
@@ -18,8 +19,7 @@ test("acceptance test 2: closing and reopening the tab resumes at area 4 with th
   const page = await context.newPage();
 
   await page.goto("/");
-  await page.getByRole("button", { name: /start the audit/i }).click();
-  await page.waitForURL(/\/audit(\?.*)?$/);
+  await startFreshAudit(page);
 
   const answers = [
     { satisfaction: 3, importance: 2 },

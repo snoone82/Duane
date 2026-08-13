@@ -12,15 +12,26 @@ export function StartAuditButton({ hasInProgress }: { hasInProgress: boolean }) 
   const [error, setError] = useState<string | null>(null);
 
   function handleClick() {
-    setError(null);
-    startTransition(async () => {
-      const result = await startOrResumeAudit();
-      if (!result.ok) {
-        setError(result.message);
-        return;
-      }
-      router.push("/audit");
-    });
+    // Resuming skips the intro entirely — they've already read it, and
+    // creating/finding the in-progress audit here (rather than on the intro
+    // screen) sends them straight back to their current question.
+    if (hasInProgress) {
+      setError(null);
+      startTransition(async () => {
+        const result = await startOrResumeAudit();
+        if (!result.ok) {
+          setError(result.message);
+          return;
+        }
+        router.push("/audit");
+      });
+      return;
+    }
+
+    // Fresh start — no audit is created yet. That happens on the intro
+    // screen's "Begin" click, so someone who reads the intro and leaves
+    // doesn't end up with a stray in-progress row.
+    router.push("/audit/intro");
   }
 
   return (

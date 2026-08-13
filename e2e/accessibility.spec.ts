@@ -55,9 +55,14 @@ test.describe("acceptance test 6: mobile viewport — no horizontal scroll, no t
     await assertNoTapTargetUndersized(page);
   });
 
-  test("audit area, leverage question and score-reveal/signup screens", async ({ page }) => {
+  test("audit intro, audit area, leverage question and score-reveal/signup screens", async ({ page }) => {
     await page.goto("/");
     await page.getByRole("button", { name: /start the audit/i }).click();
+    await page.waitForURL(/\/audit\/intro$/);
+    await assertNoHorizontalScroll(page);
+    await assertNoTapTargetUndersized(page); // the scoring guide rows + Begin button
+
+    await page.getByRole("button", { name: /begin the audit/i }).click();
     await page.waitForURL(/\/audit(\?.*)?$/);
     await assertNoHorizontalScroll(page);
     await assertNoTapTargetUndersized(page);
@@ -86,6 +91,13 @@ test.describe("acceptance test 7: full keyboard-only pass through the audit, foc
     await page.goto("/");
 
     await tabUntil(page, focusedTextMatches(page, /start the audit/i));
+    await expectFocusVisible(page);
+    await page.keyboard.press("Enter");
+    await page.waitForURL(/\/audit\/intro$/);
+
+    // The intro screen has exactly one interactive control — tab to it and
+    // begin, same as a real keyboard-only visitor would.
+    await tabUntil(page, focusedTextMatches(page, /begin the audit/i));
     await expectFocusVisible(page);
     await page.keyboard.press("Enter");
     await page.waitForURL(/\/audit(\?.*)?$/);
