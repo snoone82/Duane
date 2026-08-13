@@ -53,15 +53,33 @@ export async function completeAllAuditAreas(
     const importance = importanceFor(index);
 
     const satisfactionGroup = page.getByRole("radiogroup", { name: /how it is right now/i });
-    await satisfactionGroup.getByRole("radio", { name: String(satisfaction), exact: true }).click();
+    const satisfactionRadio = satisfactionGroup.getByRole("radio", { name: String(satisfaction), exact: true });
+    await satisfactionRadio.click();
+    await expect(satisfactionRadio).toHaveAttribute("aria-checked", "true");
 
     const importanceGroup = page.getByRole("radiogroup", { name: /how much it matters/i });
-    await importanceGroup.getByRole("radio", { name: String(importance), exact: true }).click();
+    const importanceRadio = importanceGroup.getByRole("radio", { name: String(importance), exact: true });
+    await importanceRadio.click();
+    await expect(importanceRadio).toHaveAttribute("aria-checked", "true");
 
     satisfactions.push(satisfaction);
 
-    await page.getByRole("button", { name: /continue/i }).click();
-    await page.waitForLoadState("networkidle").catch(() => {});
+    // `waitForLoadState('networkidle')` does not reliably signal "this
+    // Next.js client-side navigation has landed" — App Router's RSC fetches
+    // don't always align with the browser's network-idle notion, especially
+    // under dev-mode's on-demand compilation. Waiting on it (or on a fixed
+    // delay) let a later iteration start reading/clicking the *previous*
+    // area's still-mounted DOM a beat before the real navigation swapped it
+    // out — the click "succeeded" against content that was about to be
+    // destroyed, so the actually-intended area was never answered. Wait for
+    // the one concrete signal that means the swap really happened: the URL
+    // itself changing away from the one we were on.
+    const urlBeforeContinue = page.url();
+    const continueButton = page.getByRole("button", { name: /continue/i });
+    await expect(continueButton).toBeEnabled();
+    await continueButton.click();
+    await page.waitForURL((url) => url.toString() !== urlBeforeContinue);
+    await expect(page.locator("h1")).toBeVisible();
     index += 1;
   }
 
@@ -127,24 +145,36 @@ export async function tabUntil(
   throw new Error(`tabUntil: predicate never became true within ${maxSteps} Tab presses`);
 }
 
-/** True once document.activeElement sits inside an element whose accessible name (aria-label) matches `pattern`. */
+/** True once document.activeElement sits inside an element whose accessible name (aria-label) matches `pattern`. Excludes document.body — before the first real Tab press (or right after a navigation, before anything is auto-focused), activeElement defaults to body, which must never count as "focused". */
 export function focusedWithinLabel(page: Page, pattern: RegExp): () => Promise<boolean> {
   return () =>
     page.evaluate((source) => {
       const el = document.activeElement;
-      if (!el) return false;
+      if (!el || el === document.body) return false;
       const container = el.closest("[aria-label]");
       const label = container?.getAttribute("aria-label") ?? "";
       return new RegExp(source.pattern, source.flags).test(label);
     }, { pattern: pattern.source, flags: pattern.flags });
 }
 
-/** True once document.activeElement's own accessible text matches `pattern` — for buttons/links rather than radiogroup members. */
+/**
+ * True once document.activeElement's own accessible text matches `pattern`
+ * — for buttons/links rather than radiogroup members.
+ *
+ * Excludes document.body for the same reason as focusedWithinLabel above —
+ * but here it's not just a safety guard: without it this predicate is
+ * actively wrong. body.textContent concatenates the *entire page's* text,
+ * so on a fresh page (nothing focused yet, activeElement === body) a
+ * pattern like /start the audit/i matches immediately against the whole
+ * page's text, before any Tab press — tabUntil then believes it's already
+ * on the target and stops, leaving focus nowhere. Caught by acceptance
+ * test 7 failing on the very first focus-visible check.
+ */
 export function focusedTextMatches(page: Page, pattern: RegExp): () => Promise<boolean> {
   return () =>
     page.evaluate((source) => {
       const el = document.activeElement;
-      if (!el) return false;
+      if (!el || el === document.body) return false;
       const text = (el.getAttribute("aria-label") ?? el.textContent ?? "").trim();
       return new RegExp(source.pattern, source.flags).test(text);
     }, { pattern: pattern.source, flags: pattern.flags });

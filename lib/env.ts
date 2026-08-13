@@ -37,7 +37,6 @@ function readRequired(
 
 function assertPlausibleUrl(name: string, value: string): string {
   try {
-    // eslint-disable-next-line no-new
     new URL(value);
   } catch {
     throw new Error(

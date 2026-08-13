@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/Button";
 import { Notice } from "@/components/ui/Notice";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { Logo } from "@/components/ui/Logo";
-import { navigateWithTransition } from "@/lib/view-transition";
 
 type LifeArea = { id: string; name: string; description: string };
 
@@ -100,16 +99,16 @@ export function AuditAreaClient({
       if (!result.ok) return;
 
       if (stepIndex >= totalSteps) {
-        navigateWithTransition(() => router.push("/audit/leverage"));
+        router.push("/audit/leverage");
       } else {
-        navigateWithTransition(() => router.push(`/audit?step=${stepIndex + 1}`));
+        router.push(`/audit?step=${stepIndex + 1}`);
       }
     });
   }
 
   function handleBack() {
     if (stepIndex <= 1) return;
-    navigateWithTransition(() => router.push(`/audit?step=${stepIndex - 1}`));
+    router.push(`/audit?step=${stepIndex - 1}`);
   }
 
   return (

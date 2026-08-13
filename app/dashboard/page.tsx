@@ -79,10 +79,10 @@ export default async function DashboardPage() {
       <section className="mt-10 mb-16 rounded-lg border border-border bg-paper-muted p-6">
         <h2 className="font-heading text-lg text-ink">What happens next</h2>
         <p className="mt-2 text-base leading-normal text-ink-soft">
-          Duane personally reads every completed audit — yours included. He'll
-          look at where you are across all ten areas, think about what's
+          Duane personally reads every completed audit — yours included. He&apos;ll
+          look at where you are across all ten areas, think about what&apos;s
           really going to move the needle, and reach out with what he sees.
-          There's nothing else for you to do right now.
+          There&apos;s nothing else for you to do right now.
         </p>
       </section>
     </main>

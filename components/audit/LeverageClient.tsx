@@ -6,7 +6,6 @@ import { setLeverageArea } from "@/app/actions/audit";
 import { Button } from "@/components/ui/Button";
 import { Notice } from "@/components/ui/Notice";
 import { Logo } from "@/components/ui/Logo";
-import { navigateWithTransition } from "@/lib/view-transition";
 
 export function LeverageClient({
   auditId,
@@ -40,7 +39,7 @@ export function LeverageClient({
         setError(result.message);
         return;
       }
-      navigateWithTransition(() => router.push("/audit/complete"));
+      router.push("/audit/complete");
     });
   }
 

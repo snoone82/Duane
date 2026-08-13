@@ -77,6 +77,11 @@ export default function GlobalError({
           >
             Try again
           </button>
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- deliberate:
+              this boundary replaces the root layout, so it must not depend on
+              Next's client router (which <Link> requires) that may itself be
+              part of what just failed. A plain full-page navigation is the
+              correct, more robust choice here specifically. */}
           <a
             href="/"
             style={{

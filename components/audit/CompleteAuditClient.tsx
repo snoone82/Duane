@@ -104,7 +104,7 @@ export function CompleteAuditClient({
 
       <div className="mt-12 border-t border-border pt-10">
         <h2 className="font-heading text-xl text-ink">
-          You've just done the hard part.
+          You&apos;ve just done the hard part.
         </h2>
         <p className="mt-2 text-base text-ink-soft">
           Create your account to keep these results — and so Duane can start

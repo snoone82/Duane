@@ -22,8 +22,8 @@ export default async function LandingPage() {
       </p>
 
       <p className="mt-4 text-base text-ink-soft">
-        No account needed to start. We'll ask you to save your results once
-        you've finished.
+        No account needed to start. We&apos;ll ask you to save your results once
+        you&apos;ve finished.
       </p>
 
       <div className="mt-10">
