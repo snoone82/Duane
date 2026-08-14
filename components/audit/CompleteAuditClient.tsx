@@ -27,6 +27,7 @@ export function CompleteAuditClient({
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [consent, setConsent] = useState(false);
   const [signupError, setSignupError] = useState<string | null>(null);
   const [isExistingAccount, setIsExistingAccount] = useState(false);
   const [isSubmitting, startSubmitting] = useTransition();
@@ -141,6 +142,22 @@ export function CompleteAuditClient({
             autoComplete="new-password"
           />
 
+          <label className="flex cursor-pointer items-center gap-3 text-sm text-ink-soft">
+            {/* Sized to the app's own 44px tap-target minimum, not the
+                usual small checkbox — a smaller visual box would still
+                pass a mouse click but fail the same tap-target rule every
+                other interactive element in this app is held to. */}
+            <input
+              type="checkbox"
+              checked={consent}
+              onChange={(e) => setConsent(e.target.checked)}
+              required
+              className="h-[var(--tap-target-min)] w-[var(--tap-target-min)] shrink-0 rounded border-border-strong accent-[var(--color-gold)]"
+            />
+            I understand Duane personally reviews my responses, and I agree to Aligned
+            storing them to build my results.
+          </label>
+
           {signupError && (
             <Notice tone="error">
               {signupError}
@@ -157,6 +174,7 @@ export function CompleteAuditClient({
 
           <Button
             type="submit"
+            disabled={!consent}
             loading={isSubmitting}
             loadingText="Creating your account…"
             className="mt-2 w-full sm:w-auto"

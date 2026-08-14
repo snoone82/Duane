@@ -65,6 +65,47 @@ export async function signIn(input: { email: string; password: string }): Promis
   }
 }
 
+/**
+ * Records a deletion request against the current user's profile — it does
+ * NOT actually delete anything. Hard-deleting an auth.users row needs
+ * Supabase's admin API (a service-role key), which this app deliberately
+ * doesn't have anywhere (see README's RLS/security notes) — introducing
+ * one now, just for this, would be a bigger security trade-off than the
+ * feature is worth. Duane actions the actual deletion manually from the
+ * Supabase dashboard once he sees the request. Flagging this compromise in
+ * the code, not hiding it.
+ *
+ * Calls a narrow security-definer RPC (request_account_deletion, see
+ * supabase/migrations) rather than updating profiles directly — that table
+ * has no UPDATE policy for authenticated users at all, deliberately, so a
+ * client can never rewrite its own email/is_anonymous/full_name. The RPC
+ * only ever touches deletion_requested_at, on exactly the caller's own row.
+ */
+export async function requestAccountDeletion(): Promise<ActionResult> {
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      return { ok: false, message: "Your session's expired — refresh and try again." };
+    }
+
+    const { error } = await supabase.rpc("request_account_deletion");
+
+    if (error) {
+      return { ok: false, message: "We couldn't record that just now. Try again." };
+    }
+
+    return { ok: true, data: undefined };
+  } catch (error) {
+    if (isNextRedirectError(error)) throw error;
+    console.error("requestAccountDeletion: unexpected error —", error);
+    return { ok: false, message: "We couldn't record that just now. Try again." };
+  }
+}
+
 export async function signOut(): Promise<ActionResult> {
   try {
     const supabase = await createClient();

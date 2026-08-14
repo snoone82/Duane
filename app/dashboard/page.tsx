@@ -79,7 +79,15 @@ export default async function DashboardPage() {
     <main className="mx-auto flex min-h-dvh max-w-[var(--content-max-width)] flex-col px-6 py-10">
       <div className="flex items-center justify-between">
         <Logo />
-        <SignOutButton />
+        <div className="flex items-center gap-2">
+          <Link
+            href="/account"
+            className="inline-flex min-h-[var(--tap-target-min)] items-center px-3 text-sm text-ink-soft underline"
+          >
+            Account
+          </Link>
+          <SignOutButton />
+        </div>
       </div>
 
       {/* 1. Life Alignment Score (+ Re-Audit trend, riding along) */}
