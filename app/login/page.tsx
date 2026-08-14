@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { signIn } from "@/app/actions/auth";
 import { Button } from "@/components/ui/Button";
 import { Notice } from "@/components/ui/Notice";
@@ -55,6 +56,13 @@ export default function LoginPage() {
           required
           autoComplete="current-password"
         />
+
+        <Link
+          href="/reset-password"
+          className="-mt-2 inline-flex min-h-[var(--tap-target-min)] w-fit items-center self-start text-sm font-medium text-gold-strong underline"
+        >
+          Forgot your password?
+        </Link>
 
         {error && <Notice tone="error">{error}</Notice>}
 

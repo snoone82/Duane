@@ -386,6 +386,7 @@ export type Database = {
       profiles: {
         Row: {
           created_at: string
+          deletion_requested_at: string | null
           email: string | null
           full_name: string | null
           id: string
@@ -394,6 +395,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          deletion_requested_at?: string | null
           email?: string | null
           full_name?: string | null
           id: string
@@ -402,6 +404,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          deletion_requested_at?: string | null
           email?: string | null
           full_name?: string | null
           id?: string
@@ -415,7 +418,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      request_account_deletion: { Args: never; Returns: undefined }
     }
     Enums: {
       audit_status: "in_progress" | "completed"

@@ -37,7 +37,7 @@ export default async function TrackerPage() {
   return (
     <main className="mx-auto flex min-h-dvh max-w-[var(--content-max-width)] flex-col px-6 py-10">
       <Logo className="mb-8" />
-      <Link href="/goals" className="text-sm text-ink-soft">
+      <Link href="/goals" className="inline-flex min-h-[var(--tap-target-min)] w-fit items-center text-sm text-ink-soft">
         ← My Goals
       </Link>
 

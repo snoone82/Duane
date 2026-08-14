@@ -158,6 +158,10 @@ test.describe("acceptance test 7: full keyboard-only pass through the audit, foc
     await expectFocusVisible(page);
     await page.keyboard.type("Keyboard-Only-Pass-8");
 
+    await tabUntil(page, async () => (await page.evaluate(() => document.activeElement?.getAttribute("type"))) === "checkbox");
+    await expectFocusVisible(page);
+    await page.keyboard.press("Space");
+
     await tabUntil(page, focusedTextMatches(page, /create my account/i));
     await expectFocusVisible(page);
     await page.keyboard.press("Enter");
