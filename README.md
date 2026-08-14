@@ -148,14 +148,30 @@ this kind of thing.
 
 - `/` — landing, one button, resumes an in-progress audit if one exists for the current session.
 - `/audit/intro` — shown once, only on a fresh start ("Continue the Audit" skips straight past it). Duane's framing for someone arriving cold: why the audit exists, "score where you genuinely are today, not where you think you should be", and a 1–10 scoring guide (1–2 "deeply out of alignment" through 9–10 "fully aligned/thriving") so a bare number has meaning before they're asked to give one. The audit itself isn't created until "Begin the Audit" is clicked here — reading the intro and leaving doesn't leave a stray in-progress row.
-- `/audit` — one life area per screen, fetched from `life_areas` (never hardcoded), satisfaction (1–10, number grid) and importance (1–5, pill row — deliberately different shape) as two distinct questions, optional note, autosave on every rating change (debounced on the note field), progress bar, working back navigation.
-- `/audit/leverage` — the ten areas as single-select options, saved on tap.
-- `/audit/complete` — completes the audit (sum of the ten satisfaction scores → `total_score`), reveals the score, then account creation that converts the anonymous user in place via `supabase.auth.updateUser` (never a second user).
-- `/dashboard` — score, radar chart (custom SVG, no charting library), area breakdown sorted by `sort_order`, "what happens next" copy. No priority scores, no recommended focus area shown.
-- `/login` — not in the brief's route list, added because acceptance test 5 ("sign out, sign back in") needs somewhere to do that. Minimal email/password form.
+- `/audit` — one life area per screen, fetched from `life_areas` (never hardcoded), satisfaction (1–10, number grid) and importance (1–5, pill row — deliberately different shape) as two distinct questions, progress bar, working back navigation. Autosave on every rating change. A collapsed "Add more detail" disclosure holds four optional reflection fields (why this score, what's working, what's not, one-point move) — required by the formal brief, kept optional so the required flow stays the fast snapshot Duane's own email asked for.
+- `/audit/leverage` — the ten areas as single-select options, saved on tap, now also showing a rules-based "Your recommended focus" suggestion with a written rationale and a "Use this focus" shortcut — see "Recommended Focus Area" below.
+- `/audit/complete` — completes the audit (sum of the ten satisfaction scores → `total_score`, plus a computed `recommended_focus_area_id`/rationale), reveals the score, then account creation (a required consent checkbox, "I understand Duane personally reviews my responses...") that converts the anonymous user in place via `supabase.auth.updateUser` (never a second user).
+- `/dashboard` — the brief's six-piece layout: Score (with a compact score-over-time list once there's more than one completed audit), Alignment Chart, Priority Focus, Current Aligned Goal, Progress, and a single dynamic Next Action that reads real state (start CLEAR → continue CLEAR → set your goal → log today's check-in → "you're on track").
+- `/clear` — the CLEAR framework, five steps (Current Reality, Life Vision, Emotional Blocks, Aligned Goal, Roadmap & Review) off the leverage-question's focus area. Each reflection step quotes the person's own audit rating/answer back to them ("Based on what you told us about X — you rated it 3/10...") rather than claiming real analysis. Step 4 creates the primary `goals` row.
+- `/goals` — "My Goals": the Primary Focus goal with its stats (actions done, streak, completion rate), plus up to two Supporting Goals added directly (no CLEAR required).
+- `/tracker` — the 30-Day Tracker, tied directly to the active primary goal: same-day check-in (action done, confidence, self-trust, optional note) and the last 7 days at a glance.
+- `/login` — not in the brief's route list, added because acceptance test 5 ("sign out, sign back in") needs somewhere to do that. Minimal email/password form, plus a "Forgot your password?" link.
+- `/reset-password` and `/reset-password/confirm` — request a reset link, then set a new password. Runs on the browser Supabase client directly (the recovery session only exists client-side after the emailed link's URL fragment is processed).
+- `/account` — change-password link, and "Delete my account" (records a deletion request; see "Decisions I made" for why it doesn't self-serve a hard delete).
 - Sign-out button on the dashboard.
-- Every table write goes through Server Actions (`app/actions/`) using the `@supabase/ssr` server client, scoped entirely by RLS — no service-role key anywhere.
-- Password fields (account creation, `/login`) have a show/hide toggle — see "Polish pass" below. (An earlier soft cross-fade between audit steps was removed; see "Decisions I made" for why.)
+- Every table write goes through Server Actions (`app/actions/`) using the `@supabase/ssr` server client, scoped entirely by RLS — no service-role key anywhere. The one exception is `request_account_deletion`, a narrow security-definer RPC (see "Decisions I made").
+- Password fields (account creation, `/login`, `/reset-password/confirm`) have a show/hide toggle — see "Polish pass" below. (An earlier soft cross-fade between audit steps was removed; see "Decisions I made" for why.)
+
+## Phase Two — CLEAR, Goals, Tracker, Recommended Focus (per the formal AI & App Development brief)
+
+Duane sent a much more detailed "ALIGNED — APP & AI DEVELOPMENT BRIEF" partway through this build, describing the full intended journey: `AUDIT → PROFILE → FOCUS → CLEAR → GOAL → ACTION → REVIEW → RE-AUDIT`. Everything up to and including Goals/Tracker in that list is now built (see "What's built" above) — three new tables (`clear_plans`, `goals`, `checkins`; migrations `0004`–`0007`), all with the same immutability discipline as `audits`.
+
+**Not built, and worth being direct about why:** the brief's §3 ("The Aligned Profile") and §12 ("AI Function") describe an actual AI coaching intelligence layer — pattern recognition across audits/CLEAR/goals, an AI-recommended focus with real analysis, longitudinal narration ("you've gone from 58 to 71 since your first audit"). **None of that is built.** This app has no LLM integration anywhere. Two things stand in for it today, and both are deliberately honest about being placeholders, not the real thing:
+
+- **Recommended Focus Area** (`lib/recommended-focus.ts`): a rules-based weighting (`importance × (10 − satisfaction)`, the same formula `priority_score` already uses), not AI. It doesn't read the written reflection answers or spot cross-area patterns.
+- **CLEAR "personalization"**: each step quotes the person's own audit answer back to them (a template, filling in their real words), which reads as "based on what you told me..." without an actual model call behind it.
+
+Both are structured so swapping in a real AI call later is an app-layer change, not a schema one — see the column comment on `audits.recommended_focus_area_id`. Building the real thing needs a provider/budget decision (which model, what it costs) that's Steven and Duane's call, not something to commit to silently.
 
 ## Production-reliability hardening
 
@@ -205,7 +221,10 @@ this kind of thing.
 
 ## Deliberately left out
 
-Coach dashboard, CLEAR, goals, tracker, comparison views — not built, not stubbed, no placeholder routes for them. `audit_reviews`, `goals`, `goal_actions`, `checkins`, `session_notes` are untouched.
+CLEAR, Goals, and the Tracker are now built (see "Phase Two" above) — this list originally excluded them too, back when the brief was just the original Phase One spec. What's still genuinely out of scope:
+
+- **A coach dashboard.** Nothing here is Duane-facing — no client list, no per-audit review UI, no notes. `session_notes` and `audit_reviews` (both named in the formal brief's table list) are untouched.
+- **Real AI** — see "Phase Two" above for exactly what stands in for it today and why.
 
 ## Decisions I made that weren't specified
 
