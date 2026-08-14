@@ -37,17 +37,57 @@ async function iconOnNavy(markPath, size, markWidth, outPath) {
     .toFile(outPath);
 }
 
+// Idempotency guard: keying an already-keyed (transparent) mark a second
+// time would erase it — its strokes are light ink, which the ramp maps to
+// near-zero alpha. Skip any input that already carries real transparency.
+async function alreadyKeyed(path) {
+  const stats = await sharp(path).stats();
+  const alpha = stats.channels[3];
+  return alpha !== undefined && alpha.min < 200;
+}
+
 const tmpMark = "public/brand/icon-mark.dark.png";
 const tmpLockup = "public/brand/logo-lockup.dark.png";
-
-await keyToDark("public/brand/icon-mark.png", tmpMark);
-await keyToDark("public/brand/logo-lockup.png", tmpLockup);
-
 const { renameSync } = await import("node:fs");
-renameSync(tmpMark, "public/brand/icon-mark.png");
-renameSync(tmpLockup, "public/brand/logo-lockup.png");
+
+if (!(await alreadyKeyed("public/brand/icon-mark.png"))) {
+  await keyToDark("public/brand/icon-mark.png", tmpMark);
+  renameSync(tmpMark, "public/brand/icon-mark.png");
+}
+if (!(await alreadyKeyed("public/brand/logo-lockup.png"))) {
+  await keyToDark("public/brand/logo-lockup.png", tmpLockup);
+  renameSync(tmpLockup, "public/brand/logo-lockup.png");
+}
 
 await iconOnNavy("public/brand/icon-mark.png", 512, 340, "app/icon.png");
 await iconOnNavy("public/brand/icon-mark.png", 180, 120, "app/apple-icon.png");
+
+// Watermark: the mark with its alpha scaled way down and baked into the
+// asset itself — a pre-faded PNG needs no CSS stacking tricks, it just
+// joins the body background layer list in globals.css. Sourced from the
+// original high-res mark when it's on this machine (the committed PNG is
+// only 277px wide — upscaling that 8x would be mush); falls back to the
+// committed PNG (already dark-keyed) with a soft upscale otherwise.
+{
+  const { existsSync } = await import("node:fs");
+  const hiRes = "C:\\Users\\steven.Noone\\Downloads\\Aligned Media Icon.jpg";
+  const tmpHi = "public/brand/watermark.tmp.png";
+  let source = "public/brand/icon-mark.png";
+  if (existsSync(hiRes)) {
+    await sharp(hiRes).trim({ threshold: 10 }).png().toFile(tmpHi);
+    await keyToDark(tmpHi, tmpHi);
+    source = tmpHi;
+  }
+  const { data, info } = await sharp(source)
+    .resize({ width: 2200 })
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  for (let i = 3; i < data.length; i += 4) data[i] = Math.round(data[i] * 0.045);
+  await sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } })
+    .png()
+    .toFile("public/brand/watermark.png");
+  if (existsSync(tmpHi)) (await import("node:fs")).unlinkSync(tmpHi);
+}
 
 console.log("dark-theme assets written");

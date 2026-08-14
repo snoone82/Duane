@@ -51,11 +51,14 @@ html {
 }
 
 body {
-  /* A faint teal aurora at the top of the navy ground — the one decorative
-     flourish of the tech theme. Fixed so it doesn't repaint on scroll. */
+  /* The navy ground carries two flourishes: a faint teal aurora at the
+     top, and the A/M mark as a huge ghosted watermark behind everything —
+     opacity is baked into the asset (~4.5%), so it needs no stacking
+     tricks. Fixed so nothing repaints on scroll. */
   background:
     radial-gradient(1100px 520px at 75% -12%, rgba(25, 184, 206, 0.09), transparent 65%),
     radial-gradient(800px 420px at 5% -8%, rgba(72, 96, 226, 0.07), transparent 60%),
+    url("/brand/watermark.png") center / min(1400px, 105%) no-repeat,
     var(--color-bg);
   background-attachment: fixed;
   color: var(--color-ink);
