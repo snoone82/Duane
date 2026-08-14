@@ -83,7 +83,7 @@ await iconOnNavy("public/brand/icon-mark.png", 180, 120, "app/apple-icon.png");
     .ensureAlpha()
     .raw()
     .toBuffer({ resolveWithObject: true });
-  for (let i = 3; i < data.length; i += 4) data[i] = Math.round(data[i] * 0.045);
+  for (let i = 3; i < data.length; i += 4) data[i] = Math.round(data[i] * 0.09);
   await sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } })
     .png()
     .toFile("public/brand/watermark.png");

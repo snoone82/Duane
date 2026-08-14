@@ -52,7 +52,7 @@ export default function ResetPasswordConfirmPage() {
   }
 
   return (
-    <div className="flex min-h-dvh items-center justify-center bg-bg px-4">
+    <div className="flex min-h-dvh items-center justify-center px-4">
       <div className="w-full max-w-sm rounded-lg border border-border bg-surface p-6 shadow-sm">
         {/* eslint-disable-next-line @next/next/no-img-element -- static local asset */}
         <img src="/brand/logo-lockup.png" alt="Aligned Media" className="mb-4 h-10 w-auto" />

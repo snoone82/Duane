@@ -18,7 +18,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   if (!profile) {
     return (
-      <div className="flex min-h-dvh items-center justify-center bg-bg px-4">
+      <div className="flex min-h-dvh items-center justify-center px-4">
         <div className="w-full max-w-sm rounded-lg border border-border bg-surface p-6 text-center shadow-sm">
           <h1 className="mb-2 text-lg font-semibold text-ink">No access</h1>
           <p className="mb-5 text-sm text-ink-soft">
@@ -36,7 +36,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <div className="flex h-dvh overflow-hidden bg-bg">
+    <div className="flex h-dvh overflow-hidden">
       <Sidebar name={profile.full_name || profile.email} role={profile.role} />
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar />
