@@ -13,7 +13,7 @@ import {
 import { getCurrentProfile } from "@/lib/current-user";
 import { Panel } from "@/components/dashboard/Panel";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { formatRelativeToToday, formatCurrency, formatDateTime } from "@/lib/format";
+import { formatRelativeToToday, formatCurrency, formatDateTime, auditVerb } from "@/lib/format";
 import { authorityStatusMeta } from "@/lib/status";
 import { StatusPill } from "@/components/ui/StatusPill";
 
@@ -222,7 +222,7 @@ export default async function DashboardPage() {
                   <li key={item.id} className="px-2 py-2">
                     <Link href={item.clientId ? `/clients/${item.clientId}/overview` : "#"} className="block hover:bg-surface-muted">
                       <span className="block text-sm text-ink">
-                        {item.changedByName} {item.action}d {item.tableName.replace(/_/g, " ")}
+                        {item.changedByName} {auditVerb(item.action)} {item.tableName.replace(/_/g, " ")}
                         {item.clientId && <> — <span className="font-medium">{item.clientName}</span></>}
                       </span>
                       <span className="block text-xs text-ink-faint">{formatDateTime(item.changedAt)}</span>

@@ -56,7 +56,7 @@ export function AddCommercialSnapshotButton({ clientId }: { clientId: string }) 
                 </div>
               ))}
               <div>
-                <Label htmlFor="cs-revenue">Revenue attributed ($)</Label>
+                <Label htmlFor="cs-revenue">Revenue attributed (£)</Label>
                 <Input id="cs-revenue" name="revenue_attributed" type="number" step="any" />
               </div>
             </div>

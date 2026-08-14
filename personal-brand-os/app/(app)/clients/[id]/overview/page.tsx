@@ -8,7 +8,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { TeamAssignments } from "@/components/clients/TeamAssignments";
 import { ClientDangerZone } from "@/components/clients/ClientDangerZone";
 import { ClientDetailsForms } from "@/components/clients/ClientDetailsForms";
-import { formatDate, formatRelativeToToday, formatCurrency, formatDateTime, isOverdue } from "@/lib/format";
+import { formatDate, formatRelativeToToday, formatCurrency, formatDateTime, isOverdue, auditVerb } from "@/lib/format";
 import { actionStatusMeta } from "@/lib/status";
 import { StatusPill } from "@/components/ui/StatusPill";
 
@@ -111,7 +111,7 @@ export default async function OverviewPage({ params }: { params: Promise<{ id: s
               <ul className="space-y-2">
                 {activity.map((item) => (
                   <li key={item.id} className="text-xs">
-                    <span className="text-ink">{item.changedByName} {item.action}d {item.tableName.replace(/_/g, " ")}</span>
+                    <span className="text-ink">{item.changedByName} {auditVerb(item.action)} {item.tableName.replace(/_/g, " ")}</span>
                     <span className="block text-ink-faint">{formatDateTime(item.changedAt)}</span>
                   </li>
                 ))}

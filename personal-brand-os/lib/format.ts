@@ -43,7 +43,7 @@ export function formatNumber(value: number | null | undefined): string {
 
 export function formatCurrency(value: number | null | undefined): string {
   if (value === null || value === undefined) return "—";
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(value);
+  return new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP", maximumFractionDigits: 0 }).format(value);
 }
 
 export function formatBytes(bytes: number | null | undefined): string {
@@ -71,4 +71,19 @@ export function initials(name: string): string {
 /** e.g. "Positioning" -> "positioning" for the URL-addressable tab slug. */
 export function slugify(label: string): string {
   return label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+}
+
+/** audit_log's action values → past-tense verbs for activity feeds
+ * ("insert" + "d" made "insertd" — caught live). */
+export function auditVerb(action: string): string {
+  switch (action) {
+    case "insert":
+      return "created";
+    case "update":
+      return "updated";
+    case "delete":
+      return "deleted";
+    default:
+      return action;
+  }
 }

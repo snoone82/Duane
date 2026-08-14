@@ -40,7 +40,7 @@ export function AddCommercialOutcomeButton({ clientId }: { clientId: string }) {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label htmlFor="outcome-value">Value ($, optional)</Label>
+                <Label htmlFor="outcome-value">Value (£, optional)</Label>
                 <Input id="outcome-value" name="value" type="number" step="any" />
               </div>
               <div>

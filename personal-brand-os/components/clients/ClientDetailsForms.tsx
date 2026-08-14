@@ -22,7 +22,7 @@ export function ClientDetailsForms({ client }: { client: ClientRow }) {
           <AutosaveInput id="industry" label="Industry" initialValue={client.industry ?? ""} onSave={save("industry")} />
           <AutosaveInput id="location" label="Location" initialValue={client.location ?? ""} onSave={save("location")} />
           <AutosaveInput id="package" label="Package" initialValue={client.package ?? ""} onSave={save("package")} />
-          <AutosaveInput id="retainer_amount" label="Retainer ($/month)" type="number" initialValue={client.retainer_amount?.toString() ?? ""} onSave={save("retainer_amount")} />
+          <AutosaveInput id="retainer_amount" label="Retainer (£/month)" type="number" initialValue={client.retainer_amount?.toString() ?? ""} onSave={save("retainer_amount")} />
           <AutosaveInput id="email" label="Email" type="email" initialValue={client.email ?? ""} onSave={save("email")} />
           <AutosaveInput id="phone" label="Phone" type="tel" initialValue={client.phone ?? ""} onSave={save("phone")} />
         </div>
