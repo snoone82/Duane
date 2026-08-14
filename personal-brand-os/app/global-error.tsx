@@ -18,13 +18,13 @@ export default function GlobalError({ reset }: { error: Error & { digest?: strin
           alignItems: "center",
           justifyContent: "center",
           fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-          background: "#fafafa",
-          color: "#16181d",
+          background: "#0b1220",
+          color: "#e8edf6",
         }}
       >
         <div style={{ textAlign: "center", padding: 24 }}>
           <h1 style={{ marginBottom: 8, fontSize: 18, fontWeight: 600 }}>Something went wrong</h1>
-          <p style={{ marginBottom: 20, fontSize: 14, color: "#565c6b" }}>
+          <p style={{ marginBottom: 20, fontSize: 14, color: "#a7b1c2" }}>
             The app hit an unexpected error loading. Try again.
           </p>
           <button
@@ -34,8 +34,8 @@ export default function GlobalError({ reset }: { error: Error & { digest?: strin
               padding: "0 16px",
               borderRadius: 6,
               border: "none",
-              background: "#3453d9",
-              color: "#fff",
+              background: "#19b8ce",
+              color: "#04141c",
               fontSize: 14,
               fontWeight: 500,
               cursor: "pointer",

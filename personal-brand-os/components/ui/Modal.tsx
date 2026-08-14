@@ -34,8 +34,10 @@ export function Modal({
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [onClose]);
 
+  // Overlay is black/60, not ink/40 — on the dark theme `ink` is light, so
+  // an ink-tinted overlay would wash the screen white instead of dimming it.
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink/40 p-4 pt-[10vh]">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-4 pt-[10vh]">
       <div
         ref={dialogRef}
         role="dialog"

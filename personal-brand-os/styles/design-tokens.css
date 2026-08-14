@@ -1,56 +1,56 @@
 /**
  * Personal Brand OS — design tokens.
  *
- * A different brand from Aligned on purpose (see build brief §3): this is a
- * dense, quiet, all-day internal tool — closer to Linear/Notion than a
- * wellness product. Light background, near-black text, one restrained
- * accent. Nothing here is hardcoded into components — everything routes
- * through these custom properties, consumed via Tailwind v4's `@theme`
- * binding in app/globals.css.
+ * 2026 "tech" theme: deep navy ground with the Aligned Media teal as the
+ * single accent — the brand's own palette, darkened. Dense, quiet,
+ * Linear-like. Nothing outside this file hardcodes a colour — everything
+ * routes through these custom properties, consumed via Tailwind v4's
+ * `@theme` binding in app/globals.css.
  */
 
 :root {
-  /* ---- Neutrals ---- */
-  --color-bg: #fafafa;              /* app background */
-  --color-surface: #ffffff;          /* cards, tables, inputs */
-  --color-surface-muted: #f4f5f7;    /* subtle section backgrounds, hovers */
-  --color-ink: #16181d;              /* primary text */
-  --color-ink-soft: #565c6b;         /* secondary text */
-  --color-ink-faint: #8a91a0;        /* placeholder / disabled / metadata */
-  --color-border: #e5e7eb;
-  --color-border-strong: #c7cbd4;
+  /* ---- Ground ---- */
+  --color-bg: #0b1220;               /* app background (deep navy) */
+  --color-surface: #121b2e;          /* cards, tables, inputs */
+  --color-surface-muted: #182238;    /* subtle section backgrounds, hovers */
+  --color-ink: #e8edf6;              /* primary text */
+  --color-ink-soft: #a7b1c2;         /* secondary text */
+  --color-ink-faint: #6b7689;        /* placeholder / disabled / metadata */
+  --color-border: #223047;
+  --color-border-strong: #34476b;
 
-  /* ---- Accent — restrained, used for primary actions + active state only ---- */
-  --color-accent: #3453d9;
-  --color-accent-strong: #28409e;
-  --color-accent-soft: #e8ecfc;
-  --color-accent-ink: #ffffff;       /* text on top of accent */
-  --color-focus-ring: #3453d9;
+  /* ---- Accent — the Aligned Media teal, used for primary actions and
+     active states only ---- */
+  --color-accent: #19b8ce;
+  --color-accent-strong: #48cfe2;    /* hover: brighter, not darker, on dark ground */
+  --color-accent-soft: #0e2f3d;      /* teal-tinted panel/active bg */
+  --color-accent-ink: #04141c;       /* text on top of accent */
+  --color-focus-ring: #19b8ce;
 
   /* ---- Feedback ---- */
-  --color-info: #2f6fb0;
-  --color-info-bg: #e8f1fa;
-  --color-success: #1f8a53;
-  --color-success-bg: #e6f5ec;
-  --color-warning: #a35d00;
-  --color-warning-bg: #fbeed9;
-  --color-danger: #c0342a;
-  --color-danger-bg: #fbe9e7;
+  --color-info: #6fb6ff;
+  --color-info-bg: #12294a;
+  --color-success: #57d97f;
+  --color-success-bg: #113123;
+  --color-warning: #f2c14e;
+  --color-warning-bg: #35290e;
+  --color-danger: #ff7a70;
+  --color-danger-bg: #391614;
 
-  /* ---- Tag palette — for pipeline stages / status pills. Ten distinguishable
-     hues, each a bg/text pair, calibrated to stay legible next to each other
-     in a dense table at a glance. Semantic stage→tag mapping lives in
-     lib/status.ts, not here — these are the raw building blocks only. ---- */
-  --tag-slate-bg: #eef0f3;    --tag-slate-text: #495166;
-  --tag-blue-bg: #e6eefc;     --tag-blue-text: #1d4ed8;
-  --tag-cyan-bg: #e2f6f8;     --tag-cyan-text: #0f7285;
-  --tag-teal-bg: #e2f6f0;     --tag-teal-text: #0f7a5f;
-  --tag-green-bg: #e6f5e9;    --tag-green-text: #1f8a3f;
-  --tag-amber-bg: #fdf1da;    --tag-amber-text: #a35d00;
-  --tag-orange-bg: #fce8dd;   --tag-orange-text: #b8481f;
-  --tag-purple-bg: #f0eafc;   --tag-purple-text: #6c37c9;
-  --tag-pink-bg: #fbe8f1;     --tag-pink-text: #b3226e;
-  --tag-red-bg: #fbe9e7;      --tag-red-text: #c0342a;
+  /* ---- Tag palette — pipeline stages / status pills. Ten hues as dark
+     tints with bright text, calibrated to stay distinguishable side by
+     side in a dense table. Semantic stage→tag mapping lives in
+     lib/status.ts, not here. ---- */
+  --tag-slate-bg: #232d42;    --tag-slate-text: #9fb0c9;
+  --tag-blue-bg: #16294e;     --tag-blue-text: #82b3ff;
+  --tag-cyan-bg: #0e3440;     --tag-cyan-text: #4cd9ef;
+  --tag-teal-bg: #0e3a34;     --tag-teal-text: #3fd9b4;
+  --tag-green-bg: #12351f;    --tag-green-text: #57d97f;
+  --tag-amber-bg: #3a2c0f;    --tag-amber-text: #f2c14e;
+  --tag-orange-bg: #3d2412;   --tag-orange-text: #ff9d66;
+  --tag-purple-bg: #2b2050;   --tag-purple-text: #b79cff;
+  --tag-pink-bg: #3a1830;     --tag-pink-text: #ff8cc6;
+  --tag-red-bg: #3b1715;      --tag-red-text: #ff7a70;
 
   /* ---- Type — one sans-serif family, no display face ---- */
   --font-sans: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -82,17 +82,17 @@
   --space-20: 5rem;
   --space-24: 6rem;
 
-  /* ---- Radius — tighter than a consumer product, still soft ---- */
+  /* ---- Radius ---- */
   --radius-sm: 0.25rem;
   --radius-md: 0.375rem;
   --radius-lg: 0.625rem;
   --radius-xl: 0.875rem;
   --radius-full: 999px;
 
-  /* ---- Shadow — very light, calm not flashy ---- */
-  --shadow-sm: 0 1px 2px rgba(16, 18, 23, 0.05);
-  --shadow-md: 0 4px 12px rgba(16, 18, 23, 0.08);
-  --shadow-lg: 0 12px 28px rgba(16, 18, 23, 0.12);
+  /* ---- Shadow — depth on a dark ground comes from darker darks ---- */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 14px 34px rgba(0, 0, 0, 0.55);
 
   /* ---- Motion — nothing longer than 200ms anywhere ---- */
   --duration-fast: 100ms;
@@ -101,8 +101,8 @@
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
 
   /* ---- Layout ---- */
-  --control-height: 2.25rem;      /* 36px — inputs, buttons, select triggers */
-  --control-height-sm: 1.75rem;   /* 28px — inline table controls */
+  --control-height: 2.25rem;
+  --control-height-sm: 1.75rem;
   --sidebar-width: 15rem;
   --topbar-height: 3.25rem;
   --content-max-width: 84rem;

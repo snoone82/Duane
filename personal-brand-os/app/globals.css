@@ -47,11 +47,17 @@
 }
 
 html {
-  color-scheme: light;
+  color-scheme: dark;
 }
 
 body {
-  background: var(--color-bg);
+  /* A faint teal aurora at the top of the navy ground — the one decorative
+     flourish of the tech theme. Fixed so it doesn't repaint on scroll. */
+  background:
+    radial-gradient(1100px 520px at 75% -12%, rgba(25, 184, 206, 0.09), transparent 65%),
+    radial-gradient(800px 420px at 5% -8%, rgba(72, 96, 226, 0.07), transparent 60%),
+    var(--color-bg);
+  background-attachment: fixed;
   color: var(--color-ink);
   font-family: var(--font-sans);
   font-size: var(--text-base);
@@ -79,5 +85,5 @@ table {
 }
 
 ::selection {
-  background: var(--color-accent-soft);
+  background: rgba(25, 184, 206, 0.3);
 }

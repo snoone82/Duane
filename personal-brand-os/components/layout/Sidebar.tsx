@@ -8,6 +8,7 @@ import { initials } from "@/lib/format";
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard" },
   { href: "/clients", label: "Clients" },
+  { href: "/calendar", label: "Calendar" },
   { href: "/actions", label: "Actions" },
   { href: "/search", label: "Search" },
 ];
