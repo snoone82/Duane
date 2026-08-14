@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { friendlySaveError, isNextRedirectError } from "@/lib/errors";
+import { computeRecommendedFocus } from "@/lib/recommended-focus";
 
 type ActionResult<T = undefined> =
   | { ok: true; data: T }
@@ -84,10 +85,22 @@ export async function saveAuditResponse(input: {
   lifeAreaId: string;
   satisfactionScore: number;
   importanceScore: number;
-  note: string | null;
+  /**
+   * Four optional reflection fields, per the brief's "for every life area we
+   * need to capture: why, what's working, what's not, one-point move".
+   * Deliberately optional — Duane's own steer was to keep the Audit itself a
+   * snapshot rather than force deep reflection on every area, so these never
+   * block Continue the way satisfaction/importance do.
+   */
+  whyThisScore: string | null;
+  whatsWorking: string | null;
+  whatsNotWorking: string | null;
+  nextPointMove: string | null;
 }): Promise<ActionResult> {
   try {
     const supabase = await createClient();
+
+    const trimmedOrNull = (value: string | null) => (value?.trim() ? value.trim() : null);
 
     const { error } = await supabase.from("audit_responses").upsert(
       {
@@ -95,7 +108,10 @@ export async function saveAuditResponse(input: {
         life_area_id: input.lifeAreaId,
         satisfaction_score: input.satisfactionScore,
         importance_score: input.importanceScore,
-        note: input.note?.trim() ? input.note.trim() : null,
+        why_this_score: trimmedOrNull(input.whyThisScore),
+        whats_working: trimmedOrNull(input.whatsWorking),
+        whats_not_working: trimmedOrNull(input.whatsNotWorking),
+        next_point_move: trimmedOrNull(input.nextPointMove),
       },
       { onConflict: "audit_id,life_area_id" }
     );
@@ -161,8 +177,11 @@ export async function completeAudit(
 
     const [{ data: lifeAreas, error: lifeAreasError }, { data: responses, error: responsesError }] =
       await Promise.all([
-        supabase.from("life_areas").select("id").eq("is_active", true),
-        supabase.from("audit_responses").select("satisfaction_score, life_area_id").eq("audit_id", auditId),
+        supabase.from("life_areas").select("id, name").eq("is_active", true),
+        supabase
+          .from("audit_responses")
+          .select("satisfaction_score, importance_score, life_area_id")
+          .eq("audit_id", auditId),
       ]);
 
     if (lifeAreasError || responsesError) {
@@ -188,12 +207,27 @@ export async function completeAudit(
 
     const totalScore = (responses ?? []).reduce((sum, r) => sum + r.satisfaction_score, 0);
 
+    // Recommended Focus Area (brief §1/§6) — a rules-based suggestion stored
+    // alongside the user's own leverage_area_id choice, never overriding it.
+    // See lib/recommended-focus.ts for what this does and doesn't do.
+    const nameById = new Map((lifeAreas ?? []).map((a) => [a.id, a.name]));
+    const recommended = computeRecommendedFocus(
+      (responses ?? []).map((r) => ({
+        lifeAreaId: r.life_area_id,
+        lifeAreaName: nameById.get(r.life_area_id) ?? "",
+        satisfactionScore: r.satisfaction_score,
+        importanceScore: r.importance_score,
+      }))
+    );
+
     const { error: updateError } = await supabase
       .from("audits")
       .update({
         status: "completed",
         total_score: totalScore,
         completed_at: new Date().toISOString(),
+        recommended_focus_area_id: recommended?.lifeAreaId ?? null,
+        recommended_focus_rationale: recommended?.rationale ?? null,
       })
       .eq("id", auditId);
 

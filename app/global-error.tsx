@@ -51,7 +51,7 @@ export default function GlobalError({
             fontSize: "0.875rem",
             letterSpacing: "0.08em",
             textTransform: "uppercase",
-            color: "#B08D3F",
+            color: "#D3A758",
           }}
         >
           Aligned
@@ -69,7 +69,7 @@ export default function GlobalError({
               padding: "0 1.5rem",
               borderRadius: "0.625rem",
               border: "none",
-              background: "#B08D3F",
+              background: "#D3A758",
               color: "#241D0C",
               fontWeight: 500,
               cursor: "pointer",
@@ -77,6 +77,11 @@ export default function GlobalError({
           >
             Try again
           </button>
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- deliberate:
+              this boundary replaces the root layout, so it must not depend on
+              Next's client router (which <Link> requires) that may itself be
+              part of what just failed. A plain full-page navigation is the
+              correct, more robust choice here specifically. */}
           <a
             href="/"
             style={{

@@ -9,11 +9,19 @@ import { Button } from "@/components/ui/Button";
 import { Notice } from "@/components/ui/Notice";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { Logo } from "@/components/ui/Logo";
-import { navigateWithTransition } from "@/lib/view-transition";
 
 type LifeArea = { id: string; name: string; description: string };
 
 type SaveStatus = "idle" | "saving" | "saved" | "error";
+
+type ExistingResponse = {
+  satisfactionScore: number;
+  importanceScore: number;
+  whyThisScore: string | null;
+  whatsWorking: string | null;
+  whatsNotWorking: string | null;
+  nextPointMove: string | null;
+};
 
 export function AuditAreaClient({
   auditId,
@@ -26,7 +34,7 @@ export function AuditAreaClient({
   area: LifeArea;
   stepIndex: number;
   totalSteps: number;
-  existingResponse: { satisfactionScore: number; importanceScore: number; note: string | null } | null;
+  existingResponse: ExistingResponse | null;
 }) {
   const router = useRouter();
   const [satisfaction, setSatisfaction] = useState<number | null>(
@@ -35,17 +43,43 @@ export function AuditAreaClient({
   const [importance, setImportance] = useState<number | null>(
     existingResponse?.importanceScore ?? null
   );
-  const [note, setNote] = useState(existingResponse?.note ?? "");
+
+  // Four optional reflection fields — see the comment on saveAuditResponse
+  // in app/actions/audit.ts for why these exist and why they're optional.
+  const [whyThisScore, setWhyThisScore] = useState(existingResponse?.whyThisScore ?? "");
+  const [whatsWorking, setWhatsWorking] = useState(existingResponse?.whatsWorking ?? "");
+  const [whatsNotWorking, setWhatsNotWorking] = useState(existingResponse?.whatsNotWorking ?? "");
+  const [nextPointMove, setNextPointMove] = useState(existingResponse?.nextPointMove ?? "");
+
+  const hasExistingDetail = Boolean(
+    existingResponse?.whyThisScore ||
+      existingResponse?.whatsWorking ||
+      existingResponse?.whatsNotWorking ||
+      existingResponse?.nextPointMove
+  );
+  const [detailsOpen, setDetailsOpen] = useState(hasExistingDetail);
+
   const [status, setStatus] = useState<SaveStatus>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
-  const noteDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const detailDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Reset local state when the area changes (navigating back/forward).
   useEffect(() => {
     setSatisfaction(existingResponse?.satisfactionScore ?? null);
     setImportance(existingResponse?.importanceScore ?? null);
-    setNote(existingResponse?.note ?? "");
+    setWhyThisScore(existingResponse?.whyThisScore ?? "");
+    setWhatsWorking(existingResponse?.whatsWorking ?? "");
+    setWhatsNotWorking(existingResponse?.whatsNotWorking ?? "");
+    setNextPointMove(existingResponse?.nextPointMove ?? "");
+    setDetailsOpen(
+      Boolean(
+        existingResponse?.whyThisScore ||
+          existingResponse?.whatsWorking ||
+          existingResponse?.whatsNotWorking ||
+          existingResponse?.nextPointMove
+      )
+    );
     setStatus("idle");
     setErrorMessage(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -62,7 +96,10 @@ export function AuditAreaClient({
       lifeAreaId: area.id,
       satisfactionScore: s,
       importanceScore: i,
-      note,
+      whyThisScore,
+      whatsWorking,
+      whatsNotWorking,
+      nextPointMove,
     });
 
     if (result.ok) {
@@ -85,11 +122,11 @@ export function AuditAreaClient({
     if (satisfaction != null) void save({ importance: value });
   }
 
-  function handleNoteChange(value: string) {
-    setNote(value);
+  function handleDetailChange(setter: (value: string) => void, value: string) {
+    setter(value);
     if (satisfaction == null || importance == null) return;
-    if (noteDebounce.current) clearTimeout(noteDebounce.current);
-    noteDebounce.current = setTimeout(() => void save(), 600);
+    if (detailDebounce.current) clearTimeout(detailDebounce.current);
+    detailDebounce.current = setTimeout(() => void save(), 600);
   }
 
   const canContinue = satisfaction != null && importance != null;
@@ -100,16 +137,16 @@ export function AuditAreaClient({
       if (!result.ok) return;
 
       if (stepIndex >= totalSteps) {
-        navigateWithTransition(() => router.push("/audit/leverage"));
+        router.push("/audit/leverage");
       } else {
-        navigateWithTransition(() => router.push(`/audit?step=${stepIndex + 1}`));
+        router.push(`/audit?step=${stepIndex + 1}`);
       }
     });
   }
 
   function handleBack() {
     if (stepIndex <= 1) return;
-    navigateWithTransition(() => router.push(`/audit?step=${stepIndex - 1}`));
+    router.push(`/audit?step=${stepIndex - 1}`);
   }
 
   return (
@@ -145,15 +182,52 @@ export function AuditAreaClient({
           />
         </section>
 
-        <div className="mt-10">
-          <TextAreaField
-            id="note"
-            label="Anything you want to add?"
-            optional
-            value={note}
-            onChange={(e) => handleNoteChange(e.target.value)}
-            placeholder="Optional — a sentence or two is plenty"
-          />
+        <div className="mt-10 border-t border-border pt-8">
+          <button
+            type="button"
+            onClick={() => setDetailsOpen((open) => !open)}
+            aria-expanded={detailsOpen}
+            aria-controls="audit-area-detail"
+            className="flex min-h-[var(--tap-target-min)] w-full items-center justify-between rounded-md border border-border bg-paper-muted px-4 text-sm font-medium text-ink-soft"
+          >
+            <span>Add more detail</span>
+            <span className="text-ink-faint" aria-hidden="true">
+              {detailsOpen ? "−" : "+"}
+            </span>
+          </button>
+
+          {detailsOpen && (
+            <div id="audit-area-detail" className="mt-6 flex flex-col gap-5">
+              <TextAreaField
+                id="whyThisScore"
+                label="Why did you give yourself this score?"
+                optional
+                value={whyThisScore}
+                onChange={(e) => handleDetailChange(setWhyThisScore, e.target.value)}
+              />
+              <TextAreaField
+                id="whatsWorking"
+                label="What's currently working?"
+                optional
+                value={whatsWorking}
+                onChange={(e) => handleDetailChange(setWhatsWorking, e.target.value)}
+              />
+              <TextAreaField
+                id="whatsNotWorking"
+                label="What's not currently working?"
+                optional
+                value={whatsNotWorking}
+                onChange={(e) => handleDetailChange(setWhatsNotWorking, e.target.value)}
+              />
+              <TextAreaField
+                id="nextPointMove"
+                label="What would move this forward by one point?"
+                optional
+                value={nextPointMove}
+                onChange={(e) => handleDetailChange(setNextPointMove, e.target.value)}
+              />
+            </div>
+          )}
         </div>
 
         {status === "error" && errorMessage && (

@@ -6,16 +6,19 @@ import { setLeverageArea } from "@/app/actions/audit";
 import { Button } from "@/components/ui/Button";
 import { Notice } from "@/components/ui/Notice";
 import { Logo } from "@/components/ui/Logo";
-import { navigateWithTransition } from "@/lib/view-transition";
+
+type Recommended = { lifeAreaId: string; lifeAreaName: string; rationale: string } | null;
 
 export function LeverageClient({
   auditId,
   lifeAreas,
   selectedAreaId,
+  recommended,
 }: {
   auditId: string;
   lifeAreas: { id: string; name: string }[];
   selectedAreaId: string | null;
+  recommended: Recommended;
 }) {
   const router = useRouter();
   const [selected, setSelected] = useState<string | null>(selectedAreaId);
@@ -40,7 +43,7 @@ export function LeverageClient({
         setError(result.message);
         return;
       }
-      navigateWithTransition(() => router.push("/audit/complete"));
+      router.push("/audit/complete");
     });
   }
 
@@ -55,7 +58,28 @@ export function LeverageClient({
         Pick one. This is the single most useful signal your coach gets.
       </p>
 
-      <div className="mt-8 flex flex-col gap-3">
+      {recommended && (
+        <div className="mt-6 rounded-lg border border-gold bg-gold-soft p-5">
+          <p className="label-caps text-xs text-gold-strong">Your recommended focus</p>
+          <p className="mt-1 font-heading text-lg text-ink">{recommended.lifeAreaName}</p>
+          <p className="mt-2 text-sm leading-snug text-ink-soft">{recommended.rationale}</p>
+          <div className="mt-4">
+            <Button
+              variant="secondary"
+              onClick={() => handleSelect(recommended.lifeAreaId)}
+              loading={isSaving && selected === recommended.lifeAreaId}
+            >
+              Use this focus
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <p className="mt-8 text-sm font-medium text-ink-soft">
+        {recommended ? "Or choose another area" : "Choose an area"}
+      </p>
+
+      <div className="mt-3 flex flex-col gap-3">
         {lifeAreas.map((area) => {
           const isSelected = selected === area.id;
           return (

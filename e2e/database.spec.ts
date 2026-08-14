@@ -4,6 +4,7 @@ import {
   createAccountOnCompleteScreen,
   getRevealedScore,
   selectLeverageArea,
+  startFreshAudit,
   testPassword,
   uniqueTestEmail,
 } from "./helpers";
@@ -32,8 +33,7 @@ test.describe("acceptance test 8: a completed audit produces exactly the rows th
     const password = testPassword();
 
     await page.goto("/");
-    await page.getByRole("button", { name: /start the audit/i }).click();
-    await page.waitForURL(/\/audit(\?.*)?$/);
+    await startFreshAudit(page);
 
     const satisfactions = await completeAllAuditAreas(page);
     const expectedTotal = satisfactions.reduce((sum, s) => sum + s, 0);
@@ -69,7 +69,7 @@ test.describe("acceptance test 8: a completed audit produces exactly the rows th
       expect(auditsError, auditsError?.message).toBeNull();
       expect(audits).toHaveLength(1);
 
-      const audit = audits![0];
+      const audit = audits![0]!;
       expect(audit.total_score).toBe(expectedTotal);
       expect(audit.leverage_area_id).not.toBeNull();
       expect(audit.completed_at).not.toBeNull();
@@ -128,7 +128,7 @@ test.describe("acceptance test 9: the database enforces importance_score's 1-5 r
 
       const { error: insertError } = await supabase.from("audit_responses").insert({
         audit_id: audit!.id,
-        life_area_id: lifeAreas![0].id,
+        life_area_id: lifeAreas![0]!.id,
         satisfaction_score: 5,
         importance_score: 6, // out of range: the schema's check constraint is 1-5
       });

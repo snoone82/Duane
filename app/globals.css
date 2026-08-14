@@ -45,6 +45,7 @@
   --text-xl: var(--text-xl);
   --text-2xl: var(--text-2xl);
   --text-3xl: var(--text-3xl);
+  --text-4xl: var(--text-4xl);
   --text-score: var(--text-score);
 
   --leading-tight: var(--leading-tight);
@@ -101,22 +102,4 @@ h1, h2, h3, h4 {
   font-family: var(--font-heading);
   text-transform: uppercase;
   letter-spacing: var(--tracking-wide);
-}
-
-/* ============================================================================
-   View Transitions — a soft cross-fade between audit steps, opted into per
-   navigation via lib/view-transition.ts (components/audit/AuditAreaClient.tsx,
-   components/audit/LeverageClient.tsx), not applied globally. This only
-   overrides the browser's default cross-fade timing/easing so it matches
-   the app's own motion tokens instead of the UA default (~250ms linear-ish);
-   it is deliberately still just a fade — no slide, no zoom.
-   lib/view-transition.ts already skips calling startViewTransition entirely
-   when prefers-reduced-motion is set, so a transition never starts for those
-   users in the first place — but the duration is also capped to ~0 by the
-   global reduced-motion override above as a second line of defence.
-   ========================================================================== */
-::view-transition-old(root),
-::view-transition-new(root) {
-  animation-duration: var(--duration-slow);
-  animation-timing-function: var(--ease-standard);
 }

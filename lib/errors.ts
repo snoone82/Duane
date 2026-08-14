@@ -24,19 +24,35 @@ export function isNextRedirectError(error: unknown): boolean {
   );
 }
 
-const IMMUTABILITY_HINTS = ["completed and cannot be modified", "responses cannot be added or changed"];
+const IMMUTABILITY_HINTS = [
+  "completed and cannot be modified", // audits, clear_plans
+  "responses cannot be added or changed", // audit_responses
+  "and cannot be modified", // goals (any terminal status, not just completed)
+  "check-ins cannot be added or changed", // checkins
+];
+
+const GOAL_SLOT_LIMIT_HINTS = ["active primary goal is allowed", "active supporting goals are allowed"];
 
 export function isImmutabilityError(message: string | undefined | null): boolean {
   if (!message) return false;
   return IMMUTABILITY_HINTS.some((hint) => message.includes(hint));
 }
 
+export function isGoalSlotLimitError(message: string | undefined | null): boolean {
+  if (!message) return false;
+  return GOAL_SLOT_LIMIT_HINTS.some((hint) => message.includes(hint));
+}
+
 export function friendlySaveError(message: string | undefined | null): string {
   if (isImmutabilityError(message)) {
-    // The database is doing its job — this audit is already a locked-in
+    // The database is doing its job — this is already a locked-in
     // snapshot. This shouldn't normally be reachable from the UI, but if it
     // is, tell the truth plainly rather than a generic failure message.
-    return "This audit has already been completed, so it can't be changed — each audit is a permanent snapshot. Start a new audit if you want to update your answers.";
+    return "That's already locked in as a permanent record, so it can't be changed. Start a new one if you want to update it.";
+  }
+
+  if (isGoalSlotLimitError(message)) {
+    return "You've already got that slot filled — finish or drop an existing goal before adding another.";
   }
 
   return "We couldn't save that just now. Your answers so far are safe — check your connection and try again.";

@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { startFreshAudit } from "./helpers";
 
 /**
  * Acceptance test 2: answer three areas, close the tab, reopen it, and the
@@ -18,8 +19,7 @@ test("acceptance test 2: closing and reopening the tab resumes at area 4 with th
   const page = await context.newPage();
 
   await page.goto("/");
-  await page.getByRole("button", { name: /start the audit/i }).click();
-  await page.waitForURL(/\/audit(\?.*)?$/);
+  await startFreshAudit(page);
 
   const answers = [
     { satisfaction: 3, importance: 2 },
@@ -28,17 +28,28 @@ test("acceptance test 2: closing and reopening the tab resumes at area 4 with th
   ];
 
   for (const { satisfaction, importance } of answers) {
-    await page
+    const satisfactionRadio = page
       .getByRole("radiogroup", { name: /how it is right now/i })
-      .getByRole("radio", { name: String(satisfaction), exact: true })
-      .click();
-    await page
-      .getByRole("radiogroup", { name: /how much it matters/i })
-      .getByRole("radio", { name: String(importance), exact: true })
-      .click();
+      .getByRole("radio", { name: String(satisfaction), exact: true });
+    await satisfactionRadio.click();
+    await expect(satisfactionRadio).toHaveAttribute("aria-checked", "true");
 
-    await page.getByRole("button", { name: /^continue$/i }).click();
-    await page.waitForLoadState("networkidle").catch(() => {});
+    const importanceRadio = page
+      .getByRole("radiogroup", { name: /how much it matters/i })
+      .getByRole("radio", { name: String(importance), exact: true });
+    await importanceRadio.click();
+    await expect(importanceRadio).toHaveAttribute("aria-checked", "true");
+
+    // See the matching comment in e2e/helpers.ts's completeAllAuditAreas —
+    // wait for the URL to actually change rather than trusting
+    // networkidle/a fixed delay, or the next iteration can click into the
+    // still-mounted previous area right as it's being swapped out.
+    const urlBeforeContinue = page.url();
+    const continueButton = page.getByRole("button", { name: /^continue$/i });
+    await expect(continueButton).toBeEnabled();
+    await continueButton.click();
+    await page.waitForURL((url) => url.toString() !== urlBeforeContinue);
+    await expect(page.locator("h1")).toBeVisible();
   }
 
   await expect(page.getByText("4 of 10")).toBeVisible();
@@ -57,15 +68,17 @@ test("acceptance test 2: closing and reopening the tab resumes at area 4 with th
   await expect(reopenedPage.getByText("4 of 10")).toBeVisible();
 
   // Step back through the first three areas and confirm each answer is
-  // still exactly what was saved before the tab closed.
-  for (let i = 0; i < answers.length; i++) {
+  // still exactly what was saved before the tab closed. Wait for the URL to
+  // actually change between clicks — see the matching comment in
+  // e2e/helpers.ts's completeAllAuditAreas for why.
+  for (let n = 0; n < answers.length; n++) {
+    const urlBeforeBack = reopenedPage.url();
     await reopenedPage.getByRole("button", { name: /^back$/i }).click();
+    await reopenedPage.waitForURL((url) => url.toString() !== urlBeforeBack);
   }
   await expect(reopenedPage.getByText("1 of 10")).toBeVisible();
 
-  for (let i = 0; i < answers.length; i++) {
-    const { satisfaction, importance } = answers[i];
-
+  for (const [i, { satisfaction, importance }] of answers.entries()) {
     await expect(
       reopenedPage
         .getByRole("radiogroup", { name: /how it is right now/i })

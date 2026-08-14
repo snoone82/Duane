@@ -53,6 +53,14 @@ export default async function AuditPage({
       : maxReachableStep;
 
   const currentArea = lifeAreas[currentStep - 1];
+
+  // Not reachable given the clamping above, but life_areas can change
+  // between the two queries above (Duane reordering/deactivating content
+  // mid-request) — fail gracefully rather than crash on `.id` of undefined.
+  if (!currentArea) {
+    return <SessionNotice message="This area isn't available right now — let's pick back up from the start of the Audit." />;
+  }
+
   const existingResponse = responseByAreaId.get(currentArea.id) ?? null;
 
   return (
@@ -66,7 +74,10 @@ export default async function AuditPage({
           ? {
               satisfactionScore: existingResponse.satisfaction_score,
               importanceScore: existingResponse.importance_score,
-              note: existingResponse.note,
+              whyThisScore: existingResponse.why_this_score,
+              whatsWorking: existingResponse.whats_working,
+              whatsNotWorking: existingResponse.whats_not_working,
+              nextPointMove: existingResponse.next_point_move,
             }
           : null
       }

@@ -1,4 +1,4 @@
-import { test, expect, devices, type Page } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import {
   completeAllAuditAreas,
   expectFocusVisible,
@@ -44,7 +44,10 @@ async function assertNoTapTargetUndersized(page: Page, minPx = TAP_TARGET_MIN_PX
 }
 
 test.describe("acceptance test 6: mobile viewport — no horizontal scroll, no tap target under 44px", () => {
-  test.use({ ...devices["iPhone 13"] });
+  // Mobile device emulation (viewport, touch, UA) is applied at the project
+  // level — see the "mobile-chrome" project in playwright.config.ts, which
+  // targets this file specifically. Running under "desktop-chrome" too is
+  // intentional: the layout must be scroll/tap-target safe at both sizes.
 
   test("landing page", async ({ page }) => {
     await page.goto("/");
@@ -52,9 +55,14 @@ test.describe("acceptance test 6: mobile viewport — no horizontal scroll, no t
     await assertNoTapTargetUndersized(page);
   });
 
-  test("audit area, leverage question and score-reveal/signup screens", async ({ page }) => {
+  test("audit intro, audit area, leverage question and score-reveal/signup screens", async ({ page }) => {
     await page.goto("/");
     await page.getByRole("button", { name: /start the audit/i }).click();
+    await page.waitForURL(/\/audit\/intro$/);
+    await assertNoHorizontalScroll(page);
+    await assertNoTapTargetUndersized(page); // the scoring guide rows + Begin button
+
+    await page.getByRole("button", { name: /begin the audit/i }).click();
     await page.waitForURL(/\/audit(\?.*)?$/);
     await assertNoHorizontalScroll(page);
     await assertNoTapTargetUndersized(page);
@@ -85,6 +93,13 @@ test.describe("acceptance test 7: full keyboard-only pass through the audit, foc
     await tabUntil(page, focusedTextMatches(page, /start the audit/i));
     await expectFocusVisible(page);
     await page.keyboard.press("Enter");
+    await page.waitForURL(/\/audit\/intro$/);
+
+    // The intro screen has exactly one interactive control — tab to it and
+    // begin, same as a real keyboard-only visitor would.
+    await tabUntil(page, focusedTextMatches(page, /begin the audit/i));
+    await expectFocusVisible(page);
+    await page.keyboard.press("Enter");
     await page.waitForURL(/\/audit(\?.*)?$/);
 
     let index = 0;
@@ -101,8 +116,14 @@ test.describe("acceptance test 7: full keyboard-only pass through the audit, foc
 
       await tabUntil(page, focusedTextMatches(page, /continue/i));
       await expectFocusVisible(page);
+      // See the matching comment in e2e/helpers.ts's completeAllAuditAreas —
+      // wait for the URL to actually change rather than trusting
+      // networkidle, or the next loop iteration starts tabbing through the
+      // still-mounted previous area right as it's being swapped out.
+      const urlBeforeContinue = page.url();
       await page.keyboard.press("Enter");
-      await page.waitForLoadState("networkidle").catch(() => {});
+      await page.waitForURL((url) => url.toString() !== urlBeforeContinue);
+      await expect(page.locator("h1")).toBeVisible();
 
       index += 1;
     }
