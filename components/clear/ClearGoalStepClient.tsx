@@ -6,66 +6,9 @@ import { createGoalFromClear } from "@/app/actions/clear";
 import { Button } from "@/components/ui/Button";
 import { Notice } from "@/components/ui/Notice";
 import { TextAreaField } from "@/components/ui/TextAreaField";
+import { ChoiceRow } from "@/components/ui/ChoiceRow";
+import { GOAL_FREQUENCIES, GOAL_TRACK_METRICS, GOAL_TYPES } from "@/lib/goal-options";
 import type { GoalFrequency, GoalTrackMetric, GoalType } from "@/lib/database.types";
-
-const GOAL_TYPES: { value: GoalType; label: string }[] = [
-  { value: "take_action", label: "Take action" },
-  { value: "build_habit", label: "Build a habit" },
-  { value: "have_conversation", label: "Have a conversation" },
-  { value: "set_boundary", label: "Set a boundary" },
-  { value: "create_consistency", label: "Create consistency" },
-];
-
-const FREQUENCIES: { value: GoalFrequency; label: string }[] = [
-  { value: "daily", label: "Daily" },
-  { value: "three_per_week", label: "3x per week" },
-  { value: "weekly", label: "Weekly" },
-  { value: "custom", label: "Custom" },
-];
-
-const TRACK_METRICS: { value: GoalTrackMetric; label: string }[] = [
-  { value: "action_completed", label: "Action completed" },
-  { value: "habit_done", label: "Habit done" },
-  { value: "confidence_score", label: "Confidence score" },
-  { value: "self_trust_score", label: "Self-trust score" },
-  { value: "custom", label: "Custom" },
-];
-
-function ChoiceRow<T extends string>({
-  options,
-  value,
-  onChange,
-  name,
-}: {
-  options: { value: T; label: string }[];
-  value: T | null;
-  onChange: (v: T) => void;
-  name: string;
-}) {
-  return (
-    <div role="radiogroup" aria-label={name} className="flex flex-wrap gap-2">
-      {options.map((option) => {
-        const selected = value === option.value;
-        return (
-          <button
-            key={option.value}
-            type="button"
-            role="radio"
-            aria-checked={selected}
-            onClick={() => onChange(option.value)}
-            className={`min-h-[var(--tap-target-min)] rounded-full border-2 px-4 font-body text-sm transition-colors duration-[var(--duration-fast)] ${
-              selected
-                ? "border-gold bg-gold text-gold-ink font-semibold"
-                : "border-border-strong bg-paper-raised text-ink hover:border-gold"
-            }`}
-          >
-            {option.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
 
 export function ClearGoalStepClient({
   clearPlanId,
@@ -149,7 +92,7 @@ export function ClearGoalStepClient({
 
         <section>
           <h2 className="mb-2 text-sm font-medium text-ink">How often?</h2>
-          <ChoiceRow options={FREQUENCIES} value={frequency} onChange={setFrequency} name="How often" />
+          <ChoiceRow options={GOAL_FREQUENCIES} value={frequency} onChange={setFrequency} name="How often" />
           {frequency === "custom" && (
             <div className="mt-3">
               <TextAreaField
@@ -171,7 +114,7 @@ export function ClearGoalStepClient({
 
         <section>
           <h2 className="mb-2 text-sm font-medium text-ink">What will you track?</h2>
-          <ChoiceRow options={TRACK_METRICS} value={trackMetric} onChange={setTrackMetric} name="What to track" />
+          <ChoiceRow options={GOAL_TRACK_METRICS} value={trackMetric} onChange={setTrackMetric} name="What to track" />
           {trackMetric === "custom" && (
             <div className="mt-3">
               <TextAreaField
