@@ -1,3 +1,11 @@
+"use client";
+
+// Client Component on purpose: it hands StatusSelect an onChange closure
+// over the updateClientField server action, and a closure created in a
+// Server Component can't cross the RSC boundary ("Event handlers cannot be
+// passed to Client Component props" — caught live on Vercel). Client
+// Components may import and call server actions directly, so the closure
+// is fine here.
 import { initials } from "@/lib/format";
 import { CLIENT_STATUS } from "@/lib/status";
 import { StatusSelect } from "@/components/ui/StatusSelect";

@@ -4,11 +4,10 @@ import { createClient } from "@/lib/supabase/server";
 import { getClientById, getAssignedMembers, getAllTeamMembers, getClientActivity } from "@/lib/data/client";
 import { getOverviewSummary } from "@/lib/data/overview";
 import { getCurrentProfile } from "@/lib/current-user";
-import { AutosaveInput } from "@/components/ui/AutosaveInput";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { TeamAssignments } from "@/components/clients/TeamAssignments";
 import { ClientDangerZone } from "@/components/clients/ClientDangerZone";
-import { updateClientField } from "@/lib/actions/clients";
+import { ClientDetailsForms } from "@/components/clients/ClientDetailsForms";
 import { formatDate, formatRelativeToToday, formatCurrency, formatDateTime, isOverdue } from "@/lib/format";
 import { actionStatusMeta } from "@/lib/status";
 import { StatusPill } from "@/components/ui/StatusPill";
@@ -31,38 +30,10 @@ export default async function OverviewPage({ params }: { params: Promise<{ id: s
     isAdmin ? getClientActivity(supabase, id) : Promise.resolve([]),
   ]);
 
-  const save = (
-    field: "email" | "phone" | "package" | "job_title" | "company" | "industry" | "location" | "retainer_amount" | "linkedin_url" | "website_url" | "twitter_url" | "instagram_url" | "youtube_url" | "tiktok_url"
-  ) => (value: string) => updateClientField(id, field, value);
-
   return (
     <div className="grid max-w-5xl grid-cols-1 gap-6 lg:grid-cols-[1.3fr_1fr]">
       <div className="space-y-6">
-        <section className="rounded-lg border border-border bg-surface p-4">
-          <h2 className="mb-3 text-sm font-semibold text-ink">Contact details</h2>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <AutosaveInput id="job_title" label="Job title" initialValue={client.job_title ?? ""} onSave={save("job_title")} />
-            <AutosaveInput id="company" label="Company" initialValue={client.company ?? ""} onSave={save("company")} />
-            <AutosaveInput id="industry" label="Industry" initialValue={client.industry ?? ""} onSave={save("industry")} />
-            <AutosaveInput id="location" label="Location" initialValue={client.location ?? ""} onSave={save("location")} />
-            <AutosaveInput id="package" label="Package" initialValue={client.package ?? ""} onSave={save("package")} />
-            <AutosaveInput id="retainer_amount" label="Retainer ($/month)" type="number" initialValue={client.retainer_amount?.toString() ?? ""} onSave={save("retainer_amount")} />
-            <AutosaveInput id="email" label="Email" type="email" initialValue={client.email ?? ""} onSave={save("email")} />
-            <AutosaveInput id="phone" label="Phone" type="tel" initialValue={client.phone ?? ""} onSave={save("phone")} />
-          </div>
-        </section>
-
-        <section className="rounded-lg border border-border bg-surface p-4">
-          <h2 className="mb-3 text-sm font-semibold text-ink">Social profiles</h2>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <AutosaveInput id="linkedin_url" label="LinkedIn URL" initialValue={client.linkedin_url ?? ""} onSave={save("linkedin_url")} />
-            <AutosaveInput id="website_url" label="Website URL" initialValue={client.website_url ?? ""} onSave={save("website_url")} />
-            <AutosaveInput id="twitter_url" label="X / Twitter URL" initialValue={client.twitter_url ?? ""} onSave={save("twitter_url")} />
-            <AutosaveInput id="instagram_url" label="Instagram URL" initialValue={client.instagram_url ?? ""} onSave={save("instagram_url")} />
-            <AutosaveInput id="youtube_url" label="YouTube URL" initialValue={client.youtube_url ?? ""} onSave={save("youtube_url")} />
-            <AutosaveInput id="tiktok_url" label="TikTok URL" initialValue={client.tiktok_url ?? ""} onSave={save("tiktok_url")} />
-          </div>
-        </section>
+        <ClientDetailsForms client={client} />
 
         <section className="rounded-lg border border-border bg-surface p-4">
           <div className="mb-3 flex items-center justify-between">
