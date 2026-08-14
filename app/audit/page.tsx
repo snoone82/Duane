@@ -74,7 +74,10 @@ export default async function AuditPage({
           ? {
               satisfactionScore: existingResponse.satisfaction_score,
               importanceScore: existingResponse.importance_score,
-              note: existingResponse.note,
+              whyThisScore: existingResponse.why_this_score,
+              whatsWorking: existingResponse.whats_working,
+              whatsNotWorking: existingResponse.whats_not_working,
+              nextPointMove: existingResponse.next_point_move,
             }
           : null
       }

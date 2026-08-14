@@ -1,18 +1,3 @@
-/**
- * Generated via the Supabase MCP `generate_typescript_types` against the
- * live project (sxwmtevohcgkajouwubg) — matches supabase/migrations/*.sql
- * exactly. Regenerate any time the schema changes:
- *   supabase gen types typescript --project-id sxwmtevohcgkajouwubg > lib/database.types.ts
- * (then re-append the convenience aliases at the bottom of this file).
- *
- * Do not hand-edit the Database type above the "Convenience aliases"
- * marker — a hand-written version of this file previously caused
- * @supabase/supabase-js's query builder generics to silently collapse to
- * `never` throughout the app, because it didn't fully match the
- * GenericSchema shape (missing Views/Functions/Enums/CompositeTypes and
- * per-table Relationships). This is the real, structurally-correct one.
- */
-
 export type Json =
   | string
   | number
@@ -36,10 +21,14 @@ export type Database = {
           id: string
           importance_score: number
           life_area_id: string
+          next_point_move: string | null
           note: string | null
           priority_score: number | null
           satisfaction_score: number
           updated_at: string
+          whats_not_working: string | null
+          whats_working: string | null
+          why_this_score: string | null
         }
         Insert: {
           audit_id: string
@@ -47,10 +36,14 @@ export type Database = {
           id?: string
           importance_score: number
           life_area_id: string
+          next_point_move?: string | null
           note?: string | null
           priority_score?: number | null
           satisfaction_score: number
           updated_at?: string
+          whats_not_working?: string | null
+          whats_working?: string | null
+          why_this_score?: string | null
         }
         Update: {
           audit_id?: string
@@ -58,10 +51,14 @@ export type Database = {
           id?: string
           importance_score?: number
           life_area_id?: string
+          next_point_move?: string | null
           note?: string | null
           priority_score?: number | null
           satisfaction_score?: number
           updated_at?: string
+          whats_not_working?: string | null
+          whats_working?: string | null
+          why_this_score?: string | null
         }
         Relationships: [
           {
@@ -86,6 +83,8 @@ export type Database = {
           created_at: string
           id: string
           leverage_area_id: string | null
+          recommended_focus_area_id: string | null
+          recommended_focus_rationale: string | null
           sequence_number: number
           status: Database["public"]["Enums"]["audit_status"]
           total_score: number | null
@@ -97,6 +96,8 @@ export type Database = {
           created_at?: string
           id?: string
           leverage_area_id?: string | null
+          recommended_focus_area_id?: string | null
+          recommended_focus_rationale?: string | null
           sequence_number?: number
           status?: Database["public"]["Enums"]["audit_status"]
           total_score?: number | null
@@ -108,6 +109,8 @@ export type Database = {
           created_at?: string
           id?: string
           leverage_area_id?: string | null
+          recommended_focus_area_id?: string | null
+          recommended_focus_rationale?: string | null
           sequence_number?: number
           status?: Database["public"]["Enums"]["audit_status"]
           total_score?: number | null
@@ -118,6 +121,232 @@ export type Database = {
           {
             foreignKeyName: "audits_leverage_area_id_fkey"
             columns: ["leverage_area_id"]
+            isOneToOne: false
+            referencedRelation: "life_areas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "audits_recommended_focus_area_id_fkey"
+            columns: ["recommended_focus_area_id"]
+            isOneToOne: false
+            referencedRelation: "life_areas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      checkins: {
+        Row: {
+          action_completed: boolean
+          checkin_date: string
+          confidence_score: number | null
+          created_at: string
+          goal_id: string
+          id: string
+          note: string | null
+          self_trust_score: number | null
+          updated_at: string
+        }
+        Insert: {
+          action_completed?: boolean
+          checkin_date?: string
+          confidence_score?: number | null
+          created_at?: string
+          goal_id: string
+          id?: string
+          note?: string | null
+          self_trust_score?: number | null
+          updated_at?: string
+        }
+        Update: {
+          action_completed?: boolean
+          checkin_date?: string
+          confidence_score?: number | null
+          created_at?: string
+          goal_id?: string
+          id?: string
+          note?: string | null
+          self_trust_score?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "checkins_goal_id_fkey"
+            columns: ["goal_id"]
+            isOneToOne: false
+            referencedRelation: "goals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      clear_plans: {
+        Row: {
+          audit_id: string
+          completed_at: string | null
+          created_at: string
+          current_reality_look_like: string | null
+          current_reality_pattern: string | null
+          current_reality_pressure: string | null
+          current_step: number
+          emotional_block_belief: string | null
+          emotional_block_emotion: string | null
+          emotional_block_response: string | null
+          goal_id: string | null
+          id: string
+          life_area_id: string
+          life_vision_becoming: string | null
+          life_vision_feel: string | null
+          life_vision_thriving: string | null
+          roadmap_checkin_rhythm: string | null
+          roadmap_obstacles: string | null
+          roadmap_weekly_action: string | null
+          status: Database["public"]["Enums"]["audit_status"]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          audit_id: string
+          completed_at?: string | null
+          created_at?: string
+          current_reality_look_like?: string | null
+          current_reality_pattern?: string | null
+          current_reality_pressure?: string | null
+          current_step?: number
+          emotional_block_belief?: string | null
+          emotional_block_emotion?: string | null
+          emotional_block_response?: string | null
+          goal_id?: string | null
+          id?: string
+          life_area_id: string
+          life_vision_becoming?: string | null
+          life_vision_feel?: string | null
+          life_vision_thriving?: string | null
+          roadmap_checkin_rhythm?: string | null
+          roadmap_obstacles?: string | null
+          roadmap_weekly_action?: string | null
+          status?: Database["public"]["Enums"]["audit_status"]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          audit_id?: string
+          completed_at?: string | null
+          created_at?: string
+          current_reality_look_like?: string | null
+          current_reality_pattern?: string | null
+          current_reality_pressure?: string | null
+          current_step?: number
+          emotional_block_belief?: string | null
+          emotional_block_emotion?: string | null
+          emotional_block_response?: string | null
+          goal_id?: string | null
+          id?: string
+          life_area_id?: string
+          life_vision_becoming?: string | null
+          life_vision_feel?: string | null
+          life_vision_thriving?: string | null
+          roadmap_checkin_rhythm?: string | null
+          roadmap_obstacles?: string | null
+          roadmap_weekly_action?: string | null
+          status?: Database["public"]["Enums"]["audit_status"]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "clear_plans_audit_id_fkey"
+            columns: ["audit_id"]
+            isOneToOne: false
+            referencedRelation: "audits"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "clear_plans_goal_id_fkey"
+            columns: ["goal_id"]
+            isOneToOne: false
+            referencedRelation: "goals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "clear_plans_life_area_id_fkey"
+            columns: ["life_area_id"]
+            isOneToOne: false
+            referencedRelation: "life_areas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      goals: {
+        Row: {
+          action_text: string
+          clear_plan_id: string | null
+          created_at: string
+          frequency: Database["public"]["Enums"]["goal_frequency"]
+          frequency_custom: string | null
+          goal_type: Database["public"]["Enums"]["goal_type"]
+          id: string
+          life_area_id: string
+          motivation_text: string
+          review_date: string | null
+          role: Database["public"]["Enums"]["goal_role"]
+          start_date: string
+          status: Database["public"]["Enums"]["goal_status"]
+          success_criteria: string
+          track_metric: Database["public"]["Enums"]["goal_track_metric"]
+          track_metric_custom: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          action_text: string
+          clear_plan_id?: string | null
+          created_at?: string
+          frequency: Database["public"]["Enums"]["goal_frequency"]
+          frequency_custom?: string | null
+          goal_type: Database["public"]["Enums"]["goal_type"]
+          id?: string
+          life_area_id: string
+          motivation_text: string
+          review_date?: string | null
+          role: Database["public"]["Enums"]["goal_role"]
+          start_date?: string
+          status?: Database["public"]["Enums"]["goal_status"]
+          success_criteria: string
+          track_metric: Database["public"]["Enums"]["goal_track_metric"]
+          track_metric_custom?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          action_text?: string
+          clear_plan_id?: string | null
+          created_at?: string
+          frequency?: Database["public"]["Enums"]["goal_frequency"]
+          frequency_custom?: string | null
+          goal_type?: Database["public"]["Enums"]["goal_type"]
+          id?: string
+          life_area_id?: string
+          motivation_text?: string
+          review_date?: string | null
+          role?: Database["public"]["Enums"]["goal_role"]
+          start_date?: string
+          status?: Database["public"]["Enums"]["goal_status"]
+          success_criteria?: string
+          track_metric?: Database["public"]["Enums"]["goal_track_metric"]
+          track_metric_custom?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "goals_clear_plan_id_fkey"
+            columns: ["clear_plan_id"]
+            isOneToOne: false
+            referencedRelation: "clear_plans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "goals_life_area_id_fkey"
+            columns: ["life_area_id"]
             isOneToOne: false
             referencedRelation: "life_areas"
             referencedColumns: ["id"]
@@ -190,6 +419,21 @@ export type Database = {
     }
     Enums: {
       audit_status: "in_progress" | "completed"
+      goal_frequency: "daily" | "three_per_week" | "weekly" | "custom"
+      goal_role: "primary" | "supporting"
+      goal_status: "active" | "completed" | "abandoned"
+      goal_track_metric:
+        | "action_completed"
+        | "habit_done"
+        | "confidence_score"
+        | "self_trust_score"
+        | "custom"
+      goal_type:
+        | "take_action"
+        | "build_habit"
+        | "have_conversation"
+        | "set_boundary"
+        | "create_consistency"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -318,16 +562,43 @@ export const Constants = {
   public: {
     Enums: {
       audit_status: ["in_progress", "completed"],
+      goal_frequency: ["daily", "three_per_week", "weekly", "custom"],
+      goal_role: ["primary", "supporting"],
+      goal_status: ["active", "completed", "abandoned"],
+      goal_track_metric: [
+        "action_completed",
+        "habit_done",
+        "confidence_score",
+        "self_trust_score",
+        "custom",
+      ],
+      goal_type: [
+        "take_action",
+        "build_habit",
+        "have_conversation",
+        "set_boundary",
+        "create_consistency",
+      ],
     },
   },
 } as const
 
 // ============================================================================
-// Convenience aliases — hand-added, safe to keep across regeneration.
+// Convenience aliases — hand-added, not part of the Supabase-generated output
+// above. Re-add these after every `generate_typescript_types` regeneration.
 // ============================================================================
 
-export type AuditStatus = Database["public"]["Enums"]["audit_status"];
-export type LifeArea = Database["public"]["Tables"]["life_areas"]["Row"];
-export type Audit = Database["public"]["Tables"]["audits"]["Row"];
-export type AuditResponse = Database["public"]["Tables"]["audit_responses"]["Row"];
-export type Profile = Database["public"]["Tables"]["profiles"]["Row"];
+export type AuditStatus = Database["public"]["Enums"]["audit_status"]
+export type GoalRole = Database["public"]["Enums"]["goal_role"]
+export type GoalType = Database["public"]["Enums"]["goal_type"]
+export type GoalFrequency = Database["public"]["Enums"]["goal_frequency"]
+export type GoalTrackMetric = Database["public"]["Enums"]["goal_track_metric"]
+export type GoalStatus = Database["public"]["Enums"]["goal_status"]
+
+export type LifeArea = Database["public"]["Tables"]["life_areas"]["Row"]
+export type Audit = Database["public"]["Tables"]["audits"]["Row"]
+export type AuditResponse = Database["public"]["Tables"]["audit_responses"]["Row"]
+export type Profile = Database["public"]["Tables"]["profiles"]["Row"]
+export type ClearPlan = Database["public"]["Tables"]["clear_plans"]["Row"]
+export type Goal = Database["public"]["Tables"]["goals"]["Row"]
+export type Checkin = Database["public"]["Tables"]["checkins"]["Row"]

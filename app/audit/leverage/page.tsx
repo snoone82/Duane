@@ -6,6 +6,7 @@ import {
   getLatestCompletedAudit,
   getLifeAreas,
 } from "@/lib/audit-data";
+import { computeRecommendedFocus } from "@/lib/recommended-focus";
 import { SessionNotice } from "@/components/audit/SessionNotice";
 import { LeverageClient } from "@/components/audit/LeverageClient";
 
@@ -32,11 +33,22 @@ export default async function LeveragePage() {
     redirect("/audit");
   }
 
+  const nameById = new Map(lifeAreas.map((a) => [a.id, a.name]));
+  const recommended = computeRecommendedFocus(
+    responses.map((r) => ({
+      lifeAreaId: r.life_area_id,
+      lifeAreaName: nameById.get(r.life_area_id) ?? "",
+      satisfactionScore: r.satisfaction_score,
+      importanceScore: r.importance_score,
+    }))
+  );
+
   return (
     <LeverageClient
       auditId={audit.id}
       lifeAreas={lifeAreas.map((a) => ({ id: a.id, name: a.name }))}
       selectedAreaId={audit.leverage_area_id}
+      recommended={recommended}
     />
   );
 }
