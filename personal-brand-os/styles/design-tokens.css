@@ -1,0 +1,120 @@
+/**
+ * Personal Brand OS — design tokens.
+ *
+ * A different brand from Aligned on purpose (see build brief §3): this is a
+ * dense, quiet, all-day internal tool — closer to Linear/Notion than a
+ * wellness product. Light background, near-black text, one restrained
+ * accent. Nothing here is hardcoded into components — everything routes
+ * through these custom properties, consumed via Tailwind v4's `@theme`
+ * binding in app/globals.css.
+ */
+
+:root {
+  /* ---- Neutrals ---- */
+  --color-bg: #fafafa;              /* app background */
+  --color-surface: #ffffff;          /* cards, tables, inputs */
+  --color-surface-muted: #f4f5f7;    /* subtle section backgrounds, hovers */
+  --color-ink: #16181d;              /* primary text */
+  --color-ink-soft: #565c6b;         /* secondary text */
+  --color-ink-faint: #8a91a0;        /* placeholder / disabled / metadata */
+  --color-border: #e5e7eb;
+  --color-border-strong: #c7cbd4;
+
+  /* ---- Accent — restrained, used for primary actions + active state only ---- */
+  --color-accent: #3453d9;
+  --color-accent-strong: #28409e;
+  --color-accent-soft: #e8ecfc;
+  --color-accent-ink: #ffffff;       /* text on top of accent */
+  --color-focus-ring: #3453d9;
+
+  /* ---- Feedback ---- */
+  --color-info: #2f6fb0;
+  --color-info-bg: #e8f1fa;
+  --color-success: #1f8a53;
+  --color-success-bg: #e6f5ec;
+  --color-warning: #a35d00;
+  --color-warning-bg: #fbeed9;
+  --color-danger: #c0342a;
+  --color-danger-bg: #fbe9e7;
+
+  /* ---- Tag palette — for pipeline stages / status pills. Ten distinguishable
+     hues, each a bg/text pair, calibrated to stay legible next to each other
+     in a dense table at a glance. Semantic stage→tag mapping lives in
+     lib/status.ts, not here — these are the raw building blocks only. ---- */
+  --tag-slate-bg: #eef0f3;    --tag-slate-text: #495166;
+  --tag-blue-bg: #e6eefc;     --tag-blue-text: #1d4ed8;
+  --tag-cyan-bg: #e2f6f8;     --tag-cyan-text: #0f7285;
+  --tag-teal-bg: #e2f6f0;     --tag-teal-text: #0f7a5f;
+  --tag-green-bg: #e6f5e9;    --tag-green-text: #1f8a3f;
+  --tag-amber-bg: #fdf1da;    --tag-amber-text: #a35d00;
+  --tag-orange-bg: #fce8dd;   --tag-orange-text: #b8481f;
+  --tag-purple-bg: #f0eafc;   --tag-purple-text: #6c37c9;
+  --tag-pink-bg: #fbe8f1;     --tag-pink-text: #b3226e;
+  --tag-red-bg: #fbe9e7;      --tag-red-text: #c0342a;
+
+  /* ---- Type — one sans-serif family, no display face ---- */
+  --font-sans: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.9375rem;
+  --text-lg: 1.0625rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;
+
+  --leading-tight: 1.2;
+  --leading-snug: 1.4;
+  --leading-normal: 1.6;
+  --tracking-wide: 0.02em;
+
+  /* ---- Spacing (4px base) ---- */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+  --space-20: 5rem;
+  --space-24: 6rem;
+
+  /* ---- Radius — tighter than a consumer product, still soft ---- */
+  --radius-sm: 0.25rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.625rem;
+  --radius-xl: 0.875rem;
+  --radius-full: 999px;
+
+  /* ---- Shadow — very light, calm not flashy ---- */
+  --shadow-sm: 0 1px 2px rgba(16, 18, 23, 0.05);
+  --shadow-md: 0 4px 12px rgba(16, 18, 23, 0.08);
+  --shadow-lg: 0 12px 28px rgba(16, 18, 23, 0.12);
+
+  /* ---- Motion — nothing longer than 200ms anywhere ---- */
+  --duration-fast: 100ms;
+  --duration-base: 150ms;
+  --duration-slow: 200ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+
+  /* ---- Layout ---- */
+  --control-height: 2.25rem;      /* 36px — inputs, buttons, select triggers */
+  --control-height-sm: 1.75rem;   /* 28px — inline table controls */
+  --sidebar-width: 15rem;
+  --topbar-height: 3.25rem;
+  --content-max-width: 84rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

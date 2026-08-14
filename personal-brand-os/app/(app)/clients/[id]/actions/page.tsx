@@ -1,0 +1,61 @@
+import { createClient } from "@/lib/supabase/server";
+import { AddActionButton } from "@/components/clients/AddActionButton";
+import { ActionRow } from "@/components/clients/ActionRow";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { Table, Thead, Th } from "@/components/ui/Table";
+import { getProfilesMap } from "@/lib/data/shared";
+
+export const metadata = { title: "Actions" };
+
+export default async function ClientActionsPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const supabase = await createClient();
+  const [{ data: actions }, profiles] = await Promise.all([
+    supabase
+      .from("actions")
+      .select("*")
+      .eq("client_id", id)
+      .order("due_date", { ascending: true, nullsFirst: false })
+      .order("created_at", { ascending: false }),
+    getProfilesMap(supabase),
+  ]);
+
+  const open = (actions ?? []).filter((a) => a.status !== "completed");
+  const done = (actions ?? []).filter((a) => a.status === "completed");
+  const ordered = [...open, ...done];
+
+  return (
+    <div>
+      <div className="mb-4 flex items-center justify-between">
+        <p className="text-sm text-ink-soft">{open.length} open, {done.length} done</p>
+        <AddActionButton clientId={id} />
+      </div>
+
+      {ordered.length === 0 ? (
+        <EmptyState title="No actions yet" description="Add the first action to start tracking follow-through for this client." />
+      ) : (
+        <Table>
+          <Thead>
+            <tr>
+              <Th>Title</Th>
+              <Th>Owner</Th>
+              <Th>Due</Th>
+              <Th>Status</Th>
+              <Th></Th>
+            </tr>
+          </Thead>
+          <tbody>
+            {ordered.map((action) => (
+              <ActionRow
+                key={action.id}
+                clientId={id}
+                action={action}
+                ownerLabel={action.owner_user_id ? profiles.get(action.owner_user_id) : undefined}
+              />
+            ))}
+          </tbody>
+        </Table>
+      )}
+    </div>
+  );
+}
