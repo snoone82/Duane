@@ -7,6 +7,7 @@ import { getCurrentProfile } from "@/lib/current-user";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { TeamAssignments } from "@/components/clients/TeamAssignments";
 import { PortalAccessControl } from "@/components/clients/PortalAccessControl";
+import { NorthStarCard } from "@/components/clients/NorthStarCard";
 import { ClientDangerZone } from "@/components/clients/ClientDangerZone";
 import { ClientDetailsForms } from "@/components/clients/ClientDetailsForms";
 import { formatDate, formatRelativeToToday, formatCurrency, formatDateTime, isOverdue, auditVerb } from "@/lib/format";
@@ -33,7 +34,10 @@ export default async function OverviewPage({ params }: { params: Promise<{ id: s
   ]);
 
   return (
-    <div className="grid max-w-5xl grid-cols-1 gap-6 lg:grid-cols-[1.3fr_1fr]">
+    <div className="max-w-5xl space-y-6">
+      <NorthStarCard clientId={id} northStar={client.north_star} />
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.3fr_1fr]">
       <div className="space-y-6">
         <ClientDetailsForms client={client} />
 
@@ -139,6 +143,7 @@ export default async function OverviewPage({ params }: { params: Promise<{ id: s
             <ClientDangerZone clientId={id} clientName={client.name} />
           </section>
         )}
+      </div>
       </div>
     </div>
   );

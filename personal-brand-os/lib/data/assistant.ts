@@ -59,6 +59,7 @@ export async function buildClientContext(supabase: Client, clientId: string): Pr
       "Client",
       fields([
         ["Name", client.name],
+        ["North Star", client.north_star],
         ["Company", client.company],
         ["Role", client.job_title],
         ["Industry", client.industry],

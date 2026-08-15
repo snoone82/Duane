@@ -50,6 +50,35 @@ export async function updatePillarField(clientId: string, pillarId: string, fiel
   });
 }
 
+/** Duane feedback batch 1: reorder pillars — same normalise-and-swap as
+ * moveAudience (see lib/actions/audiences.ts for the reasoning). */
+export async function movePillar(clientId: string, pillarId: string, direction: "up" | "down"): Promise<ActionResult> {
+  return runAction(async () => {
+    const supabase = await createClient();
+    const { data: rows, error } = await supabase
+      .from("brand_pillars")
+      .select("id")
+      .eq("client_id", clientId)
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: true });
+    if (error) throw new Error(error.message);
+
+    const ids = (rows ?? []).map((r) => r.id);
+    const index = ids.indexOf(pillarId);
+    if (index === -1) throw new Error("Pillar not found.");
+    const target = direction === "up" ? index - 1 : index + 1;
+    if (target < 0 || target >= ids.length) return undefined;
+
+    [ids[index], ids[target]] = [ids[target]!, ids[index]!];
+    for (let i = 0; i < ids.length; i++) {
+      const { error: updateError } = await supabase.from("brand_pillars").update({ sort_order: i }).eq("id", ids[i]!);
+      if (updateError) throw new Error(updateError.message);
+    }
+    revalidatePath(`/clients/${clientId}/content`);
+    return undefined;
+  });
+}
+
 export async function deletePillar(clientId: string, pillarId: string): Promise<ActionResult> {
   return runAction(async () => {
     const supabase = await createClient();

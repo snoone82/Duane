@@ -29,8 +29,14 @@ export default async function AudiencesPage({ params }: { params: Promise<{ id: 
         />
       ) : (
         <div className="space-y-2">
-          {audiences.map((audience) => (
-            <AudienceCard key={audience.id} clientId={id} audience={audience} />
+          {audiences.map((audience, index) => (
+            <AudienceCard
+              key={audience.id}
+              clientId={id}
+              audience={audience}
+              isFirst={index === 0}
+              isLast={index === audiences.length - 1}
+            />
           ))}
         </div>
       )}

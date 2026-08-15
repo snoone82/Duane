@@ -4,12 +4,23 @@ import { useState, useTransition } from "react";
 import { AutosaveInput } from "@/components/ui/AutosaveInput";
 import { AutosaveTextarea } from "@/components/ui/AutosaveTextarea";
 import { Button } from "@/components/ui/Button";
-import { updateAudienceField, deleteAudience } from "@/lib/actions/audiences";
+import { ReorderButtons } from "@/components/ui/ReorderButtons";
+import { updateAudienceField, deleteAudience, moveAudience } from "@/lib/actions/audiences";
 import type { Database } from "@/lib/database.types";
 
 type Audience = Database["public"]["Tables"]["audiences"]["Row"];
 
-export function AudienceCard({ clientId, audience }: { clientId: string; audience: Audience }) {
+export function AudienceCard({
+  clientId,
+  audience,
+  isFirst,
+  isLast,
+}: {
+  clientId: string;
+  audience: Audience;
+  isFirst: boolean;
+  isLast: boolean;
+}) {
   const [isDeleting, startDelete] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -29,7 +40,15 @@ export function AudienceCard({ clientId, audience }: { clientId: string; audienc
     <details className="group rounded-lg border border-border bg-surface" open={!audience.description && !audience.pain_points}>
       <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3">
         <span className="text-sm font-medium text-ink">{audience.name}</span>
-        <span className="text-xs text-ink-faint transition-transform duration-150 group-open:rotate-180">▾</span>
+        <span className="flex items-center gap-1">
+          <ReorderButtons
+            isFirst={isFirst}
+            isLast={isLast}
+            label={audience.name}
+            onMove={(direction) => moveAudience(clientId, audience.id, direction)}
+          />
+          <span className="text-xs text-ink-faint transition-transform duration-150 group-open:rotate-180">▾</span>
+        </span>
       </summary>
       <div className="space-y-3 border-t border-border p-4">
         <AutosaveInput id={`aud-name-${audience.id}`} label="Name" initialValue={audience.name} onSave={save("name")} />

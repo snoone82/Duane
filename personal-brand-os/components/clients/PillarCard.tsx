@@ -4,12 +4,25 @@ import { useState, useTransition } from "react";
 import { AutosaveInput } from "@/components/ui/AutosaveInput";
 import { AutosaveTextarea } from "@/components/ui/AutosaveTextarea";
 import { Button } from "@/components/ui/Button";
-import { updatePillarField, deletePillar } from "@/lib/actions/pillars";
+import { ReorderButtons } from "@/components/ui/ReorderButtons";
+import { updatePillarField, deletePillar, movePillar } from "@/lib/actions/pillars";
 import type { Database } from "@/lib/database.types";
 
 type Pillar = Database["public"]["Tables"]["brand_pillars"]["Row"];
 
-export function PillarCard({ clientId, pillar, ideaCount }: { clientId: string; pillar: Pillar; ideaCount: number }) {
+export function PillarCard({
+  clientId,
+  pillar,
+  ideaCount,
+  isFirst,
+  isLast,
+}: {
+  clientId: string;
+  pillar: Pillar;
+  ideaCount: number;
+  isFirst: boolean;
+  isLast: boolean;
+}) {
   const [isDeleting, startDelete] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -37,6 +50,12 @@ export function PillarCard({ clientId, pillar, ideaCount }: { clientId: string; 
           <span className="text-sm font-medium text-ink">{pillar.name}</span>
           <span className="rounded-full bg-surface-muted px-1.5 py-0.5 text-xs text-ink-soft">{ideaCount}</span>
         </div>
+        <ReorderButtons
+          isFirst={isFirst}
+          isLast={isLast}
+          label={pillar.name}
+          onMove={(direction) => movePillar(clientId, pillar.id, direction)}
+        />
       </summary>
       <div className="space-y-3 border-t border-border p-4">
         <AutosaveInput id={`pillar-name-${pillar.id}`} label="Name" initialValue={pillar.name} onSave={save("name")} />

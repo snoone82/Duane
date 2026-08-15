@@ -444,6 +444,7 @@ export type Database = {
           linkedin_url: string | null
           location: string | null
           name: string
+          north_star: string
           notes: string | null
           package: string | null
           phone: string | null
@@ -469,6 +470,7 @@ export type Database = {
           linkedin_url?: string | null
           location?: string | null
           name: string
+          north_star?: string
           notes?: string | null
           package?: string | null
           phone?: string | null
@@ -494,6 +496,7 @@ export type Database = {
           linkedin_url?: string | null
           location?: string | null
           name?: string
+          north_star?: string
           notes?: string | null
           package?: string | null
           phone?: string | null

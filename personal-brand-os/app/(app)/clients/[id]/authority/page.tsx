@@ -4,7 +4,7 @@ import { AuthorityRow } from "@/components/clients/AuthorityRow";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { AUTHORITY_STATUS } from "@/lib/status";
 
-export const metadata = { title: "Authority" };
+export const metadata = { title: "Authority & Opportunities" };
 
 export default async function AuthorityPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

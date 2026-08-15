@@ -29,6 +29,13 @@ export default async function PortalStrategyPage() {
     <div className="space-y-4">
       <p className="text-sm text-ink-soft">The strategy behind your personal brand — kept up to date by the Aligned Media team.</p>
 
+      {client.north_star.trim() && (
+        <section className="rounded-lg border border-accent/40 bg-surface p-4">
+          <p className="text-xs font-medium uppercase tracking-wide text-ink-faint">North Star</p>
+          <p className="mt-1 whitespace-pre-wrap text-base font-medium text-ink">{client.north_star}</p>
+        </section>
+      )}
+
       {!hasAnything && (
         <EmptyState
           title="Your strategy is being built"

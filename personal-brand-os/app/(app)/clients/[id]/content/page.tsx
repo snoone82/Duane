@@ -13,7 +13,7 @@ export default async function ContentPage({ params }: { params: Promise<{ id: st
   const supabase = await createClient();
 
   const [{ data: pillars }, { data: ideas }, { data: audiences }] = await Promise.all([
-    supabase.from("brand_pillars").select("*").eq("client_id", id).order("sort_order", { ascending: true }),
+    supabase.from("brand_pillars").select("*").eq("client_id", id).order("sort_order", { ascending: true }).order("created_at", { ascending: true }),
     supabase.from("content_ideas").select("*").eq("client_id", id).order("created_at", { ascending: false }),
     supabase.from("audiences").select("*").eq("client_id", id).order("sort_order", { ascending: true }),
   ]);
@@ -43,8 +43,15 @@ export default async function ContentPage({ params }: { params: Promise<{ id: st
           <EmptyState title="No pillars yet" description="Pillars group content ideas by theme — add one to get started." />
         ) : (
           <div className="space-y-2">
-            {pillarList.map((pillar) => (
-              <PillarCard key={pillar.id} clientId={id} pillar={pillar} ideaCount={ideaCountByPillar.get(pillar.id) ?? 0} />
+            {pillarList.map((pillar, index) => (
+              <PillarCard
+                key={pillar.id}
+                clientId={id}
+                pillar={pillar}
+                ideaCount={ideaCountByPillar.get(pillar.id) ?? 0}
+                isFirst={index === 0}
+                isLast={index === pillarList.length - 1}
+              />
             ))}
           </div>
         )}
@@ -52,7 +59,7 @@ export default async function ContentPage({ params }: { params: Promise<{ id: st
 
       <section>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-ink">Ideas</h2>
+          <h2 className="text-sm font-semibold text-ink">Content Pipeline</h2>
           <AddContentIdeaButton clientId={id} pillars={pillarList} audiences={audienceList} />
         </div>
         {ideaList.length === 0 ? (

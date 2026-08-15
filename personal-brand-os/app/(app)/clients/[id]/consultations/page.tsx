@@ -6,7 +6,7 @@ import type { Database } from "@/lib/database.types";
 
 type Action = Database["public"]["Tables"]["actions"]["Row"];
 
-export const metadata = { title: "Consultations" };
+export const metadata = { title: "Meetings & Consultations" };
 
 export default async function ConsultationsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
