@@ -80,6 +80,20 @@ export async function getClientActivity(supabase: Client, clientId: string, limi
  * read every profile, since names/roles are used for pickers/labels
  * throughout the app). */
 export async function getAllTeamMembers(supabase: Client): Promise<TeamMemberOption[]> {
-  const { data } = await supabase.from("profiles").select("id,full_name,email,role").order("full_name", { ascending: true });
+  const { data } = await supabase
+    .from("profiles")
+    .select("id,full_name,email,role")
+    .in("role", ["admin", "member", "contractor"])
+    .order("full_name", { ascending: true });
+  return (data ?? []).map((p) => ({ id: p.id, name: p.full_name || p.email, role: p.role }));
+}
+
+/** Accounts with the client role — the candidates for portal linking. */
+export async function getClientRoleProfiles(supabase: Client): Promise<TeamMemberOption[]> {
+  const { data } = await supabase
+    .from("profiles")
+    .select("id,full_name,email,role")
+    .eq("role", "client")
+    .order("full_name", { ascending: true });
   return (data ?? []).map((p) => ({ id: p.id, name: p.full_name || p.email, role: p.role }));
 }

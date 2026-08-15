@@ -1,10 +1,3 @@
-/**
- * Generated for real via generate_typescript_types against the live project
- * (lqqwaybkjuqfpmodsmbf) — this is no longer hand-written. Regenerate after
- * any schema change:
- *
- *   npx supabase gen types typescript --project-id lqqwaybkjuqfpmodsmbf > lib/database.types.ts
- */
 export type Json =
   | string
   | number
@@ -77,6 +70,13 @@ export type Database = {
             columns: ["consultation_id"]
             isOneToOne: false
             referencedRelation: "consultations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "actions_consultation_id_fkey"
+            columns: ["consultation_id"]
+            isOneToOne: false
+            referencedRelation: "portal_meeting_summaries"
             referencedColumns: ["id"]
           },
           {
@@ -448,6 +448,7 @@ export type Database = {
           package: string | null
           phone: string | null
           photo_url: string | null
+          portal_user_id: string | null
           retainer_amount: number | null
           status: Database["public"]["Enums"]["client_status"]
           tiktok_url: string | null
@@ -472,6 +473,7 @@ export type Database = {
           package?: string | null
           phone?: string | null
           photo_url?: string | null
+          portal_user_id?: string | null
           retainer_amount?: number | null
           status?: Database["public"]["Enums"]["client_status"]
           tiktok_url?: string | null
@@ -496,6 +498,7 @@ export type Database = {
           package?: string | null
           phone?: string | null
           photo_url?: string | null
+          portal_user_id?: string | null
           retainer_amount?: number | null
           status?: Database["public"]["Enums"]["client_status"]
           tiktok_url?: string | null
@@ -508,6 +511,13 @@ export type Database = {
           {
             foreignKeyName: "clients_created_by_fkey"
             columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "clients_portal_user_id_fkey"
+            columns: ["portal_user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
@@ -993,6 +1003,62 @@ export type Database = {
         }
         Relationships: []
       }
+      sales_strategy: {
+        Row: {
+          calls_to_action: string
+          client_id: string
+          enquiry_process: string
+          ideal_clients: string
+          lead_generation_approach: string
+          lead_magnets: string
+          offers: string
+          referral_opportunities: string
+          sales_conversations: string
+          sales_messaging: string
+          services_products: string
+          target_customers: string
+          updated_at: string
+        }
+        Insert: {
+          calls_to_action?: string
+          client_id: string
+          enquiry_process?: string
+          ideal_clients?: string
+          lead_generation_approach?: string
+          lead_magnets?: string
+          offers?: string
+          referral_opportunities?: string
+          sales_conversations?: string
+          sales_messaging?: string
+          services_products?: string
+          target_customers?: string
+          updated_at?: string
+        }
+        Update: {
+          calls_to_action?: string
+          client_id?: string
+          enquiry_process?: string
+          ideal_clients?: string
+          lead_generation_approach?: string
+          lead_magnets?: string
+          offers?: string
+          referral_opportunities?: string
+          sales_conversations?: string
+          sales_messaging?: string
+          services_products?: string
+          target_customers?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sales_strategy_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: true
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       scorecard_entries: {
         Row: {
           category: string
@@ -1031,6 +1097,62 @@ export type Database = {
           },
         ]
       }
+      social_strategies: {
+        Row: {
+          audience: string
+          client_id: string
+          content_types: string
+          created_at: string
+          cta_strategy: string
+          engagement_strategy: string
+          growth_strategy: string
+          id: string
+          objective: string
+          platform: string
+          posting_frequency: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          audience?: string
+          client_id: string
+          content_types?: string
+          created_at?: string
+          cta_strategy?: string
+          engagement_strategy?: string
+          growth_strategy?: string
+          id?: string
+          objective?: string
+          platform: string
+          posting_frequency?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          audience?: string
+          client_id?: string
+          content_types?: string
+          created_at?: string
+          cta_strategy?: string
+          engagement_strategy?: string
+          growth_strategy?: string
+          id?: string
+          objective?: string
+          platform?: string
+          posting_frequency?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "social_strategies_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       global_search: {
@@ -1044,6 +1166,44 @@ export type Database = {
         }
         Relationships: []
       }
+      portal_meeting_summaries: {
+        Row: {
+          client_id: string | null
+          id: string | null
+          meeting_date: string | null
+          meeting_type: string | null
+          next_meeting_date: string | null
+          summary: string | null
+          wins: string | null
+        }
+        Insert: {
+          client_id?: string | null
+          id?: string | null
+          meeting_date?: string | null
+          meeting_type?: string | null
+          next_meeting_date?: string | null
+          summary?: string | null
+          wins?: string | null
+        }
+        Update: {
+          client_id?: string | null
+          id?: string | null
+          meeting_date?: string | null
+          meeting_type?: string | null
+          next_meeting_date?: string | null
+          summary?: string | null
+          wins?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "consultations_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       has_client_access: {
@@ -1055,6 +1215,10 @@ export type Database = {
         Returns: boolean
       }
       is_admin: { Args: never; Returns: boolean }
+      is_portal_client_of: {
+        Args: { target_client_id: string }
+        Returns: boolean
+      }
     }
     Enums: {
       action_status: "not_started" | "in_progress" | "completed" | "waiting"
@@ -1094,7 +1258,7 @@ export type Database = {
         | "press_kit"
         | "bio"
         | "testimonial"
-      profile_role: "admin" | "member" | "contractor"
+      profile_role: "admin" | "member" | "contractor" | "client"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1262,7 +1426,7 @@ export const Constants = {
         "bio",
         "testimonial",
       ],
-      profile_role: ["admin", "member", "contractor"],
+      profile_role: ["admin", "member", "contractor", "client"],
     },
   },
 } as const

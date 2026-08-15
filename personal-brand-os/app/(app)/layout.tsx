@@ -16,6 +16,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   const profile = await getCurrentProfile();
 
+  // Portal clients never see the internal workspace — they get their own
+  // read-only surface at /portal (which sends team roles back here).
+  if (profile?.role === "client") redirect("/portal");
+
   if (!profile) {
     return (
       <div className="flex min-h-dvh items-center justify-center px-4">

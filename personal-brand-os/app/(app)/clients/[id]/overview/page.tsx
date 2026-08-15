@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { getClientById, getAssignedMembers, getAllTeamMembers, getClientActivity } from "@/lib/data/client";
+import { getClientById, getAssignedMembers, getAllTeamMembers, getClientActivity, getClientRoleProfiles } from "@/lib/data/client";
 import { getOverviewSummary } from "@/lib/data/overview";
 import { getCurrentProfile } from "@/lib/current-user";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { TeamAssignments } from "@/components/clients/TeamAssignments";
+import { PortalAccessControl } from "@/components/clients/PortalAccessControl";
 import { ClientDangerZone } from "@/components/clients/ClientDangerZone";
 import { ClientDetailsForms } from "@/components/clients/ClientDetailsForms";
 import { formatDate, formatRelativeToToday, formatCurrency, formatDateTime, isOverdue, auditVerb } from "@/lib/format";
@@ -23,11 +24,12 @@ export default async function OverviewPage({ params }: { params: Promise<{ id: s
   const currentProfile = await getCurrentProfile();
   const isAdmin = currentProfile?.role === "admin";
 
-  const [{ openActions, lastConsultation, nextMeeting }, assignedMembers, allMembers, activity] = await Promise.all([
+  const [{ openActions, lastConsultation, nextMeeting }, assignedMembers, allMembers, activity, clientAccounts] = await Promise.all([
     getOverviewSummary(supabase, id),
     getAssignedMembers(supabase, id),
     getAllTeamMembers(supabase),
     isAdmin ? getClientActivity(supabase, id) : Promise.resolve([]),
+    isAdmin ? getClientRoleProfiles(supabase) : Promise.resolve([]),
   ]);
 
   return (
@@ -101,6 +103,17 @@ export default async function OverviewPage({ params }: { params: Promise<{ id: s
             isAdmin={isAdmin}
           />
         </section>
+
+        {isAdmin && (
+          <section className="rounded-lg border border-border bg-surface p-4">
+            <h2 className="mb-3 text-sm font-semibold text-ink">Client portal</h2>
+            <PortalAccessControl
+              clientId={id}
+              linkedUserId={client.portal_user_id}
+              clientAccounts={clientAccounts}
+            />
+          </section>
+        )}
 
         {isAdmin && (
           <section className="rounded-lg border border-border bg-surface p-4">

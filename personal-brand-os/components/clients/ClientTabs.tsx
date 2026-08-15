@@ -8,13 +8,16 @@ const TABS = [
   { slug: "vision", label: "Vision" },
   { slug: "positioning", label: "Positioning" },
   { slug: "audiences", label: "Audiences" },
+  { slug: "social", label: "Social" },
   { slug: "content", label: "Content" },
+  { slug: "sales", label: "Sales" },
   { slug: "authority", label: "Authority" },
   { slug: "consultations", label: "Consultations" },
   { slug: "actions", label: "Actions" },
   { slug: "metrics", label: "Metrics" },
   { slug: "timeline", label: "Timeline" },
   { slug: "files", label: "Files" },
+  { slug: "assistant", label: "Assistant" },
 ];
 
 export function ClientTabs({ clientId }: { clientId: string }) {
