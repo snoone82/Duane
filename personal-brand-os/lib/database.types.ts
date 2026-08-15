@@ -1100,6 +1100,66 @@ export type Database = {
           },
         ]
       }
+      strategy_signoffs: {
+        Row: {
+          approved_at: string | null
+          approved_by_name: string
+          client_comments: string
+          client_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          snapshot: Json
+          status: string
+          title: string
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          approved_at?: string | null
+          approved_by_name?: string
+          client_comments?: string
+          client_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          snapshot: Json
+          status?: string
+          title?: string
+          updated_at?: string
+          version: number
+        }
+        Update: {
+          approved_at?: string | null
+          approved_by_name?: string
+          client_comments?: string
+          client_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          snapshot?: Json
+          status?: string
+          title?: string
+          updated_at?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "strategy_signoffs_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "strategy_signoffs_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       social_strategies: {
         Row: {
           audience: string
