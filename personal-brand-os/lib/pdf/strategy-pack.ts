@@ -12,7 +12,11 @@ export interface StrategyPackMeta {
 }
 
 /** The Strategy Sign-off Pack — "what we've agreed and where we're going." */
-export async function buildStrategyPackPdf(snapshot: StrategySnapshot, meta: StrategyPackMeta): Promise<Uint8Array> {
+export async function buildStrategyPackPdf(
+  snapshot: StrategySnapshot,
+  meta: StrategyPackMeta,
+  photo?: { bytes: Uint8Array; kind: "png" | "jpg" } | null
+): Promise<Uint8Array> {
   const pdf = await PdfBuilder.create();
 
   const statusLine =
@@ -24,14 +28,16 @@ export async function buildStrategyPackPdf(snapshot: StrategySnapshot, meta: Str
           ? "Awaiting client approval"
           : "Draft — not yet shared";
 
-  pdf.header(
+  await pdf.header(
     "Personal Brand Strategy",
     snapshot.clientName,
-    `Version ${meta.version} · Prepared ${formatDate(meta.createdAt.slice(0, 10))} · ${statusLine}`
+    `Version ${meta.version} · Prepared ${formatDate(meta.createdAt.slice(0, 10))} · ${statusLine}`,
+    photo
   );
 
   if (snapshot.northStar) {
     pdf.heading("North Star");
+    pdf.divider();
     pdf.para(snapshot.northStar);
   }
 
@@ -47,16 +53,19 @@ export async function buildStrategyPackPdf(snapshot: StrategySnapshot, meta: Str
 
   if (snapshot.authorityPosition) {
     pdf.heading("Authority Position");
+    pdf.divider();
     pdf.para(snapshot.authorityPosition);
   }
 
   if (snapshot.audiences.length > 0) {
     pdf.heading("Audiences");
+    pdf.divider();
     for (const audience of snapshot.audiences) pdf.subitem(audience.name, audience.description);
   }
 
   if (snapshot.pillars.length > 0) {
     pdf.heading("Content Pillars");
+    pdf.divider();
     for (const pillar of snapshot.pillars) {
       pdf.subitem(pillar.name, pillar.description);
       if (pillar.keyMessages) pdf.field("Key messages", pillar.keyMessages);
@@ -65,6 +74,7 @@ export async function buildStrategyPackPdf(snapshot: StrategySnapshot, meta: Str
 
   if (snapshot.coreMessages) {
     pdf.heading("Core Messages");
+    pdf.divider();
     pdf.para(snapshot.coreMessages);
   }
 
@@ -75,6 +85,7 @@ export async function buildStrategyPackPdf(snapshot: StrategySnapshot, meta: Str
 
   if (snapshot.platforms.length > 0) {
     pdf.heading("Platforms & Direction");
+    pdf.divider();
     for (const platform of snapshot.platforms) {
       pdf.subitem(
         platform.platform,
@@ -87,6 +98,7 @@ export async function buildStrategyPackPdf(snapshot: StrategySnapshot, meta: Str
 
   if (snapshot.priorities.length > 0) {
     pdf.heading("Initial Priorities");
+    pdf.divider();
     for (const priority of snapshot.priorities) {
       pdf.bullet(priority.dueDate ? `${priority.title} — by ${formatDate(priority.dueDate)}` : priority.title);
     }
@@ -94,6 +106,7 @@ export async function buildStrategyPackPdf(snapshot: StrategySnapshot, meta: Str
 
   if (meta.clientComments.trim()) {
     pdf.heading("Client Comments");
+    pdf.divider();
     pdf.para(meta.clientComments);
   }
 

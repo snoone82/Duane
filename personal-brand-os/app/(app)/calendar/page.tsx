@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCalendarItems, CALENDAR_TYPE_META, type CalendarItem } from "@/lib/data/calendar";
 import { CalendarFilters } from "@/components/calendar/CalendarFilters";
 import { DraggableOutputChip, DroppableDay, type TrayOutput } from "@/components/calendar/CalendarDnD";
+import { getAllTeamMembers } from "@/lib/data/client";
 import type { TagColor } from "@/lib/status";
 
 export const metadata = { title: "Calendar" };
@@ -52,10 +53,14 @@ function ItemChip({ item }: { item: CalendarItem }) {
 export default async function CalendarPage({
   searchParams,
 }: {
-  searchParams: Promise<{ month?: string; client?: string; view?: string }>;
+  searchParams: Promise<{ month?: string; client?: string; view?: string; types?: string; owner?: string; overdue?: string }>;
 }) {
-  const { month: monthRaw, client: clientFilter, view: viewRaw } = await searchParams;
+  const { month: monthRaw, client: clientFilter, view: viewRaw, types: typesRaw, owner: ownerFilter, overdue: overdueRaw } = await searchParams;
   const view: "month" | "list" = viewRaw === "list" ? "list" : "month";
+  const activeTypes = (typesRaw ?? "")
+    .split(",")
+    .filter((t): t is CalendarItem["type"] => t in CALENDAR_TYPE_META);
+  const overdueOnly = overdueRaw === "1";
   const now = new Date();
   const match = monthRaw?.match(/^(\d{4})-(\d{2})$/);
   const year = match ? Number(match[1]) : now.getFullYear();
@@ -74,11 +79,21 @@ export default async function CalendarPage({
     .in("content.status", ["ready_to_schedule", "scheduled"]);
   if (clientFilter) trayQuery = trayQuery.eq("client_id", clientFilter);
 
-  const [items, { data: clientRows }, { data: trayRows }] = await Promise.all([
+  const [allItems, { data: clientRows }, { data: trayRows }, team] = await Promise.all([
     getCalendarItems(supabase, from, to, clientFilter || undefined),
     supabase.from("clients").select("id,name").order("name"),
     trayQuery,
+    getAllTeamMembers(supabase),
   ]);
+
+  // Duane's accountability filters: item-type toggles, overdue-only, and
+  // owner (applies to items that carry an owner — actions).
+  const items = allItems.filter((item) => {
+    if (activeTypes.length > 0 && !activeTypes.includes(item.type)) return false;
+    if (overdueOnly && !item.overdue) return false;
+    if (ownerFilter && item.type === "action" && item.ownerUserId !== ownerFilter) return false;
+    return true;
+  });
   const clientNames = new Map((clientRows ?? []).map((c) => [c.id, c.name]));
   const tray: TrayOutput[] = (trayRows ?? []).map((o) => ({
     outputId: o.id,
@@ -102,8 +117,15 @@ export default async function CalendarPage({
   ];
   while (cells.length % 7 !== 0) cells.push(null);
 
-  const keepParams = (m: string) =>
-    `/calendar?month=${m}${clientFilter ? `&client=${clientFilter}` : ""}${view === "list" ? "&view=list" : ""}`;
+  const keepParams = (m: string) => {
+    const qs = new URLSearchParams({ month: m });
+    if (clientFilter) qs.set("client", clientFilter);
+    if (view === "list") qs.set("view", "list");
+    if (typesRaw) qs.set("types", typesRaw);
+    if (ownerFilter) qs.set("owner", ownerFilter);
+    if (overdueOnly) qs.set("overdue", "1");
+    return `/calendar?${qs.toString()}`;
+  };
   const prev = month === 1 ? monthParam(year - 1, 12) : monthParam(year, month - 1);
   const next = month === 12 ? monthParam(year + 1, 1) : monthParam(year, month + 1);
 
@@ -123,7 +145,11 @@ export default async function CalendarPage({
         <div className="flex flex-wrap items-center gap-2">
           <CalendarFilters
             clients={clientRows ?? []}
+            team={team.map((m) => ({ id: m.id, name: m.name }))}
             activeClient={clientFilter ?? ""}
+            activeOwner={ownerFilter ?? ""}
+            activeTypes={activeTypes}
+            overdueOnly={overdueOnly}
             view={view}
           />
           <div className="flex items-center gap-1">
@@ -138,19 +164,6 @@ export default async function CalendarPage({
             </Link>
           </div>
         </div>
-      </div>
-
-      <div className="mb-3 flex flex-wrap gap-3">
-        {Object.entries(CALENDAR_TYPE_META).map(([key, meta]) => (
-          <span key={key} className="inline-flex items-center gap-1.5 text-xs text-ink-soft">
-            <span className={`h-2.5 w-2.5 rounded-full ${chipClass[meta.color]}`} aria-hidden />
-            {meta.label}
-          </span>
-        ))}
-        <span className="inline-flex items-center gap-1.5 text-xs text-ink-soft">
-          <span className="h-2.5 w-2.5 rounded-full ring-1 ring-danger" aria-hidden />
-          Overdue / missed
-        </span>
       </div>
 
       {view === "month" && tray.length > 0 && (

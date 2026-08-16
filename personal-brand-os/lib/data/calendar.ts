@@ -22,9 +22,10 @@ export interface CalendarItem {
   clientId: string;
   clientName: string;
   tab: string;
-  /** Scheduled in the past but never marked published — Duane's "overdue or
-   * missed" distinction. */
+  /** Scheduled/due in the past but not done — Duane's "overdue or missed". */
   overdue?: boolean;
+  /** Team-member owner, where the underlying record has one (actions). */
+  ownerUserId?: string | null;
 }
 
 export const CALENDAR_TYPE_META: Record<CalendarItemType, { label: string; color: TagColor }> = {
@@ -85,7 +86,7 @@ export async function getCalendarItems(
     maybeFilter(
       supabase
         .from("actions")
-        .select("id,client_id,title,due_date,status")
+        .select("id,client_id,title,due_date,status,owner_user_id")
         .neq("status", "completed")
         .not("due_date", "is", null)
         .gte("due_date", from)
@@ -141,8 +142,19 @@ export async function getCalendarItems(
   for (const c of nextMeetings ?? []) {
     items.push({ date: c.next_meeting_date as string, time: null, type: "meeting", label: `Meeting · ${name(c.client_id)}`, clientId: c.client_id, clientName: name(c.client_id), tab: "consultations" });
   }
+  const today = now.slice(0, 10);
   for (const a of actions ?? []) {
-    items.push({ date: a.due_date as string, time: null, type: "action", label: a.title, clientId: a.client_id, clientName: name(a.client_id), tab: "actions" });
+    items.push({
+      date: a.due_date as string,
+      time: null,
+      type: "action",
+      label: a.title,
+      clientId: a.client_id,
+      clientName: name(a.client_id),
+      tab: "actions",
+      overdue: (a.due_date as string) < today,
+      ownerUserId: a.owner_user_id,
+    });
   }
   for (const i of content ?? []) {
     items.push({ date: i.due_date as string, time: null, type: "content", label: i.title, clientId: i.client_id, clientName: name(i.client_id), tab: "content" });

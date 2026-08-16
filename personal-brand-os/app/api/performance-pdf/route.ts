@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { buildPerformanceData } from "@/lib/data/performance";
 import { buildPerformanceReportPdf } from "@/lib/pdf/performance-report";
+import { fetchClientPhoto } from "@/lib/pdf/client-photo";
 
 export const maxDuration = 60;
 
@@ -29,7 +30,8 @@ export async function GET(request: Request) {
   const data = await buildPerformanceData(supabase, clientId, from, to, label);
   if (!data) return Response.json({ error: "Client not found." }, { status: 404 });
 
-  const bytes = await buildPerformanceReportPdf(data);
+  const photo = await fetchClientPhoto(supabase, clientId);
+  const bytes = await buildPerformanceReportPdf(data, photo);
   const filename = `Performance-Report-${safeFilename(label)}-${safeFilename(data.clientName)}.pdf`;
   return new Response(Buffer.from(bytes), {
     headers: {

@@ -13,8 +13,11 @@ const NAV_ITEMS = [
   { href: "/search", label: "Search" },
 ];
 
+const ADMIN_NAV_ITEMS = [{ href: "/team", label: "Team & access" }];
+
 export function Sidebar({ name, role }: { name: string; role: string }) {
   const pathname = usePathname();
+  const navItems = role === "admin" ? [...NAV_ITEMS, ...ADMIN_NAV_ITEMS] : NAV_ITEMS;
 
   return (
     <aside className="flex h-dvh w-[--sidebar-width] flex-shrink-0 flex-col border-r border-border bg-surface">
@@ -25,7 +28,7 @@ export function Sidebar({ name, role }: { name: string; role: string }) {
       </div>
 
       <nav aria-label="Primary" className="flex-1 space-y-0.5 p-2">
-        {NAV_ITEMS.map((item) => {
+        {navItems.map((item) => {
           const isActive = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
           return (
             <Link

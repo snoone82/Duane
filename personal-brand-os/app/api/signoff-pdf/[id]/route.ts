@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { isStrategySnapshot } from "@/lib/signoff-snapshot";
 import { buildStrategyPackPdf } from "@/lib/pdf/strategy-pack";
+import { fetchClientPhoto } from "@/lib/pdf/client-photo";
 
 export const maxDuration = 60;
 
@@ -22,14 +23,19 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   if (!pack) return Response.json({ error: "Pack not found." }, { status: 404 });
   if (!isStrategySnapshot(pack.snapshot)) return Response.json({ error: "This pack's snapshot is unreadable." }, { status: 500 });
 
-  const bytes = await buildStrategyPackPdf(pack.snapshot, {
-    version: pack.version,
-    status: pack.status,
-    approvedByName: pack.approved_by_name,
-    approvedAt: pack.approved_at,
-    clientComments: pack.client_comments,
-    createdAt: pack.created_at,
-  });
+  const photo = await fetchClientPhoto(supabase, pack.client_id);
+  const bytes = await buildStrategyPackPdf(
+    pack.snapshot,
+    {
+      version: pack.version,
+      status: pack.status,
+      approvedByName: pack.approved_by_name,
+      approvedAt: pack.approved_at,
+      clientComments: pack.client_comments,
+      createdAt: pack.created_at,
+    },
+    photo
+  );
 
   const filename = `Strategy-Signoff-v${pack.version}-${safeFilename(pack.snapshot.clientName)}.pdf`;
   return new Response(Buffer.from(bytes), {

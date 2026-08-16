@@ -90,8 +90,9 @@ export class PdfBuilder {
     }
   }
 
-  /** Page-one masthead: logo, document title, client, meta line. */
-  header(title: string, subtitle: string, metaLine: string) {
+  /** Page-one masthead: logo, document title, client, meta line — and the
+   * client's profile photo top-right when one is on file. */
+  async header(title: string, subtitle: string, metaLine: string, photo?: { bytes: Uint8Array; kind: "png" | "jpg" } | null) {
     const logoHeight = 34;
     const logoWidth = (this.logo.width / this.logo.height) * logoHeight;
     this.page.drawImage(this.logo, {
@@ -100,13 +101,50 @@ export class PdfBuilder {
       width: logoWidth,
       height: logoHeight,
     });
-    this.cursor = MARGIN + logoHeight + 26;
 
+    if (photo) {
+      try {
+        const image = photo.kind === "png" ? await this.doc.embedPng(photo.bytes) : await this.doc.embedJpg(photo.bytes);
+        // Fit inside a 64pt box, right-aligned with the masthead.
+        const box = 64;
+        const scale = Math.min(box / image.width, box / image.height);
+        const w = image.width * scale;
+        const h = image.height * scale;
+        const x = PAGE_WIDTH - MARGIN - w;
+        const y = PAGE_HEIGHT - MARGIN - h;
+        this.page.drawImage(image, { x, y, width: w, height: h });
+        this.page.drawRectangle({
+          x,
+          y,
+          width: w,
+          height: h,
+          borderColor: LINE,
+          borderWidth: 0.75,
+        });
+      } catch {
+        // Un-embeddable image (e.g. webp) — the header simply goes without.
+      }
+    }
+
+    this.cursor = MARGIN + logoHeight + 26;
     this.drawLines(this.wrap(title, this.bold, 22), this.bold, 22, NAVY, 27);
     this.drawLines(this.wrap(subtitle, this.font, 13), this.font, 13, TEAL, 18);
     this.cursor += 2;
     this.drawLines(this.wrap(metaLine, this.font, 9), this.font, 9, FAINT, 13);
     this.rule();
+  }
+
+  /** Thin divider between a heading/subheading and its body copy. */
+  divider() {
+    this.ensure(10);
+    this.cursor += 2;
+    this.page.drawLine({
+      start: { x: MARGIN, y: PAGE_HEIGHT - this.cursor },
+      end: { x: PAGE_WIDTH - MARGIN, y: PAGE_HEIGHT - this.cursor },
+      thickness: 0.5,
+      color: LINE,
+    });
+    this.cursor += 8;
   }
 
   rule() {
@@ -128,12 +166,17 @@ export class PdfBuilder {
     this.cursor += 1;
   }
 
+  /** Subheading + body. Duane's formatting spec: the subheading carries the
+   * same size and weight as a section heading, in black, with a dividing
+   * line between it and the body copy. */
   field(label: string, value: string) {
     if (!value.trim()) return;
-    this.ensure(26);
-    this.drawLines(this.wrap(label.toUpperCase(), this.bold, 7.5), this.bold, 7.5, FAINT, 11);
+    this.ensure(48); // keep label + divider + first body line together
+    this.cursor += 4;
+    this.drawLines(this.wrap(label.toUpperCase(), this.bold, 10.5), this.bold, 10.5, INK, 15);
+    this.divider();
     this.drawLines(this.wrap(value, this.font, 10), this.font, 10, INK, 14);
-    this.cursor += 6;
+    this.cursor += 8;
   }
 
   para(text: string) {

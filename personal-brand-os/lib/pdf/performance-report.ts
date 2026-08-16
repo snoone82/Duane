@@ -6,17 +6,22 @@ import type { ContentStatus, AuthorityStatus } from "@/lib/enums";
 
 /** The Performance / Progress Report — "what we've done, what happened,
  * what happens next." */
-export async function buildPerformanceReportPdf(data: PerformanceData): Promise<Uint8Array> {
+export async function buildPerformanceReportPdf(
+  data: PerformanceData,
+  photo?: { bytes: Uint8Array; kind: "png" | "jpg" } | null
+): Promise<Uint8Array> {
   const pdf = await PdfBuilder.create();
 
-  pdf.header(
+  await pdf.header(
     "Personal Brand Performance Report",
     data.clientName,
-    `${data.periodLabel} · ${formatDate(data.from)} – ${formatDate(data.to)}`
+    `${data.periodLabel} · ${formatDate(data.from)} – ${formatDate(data.to)}`,
+    photo
   );
 
   if (data.platforms.length > 0) {
     pdf.heading("Headline Audience Metrics");
+  pdf.divider();
     pdf.stats(
       data.platforms.map((p) => ({
         value: `${p.change >= 0 ? "+" : ""}${formatNumber(p.change)}`,
@@ -26,6 +31,7 @@ export async function buildPerformanceReportPdf(data: PerformanceData): Promise<
   }
 
   pdf.heading("Content Performance");
+  pdf.divider();
   if (data.content.length === 0) {
     pdf.para("No content reached Published in this period.");
   } else {
@@ -56,6 +62,7 @@ export async function buildPerformanceReportPdf(data: PerformanceData): Promise<
 
   if (data.authority.length > 0) {
     pdf.heading("Authority Wins");
+  pdf.divider();
     for (const item of data.authority) {
       pdf.bullet(
         [item.type, item.host && `with ${item.host}`, `— ${authorityStatusMeta(item.status as AuthorityStatus).label}`]
@@ -67,6 +74,7 @@ export async function buildPerformanceReportPdf(data: PerformanceData): Promise<
 
   if (data.commercial.length > 0 || data.funnel.length > 0) {
     pdf.heading("Commercial Outcomes");
+  pdf.divider();
     if (data.funnel.length > 0) {
       pdf.stats(data.funnel.map((f) => ({ value: formatNumber(f.value), caption: f.label.toLowerCase() })));
     }
@@ -85,6 +93,7 @@ export async function buildPerformanceReportPdf(data: PerformanceData): Promise<
 
   if (data.milestones.length > 0) {
     pdf.heading("Milestones");
+  pdf.divider();
     for (const milestone of data.milestones) {
       pdf.subitem(`${milestone.title} — ${formatDate(milestone.date)}`, milestone.description);
     }
@@ -92,6 +101,7 @@ export async function buildPerformanceReportPdf(data: PerformanceData): Promise<
 
   if (data.nextActions.length > 0) {
     pdf.heading("What Happens Next");
+  pdf.divider();
     for (const action of data.nextActions) {
       pdf.bullet(action.dueDate ? `${action.title} — by ${formatDate(action.dueDate)}` : action.title);
     }
