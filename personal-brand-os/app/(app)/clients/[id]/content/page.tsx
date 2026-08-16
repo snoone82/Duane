@@ -13,12 +13,19 @@ export default async function ContentPage({ params }: { params: Promise<{ id: st
   const { id } = await params;
   const supabase = await createClient();
 
-  const [{ data: pillars }, { data: ideas }, { data: audiences }, { data: outputs }, team] = await Promise.all([
+  const [{ data: pillars }, { data: ideas }, { data: audiences }, { data: outputs }, team, { data: auditRows }] = await Promise.all([
     supabase.from("brand_pillars").select("*").eq("client_id", id).order("sort_order", { ascending: true }).order("created_at", { ascending: true }),
     supabase.from("content_ideas").select("*").eq("client_id", id).order("created_at", { ascending: false }),
     supabase.from("audiences").select("*").eq("client_id", id).order("sort_order", { ascending: true }),
     supabase.from("content_outputs").select("*").eq("client_id", id).order("sort_order", { ascending: true }).order("created_at", { ascending: true }),
     getAllTeamMembers(supabase),
+    supabase
+      .from("audit_log")
+      .select("record_id,changed_at,changed_by,summary")
+      .eq("client_id", id)
+      .in("table_name", ["content_ideas", "content_outputs"])
+      .order("changed_at", { ascending: false })
+      .limit(300),
   ]);
 
   const pillarList = pillars ?? [];
@@ -38,6 +45,27 @@ export default async function ContentPage({ params }: { params: Promise<{ id: st
   }
 
   const teamOptions = team.map((m) => ({ id: m.id, name: m.name }));
+  const teamNames = new Map(team.map((m) => [m.id, m.name]));
+
+  // Per-record history from the audit log (RLS: team-visible for content
+  // tables only). An idea's history includes its platform versions'.
+  const historyByRecord = new Map<string, { at: string; by: string; summary: string }[]>();
+  for (const row of auditRows ?? []) {
+    const list = historyByRecord.get(row.record_id) ?? [];
+    list.push({
+      at: row.changed_at,
+      by: row.changed_by ? teamNames.get(row.changed_by) ?? "Someone" : "System / client",
+      summary: row.summary,
+    });
+    historyByRecord.set(row.record_id, list);
+  }
+  const historyForIdea = (ideaId: string) => {
+    const ids = [ideaId, ...(outputsByContent.get(ideaId) ?? []).map((o) => o.id)];
+    return ids
+      .flatMap((recordId) => historyByRecord.get(recordId) ?? [])
+      .sort((a, b) => b.at.localeCompare(a.at))
+      .slice(0, 25);
+  };
 
   // Duane's §3: approved content must never disappear between production and
   // the Calendar — the queue is everything approved with an unscheduled
@@ -64,6 +92,7 @@ export default async function ContentPage({ params }: { params: Promise<{ id: st
       audiences={audienceList}
       pillarName={idea.pillar_id ? pillarNames.get(idea.pillar_id) ?? null : null}
       team={teamOptions}
+      history={historyForIdea(idea.id)}
       defaultOpen={defaultOpen}
     />
   );

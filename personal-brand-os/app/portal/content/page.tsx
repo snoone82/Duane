@@ -3,6 +3,7 @@ import { getPortalClient } from "@/lib/data/portal";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PortalContentApproval } from "@/components/portal/PortalContentApproval";
+import { MediaPreview } from "@/components/clients/OutputMediaSlot";
 import { contentStatusMeta, outputStatusMeta, type OutputStatus } from "@/lib/status";
 import { formatDate, formatDateTime } from "@/lib/format";
 
@@ -73,6 +74,11 @@ export default async function PortalContentPage() {
                           <p className="mt-1 text-xs text-ink-faint">Final copy to follow.</p>
                         )}
                         {output.cta && <p className="mt-1 text-xs text-ink-faint">CTA: {output.cta}</p>}
+                        {output.media_url && (
+                          <div className="mt-2">
+                            <MediaPreview url={output.media_url} />
+                          </div>
+                        )}
                       </div>
                     ))}
                     <PortalContentApproval ideaId={idea.id} />

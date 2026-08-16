@@ -19,7 +19,7 @@ import {
   addContentOutput,
 } from "@/lib/actions/content";
 import { CONTENT_STATUS, CONTENT_PRIORITY } from "@/lib/status";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatDateTime } from "@/lib/format";
 import { ContentOutputRow } from "@/components/clients/ContentOutputRow";
 import type { Database } from "@/lib/database.types";
 
@@ -28,6 +28,7 @@ type Output = Database["public"]["Tables"]["content_outputs"]["Row"];
 type Pillar = Database["public"]["Tables"]["brand_pillars"]["Row"];
 type Audience = Database["public"]["Tables"]["audiences"]["Row"];
 export type TeamMember = { id: string; name: string };
+export type HistoryEntry = { at: string; by: string; summary: string };
 
 const SUGGESTED_PLATFORMS = ["LinkedIn", "Instagram", "YouTube", "TikTok"];
 
@@ -39,6 +40,7 @@ export function ContentIdeaRow({
   pillarName,
   audiences,
   team,
+  history = [],
   defaultOpen = false,
 }: {
   clientId: string;
@@ -48,6 +50,7 @@ export function ContentIdeaRow({
   pillarName: string | null;
   audiences: Audience[];
   team: TeamMember[];
+  history?: HistoryEntry[];
   defaultOpen?: boolean;
 }) {
   const [isDeleting, startDelete] = useTransition();
@@ -226,6 +229,21 @@ export function ContentIdeaRow({
             </div>
           )}
         </div>
+
+        {history.length > 0 && (
+          <details className="rounded-md border border-border bg-surface-muted/30">
+            <summary className="cursor-pointer list-none px-3 py-2 text-xs font-medium text-ink-soft hover:text-ink">
+              History · {history.length} ▾
+            </summary>
+            <ul className="space-y-1 border-t border-border px-3 py-2">
+              {history.map((entry, i) => (
+                <li key={i} className="text-xs text-ink-faint">
+                  <span className="text-ink-soft">{formatDateTime(entry.at)}</span> · {entry.by} — {entry.summary}
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
 
         {error && <p className="text-xs text-danger">{error}</p>}
         <div className="flex justify-end">

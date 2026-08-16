@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getCalendarItems, CALENDAR_TYPE_META, type CalendarItem } from "@/lib/data/calendar";
 import { CalendarFilters } from "@/components/calendar/CalendarFilters";
+import { DraggableOutputChip, DroppableDay, type TrayOutput } from "@/components/calendar/CalendarDnD";
 import type { TagColor } from "@/lib/status";
 
 export const metadata = { title: "Calendar" };
@@ -66,10 +67,26 @@ export default async function CalendarPage({
   const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 
   const supabase = await createClient();
-  const [items, { data: clientRows }] = await Promise.all([
+  let trayQuery = supabase
+    .from("content_outputs")
+    .select("id,client_id,platform,status,content:content_ideas!inner(title,status)")
+    .eq("status", "pending")
+    .in("content.status", ["ready_to_schedule", "scheduled"]);
+  if (clientFilter) trayQuery = trayQuery.eq("client_id", clientFilter);
+
+  const [items, { data: clientRows }, { data: trayRows }] = await Promise.all([
     getCalendarItems(supabase, from, to, clientFilter || undefined),
     supabase.from("clients").select("id,name").order("name"),
+    trayQuery,
   ]);
+  const clientNames = new Map((clientRows ?? []).map((c) => [c.id, c.name]));
+  const tray: TrayOutput[] = (trayRows ?? []).map((o) => ({
+    outputId: o.id,
+    clientId: o.client_id,
+    clientName: clientNames.get(o.client_id) ?? "Unknown client",
+    title: o.content?.title ?? "Content",
+    platform: o.platform,
+  }));
   const byDate = new Map<string, CalendarItem[]>();
   for (const item of items) {
     const list = byDate.get(item.date) ?? [];
@@ -136,6 +153,19 @@ export default async function CalendarPage({
         </span>
       </div>
 
+      {view === "month" && tray.length > 0 && (
+        <div className="mb-3 rounded-lg border border-accent/40 bg-accent/5 p-3">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-soft">
+            Ready to schedule · {tray.length} — drag onto a day (schedules at 09:00; fine-tune from the Content tab)
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {tray.map((output) => (
+              <DraggableOutputChip key={output.outputId} output={output} />
+            ))}
+          </div>
+        </div>
+      )}
+
       {view === "list" ? (
         <div className="space-y-4">
           {sortedDates.length === 0 && (
@@ -186,19 +216,21 @@ export default async function CalendarPage({
               const extra = dayItems.length - shown.length;
               return (
                 <div key={dateStr} className="min-h-24 border-b border-r border-border p-1.5 [&:nth-child(7n)]:border-r-0">
-                  <span
-                    className={`mb-1 inline-flex h-6 w-6 items-center justify-center rounded-full text-xs ${
-                      isToday ? "bg-accent font-semibold text-accent-ink" : "text-ink-soft"
-                    }`}
-                  >
-                    {day}
-                  </span>
-                  <div className="space-y-1">
-                    {shown.map((item, j) => (
-                      <ItemChip key={`${dateStr}-${j}`} item={item} />
-                    ))}
-                    {extra > 0 && <span className="block px-1.5 text-xs text-ink-faint">+{extra} more</span>}
-                  </div>
+                  <DroppableDay date={dateStr}>
+                    <span
+                      className={`mb-1 inline-flex h-6 w-6 items-center justify-center rounded-full text-xs ${
+                        isToday ? "bg-accent font-semibold text-accent-ink" : "text-ink-soft"
+                      }`}
+                    >
+                      {day}
+                    </span>
+                    <div className="space-y-1">
+                      {shown.map((item, j) => (
+                        <ItemChip key={`${dateStr}-${j}`} item={item} />
+                      ))}
+                      {extra > 0 && <span className="block px-1.5 text-xs text-ink-faint">+{extra} more</span>}
+                    </div>
+                  </DroppableDay>
                 </div>
               );
             })}

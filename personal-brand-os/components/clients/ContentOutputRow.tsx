@@ -16,6 +16,7 @@ import {
   publishContentOutput,
 } from "@/lib/actions/content";
 import { outputStatusMeta, type OutputStatus } from "@/lib/status";
+import { OutputMediaSlot } from "@/components/clients/OutputMediaSlot";
 import { formatDateTime } from "@/lib/format";
 import type { Database } from "@/lib/database.types";
 
@@ -104,6 +105,10 @@ export function ContentOutputRow({ clientId, output }: { clientId: string; outpu
           <AutosaveInput id={`out-hashtags-${output.id}`} label="Hashtags / tags" initialValue={output.hashtags} onSave={save("hashtags")} />
           <AutosaveInput id={`out-dest-${output.id}`} label="Destination link" initialValue={output.destination_link} onSave={save("destination_link")} placeholder="Where the CTA points" />
           <AutosaveInput id={`out-live-${output.id}`} label="Live post URL" initialValue={output.live_url} onSave={save("live_url")} />
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <OutputMediaSlot clientId={clientId} outputId={output.id} kind="media" url={output.media_url} />
+          <OutputMediaSlot clientId={clientId} outputId={output.id} kind="thumbnail" url={output.thumbnail_url} />
         </div>
         <div className="grid grid-cols-3 gap-3">
           <AutosaveInput id={`out-reach-${output.id}`} label="Reach" type="number" initialValue={output.reach?.toString() ?? ""} onSave={save("reach")} />

@@ -408,6 +408,94 @@ export async function publishContentOutput(_prev: ActionResult | null, formData:
   });
 }
 
+// ---------------------------------------------------------------------------
+// Media assets per platform version (Duane's §2: the record holds the actual
+// media, uploaded for sign-off, pulled from here when posting). Stored in the
+// private client-files bucket; a ten-year signed URL is written alongside the
+// path so the portal can preview it during approval (same pattern as the
+// client profile photo).
+// ---------------------------------------------------------------------------
+
+const MEDIA_KINDS = ["media", "thumbnail"] as const;
+type MediaKind = (typeof MEDIA_KINDS)[number];
+const MEDIA_BUCKET = "client-files";
+const MEDIA_MAX_BYTES = 200 * 1024 * 1024;
+
+export async function uploadOutputMedia(clientId: string, outputId: string, kind: MediaKind, formData: FormData): Promise<ActionResult> {
+  if (!MEDIA_KINDS.includes(kind)) return { ok: false, message: "Unknown media slot." };
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) return { ok: false, message: "Choose a file first." };
+  if (file.size > MEDIA_MAX_BYTES) return { ok: false, message: "Keep media under 200 MB." };
+  if (kind === "thumbnail" && !file.type.startsWith("image/")) {
+    return { ok: false, message: "Thumbnails must be images." };
+  }
+
+  return runAction(async () => {
+    const supabase = await createClient();
+    const { data: existing, error: readError } = await supabase
+      .from("content_outputs")
+      .select("media_path,thumbnail_path")
+      .eq("id", outputId)
+      .single();
+    if (readError) throw new Error(readError.message);
+
+    const storagePath = `clients/${clientId}/content/${outputId}/${kind}-${crypto.randomUUID()}-${file.name}`;
+    const { error: uploadError } = await supabase.storage.from(MEDIA_BUCKET).upload(storagePath, file, {
+      contentType: file.type || undefined,
+    });
+    if (uploadError) throw new Error(uploadError.message);
+
+    const { data: signed, error: signError } = await supabase.storage
+      .from(MEDIA_BUCKET)
+      .createSignedUrl(storagePath, 60 * 60 * 24 * 365 * 10);
+    if (signError || !signed) throw new Error(signError?.message ?? "Couldn't create the media link.");
+
+    const patch =
+      kind === "media"
+        ? { media_path: storagePath, media_url: signed.signedUrl }
+        : { thumbnail_path: storagePath, thumbnail_url: signed.signedUrl };
+    const { error: updateError } = await supabase.from("content_outputs").update(patch).eq("id", outputId);
+    if (updateError) {
+      await supabase.storage.from(MEDIA_BUCKET).remove([storagePath]);
+      throw new Error(updateError.message);
+    }
+
+    // Replacing? Tidy up the old object best-effort.
+    const oldPath = kind === "media" ? existing.media_path : existing.thumbnail_path;
+    if (oldPath && oldPath !== storagePath) {
+      await supabase.storage.from(MEDIA_BUCKET).remove([oldPath]);
+    }
+
+    revalidateContent(clientId);
+    return undefined;
+  });
+}
+
+export async function removeOutputMedia(clientId: string, outputId: string, kind: MediaKind): Promise<ActionResult> {
+  if (!MEDIA_KINDS.includes(kind)) return { ok: false, message: "Unknown media slot." };
+  return runAction(async () => {
+    const supabase = await createClient();
+    const { data: existing, error: readError } = await supabase
+      .from("content_outputs")
+      .select("media_path,thumbnail_path")
+      .eq("id", outputId)
+      .single();
+    if (readError) throw new Error(readError.message);
+
+    const oldPath = kind === "media" ? existing.media_path : existing.thumbnail_path;
+    const patch =
+      kind === "media"
+        ? { media_path: null, media_url: null }
+        : { thumbnail_path: null, thumbnail_url: null };
+    const { error } = await supabase.from("content_outputs").update(patch).eq("id", outputId);
+    if (error) throw new Error(error.message);
+    if (oldPath) await supabase.storage.from(MEDIA_BUCKET).remove([oldPath]);
+
+    revalidateContent(clientId);
+    return undefined;
+  });
+}
+
 /** Undo a schedule (back to the Ready-to-Schedule queue). */
 export async function unscheduleContentOutput(clientId: string, outputId: string): Promise<ActionResult> {
   return runAction(async () => {
