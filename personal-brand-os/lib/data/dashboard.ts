@@ -105,6 +105,48 @@ export async function getContentAwaitingApproval(supabase: Client): Promise<Cont
   return Array.from(groups.values());
 }
 
+export interface ContentPipelineSummary {
+  awaitingProduction: number;
+  awaitingApproval: number;
+  changesRequested: number;
+  readyToSchedule: number;
+  scheduledNext7Days: number;
+  publishedLast7Days: number;
+  overdueScheduled: number;
+}
+
+/** Duane's §8 dashboard visibility — is there enough approved and scheduled
+ * content, and is anything stuck or missed? Counts across every client the
+ * signed-in user can see. */
+export async function getContentPipelineSummary(supabase: Client): Promise<ContentPipelineSummary> {
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const in7 = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  const ago7 = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+  const [{ data: ideas }, { data: scheduled }, { data: published }] = await Promise.all([
+    supabase
+      .from("content_ideas")
+      .select("status")
+      .in("status", ["approved_production", "in_production", "ready_for_approval", "changes_requested", "ready_to_schedule"]),
+    supabase.from("content_outputs").select("scheduled_at").eq("status", "scheduled").not("scheduled_at", "is", null),
+    supabase.from("content_outputs").select("published_at").eq("status", "published").gte("published_at", ago7),
+  ]);
+
+  const count = (status: string) => (ideas ?? []).filter((i) => i.status === status).length;
+  const scheduledList = (scheduled ?? []).map((o) => o.scheduled_at as string);
+
+  return {
+    awaitingProduction: count("approved_production") + count("in_production"),
+    awaitingApproval: count("ready_for_approval"),
+    changesRequested: count("changes_requested"),
+    readyToSchedule: count("ready_to_schedule"),
+    scheduledNext7Days: scheduledList.filter((t) => t >= nowIso && t <= in7).length,
+    publishedLast7Days: (published ?? []).length,
+    overdueScheduled: scheduledList.filter((t) => t < nowIso).length,
+  };
+}
+
 export interface AttentionFlag {
   clientId: string;
   clientName: string;

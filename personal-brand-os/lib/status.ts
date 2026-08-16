@@ -23,15 +23,28 @@ export const CLIENT_STATUS: { value: ClientStatus; label: string; color: TagColo
   { value: "offboarded", label: "Offboarded", color: "red" },
 ];
 
+/** The production pipeline (Duane's workflow): Idea → Approved for
+ * production → In production → Ready for approval → (Changes requested) →
+ * Ready to schedule → Scheduled → Published. The old single-word statuses
+ * (approved/drafted/created/edited/measured) still exist in the DB enum but
+ * were migrated off in 0013 and are no longer offered. */
 export const CONTENT_STATUS: { value: ContentStatus; label: string; color: TagColor }[] = [
   { value: "idea", label: "Idea", color: "slate" },
-  { value: "approved", label: "Approved", color: "blue" },
-  { value: "drafted", label: "Drafted", color: "cyan" },
-  { value: "created", label: "Created", color: "teal" },
-  { value: "edited", label: "Edited", color: "purple" },
+  { value: "approved_production", label: "Approved for production", color: "blue" },
+  { value: "in_production", label: "In production", color: "cyan" },
+  { value: "ready_for_approval", label: "Ready for approval", color: "purple" },
+  { value: "changes_requested", label: "Changes requested", color: "red" },
+  { value: "ready_to_schedule", label: "Ready to schedule", color: "orange" },
   { value: "scheduled", label: "Scheduled", color: "amber" },
   { value: "published", label: "Published", color: "green" },
-  { value: "measured", label: "Measured", color: "pink" },
+];
+
+export type OutputStatus = "pending" | "scheduled" | "published";
+
+export const OUTPUT_STATUS: { value: OutputStatus; label: string; color: TagColor }[] = [
+  { value: "pending", label: "Not scheduled", color: "slate" },
+  { value: "scheduled", label: "Scheduled", color: "amber" },
+  { value: "published", label: "Published", color: "green" },
 ];
 
 export const AUTHORITY_STATUS: { value: AuthorityStatus; label: string; color: TagColor }[] = [
@@ -69,3 +82,4 @@ export const contentStatusMeta = (value: ContentStatus) => lookup(CONTENT_STATUS
 export const authorityStatusMeta = (value: AuthorityStatus) => lookup(AUTHORITY_STATUS, value);
 export const actionStatusMeta = (value: ActionStatus) => lookup(ACTION_STATUS, value);
 export const contentPriorityMeta = (value: ContentPriority) => lookup(CONTENT_PRIORITY, value);
+export const outputStatusMeta = (value: OutputStatus) => lookup(OUTPUT_STATUS, value);

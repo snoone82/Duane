@@ -56,12 +56,12 @@ export async function buildPerformanceData(
         .lte("snapshot_date", to)
         .order("snapshot_date", { ascending: true }),
       supabase
-        .from("content_ideas")
-        .select("*")
+        .from("content_outputs")
+        .select("platform,reach,engagement,status,published_at,content:content_ideas(title)")
         .eq("client_id", clientId)
-        .in("status", ["published", "measured"])
-        .gte("updated_at", from)
-        .lte("updated_at", toEnd),
+        .eq("status", "published")
+        .gte("published_at", from)
+        .lte("published_at", toEnd),
       supabase
         .from("authority_opportunities")
         .select("*")
@@ -117,7 +117,7 @@ export async function buildPerformanceData(
   });
 
   const content = (ideas ?? []).map((i) => ({
-    title: i.title,
+    title: i.content?.title ?? "Untitled",
     platform: i.platform,
     status: i.status as string,
     reach: i.reach,

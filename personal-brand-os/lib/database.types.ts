@@ -16,9 +16,11 @@ export type Database = {
     Tables: {
       actions: {
         Row: {
+          checklist: Json
           client_id: string
           completed_at: string | null
           consultation_id: string | null
+          content_id: string | null
           created_at: string
           description: string
           due_date: string | null
@@ -30,9 +32,11 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          checklist?: Json
           client_id: string
           completed_at?: string | null
           consultation_id?: string | null
+          content_id?: string | null
           created_at?: string
           description?: string
           due_date?: string | null
@@ -44,9 +48,11 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          checklist?: Json
           client_id?: string
           completed_at?: string | null
           consultation_id?: string | null
+          content_id?: string | null
           created_at?: string
           description?: string
           due_date?: string | null
@@ -77,6 +83,13 @@ export type Database = {
             columns: ["consultation_id"]
             isOneToOne: false
             referencedRelation: "portal_meeting_summaries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "actions_content_id_fkey"
+            columns: ["content_id"]
+            isOneToOne: false
+            referencedRelation: "content_ideas"
             referencedColumns: ["id"]
           },
           {
@@ -695,66 +708,83 @@ export type Database = {
       }
       content_ideas: {
         Row: {
+          action_id: string | null
+          approval_comments: string
+          approver_user_id: string | null
           audience_id: string | null
           body: string
           client_id: string
           created_at: string
           created_by: string | null
           due_date: string | null
-          engagement: number | null
-          format: string | null
+          hook: string
           id: string
           notes: string
           pillar_id: string | null
-          platform: string | null
           priority: Database["public"]["Enums"]["content_priority"]
-          published_url: string | null
-          reach: number | null
+          production_due_date: string | null
           status: Database["public"]["Enums"]["content_status"]
+          target_publish_date: string | null
           title: string
           updated_at: string
         }
         Insert: {
+          action_id?: string | null
+          approval_comments?: string
+          approver_user_id?: string | null
           audience_id?: string | null
           body?: string
           client_id: string
           created_at?: string
           created_by?: string | null
           due_date?: string | null
-          engagement?: number | null
-          format?: string | null
+          hook?: string
           id?: string
           notes?: string
           pillar_id?: string | null
-          platform?: string | null
           priority?: Database["public"]["Enums"]["content_priority"]
-          published_url?: string | null
-          reach?: number | null
+          production_due_date?: string | null
           status?: Database["public"]["Enums"]["content_status"]
+          target_publish_date?: string | null
           title: string
           updated_at?: string
         }
         Update: {
+          action_id?: string | null
+          approval_comments?: string
+          approver_user_id?: string | null
           audience_id?: string | null
           body?: string
           client_id?: string
           created_at?: string
           created_by?: string | null
           due_date?: string | null
-          engagement?: number | null
-          format?: string | null
+          hook?: string
           id?: string
           notes?: string
           pillar_id?: string | null
-          platform?: string | null
           priority?: Database["public"]["Enums"]["content_priority"]
-          published_url?: string | null
-          reach?: number | null
+          production_due_date?: string | null
           status?: Database["public"]["Enums"]["content_status"]
+          target_publish_date?: string | null
           title?: string
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "content_ideas_action_id_fkey"
+            columns: ["action_id"]
+            isOneToOne: false
+            referencedRelation: "actions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "content_ideas_approver_user_id_fkey"
+            columns: ["approver_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "content_ideas_audience_id_fkey"
             columns: ["audience_id"]
@@ -781,6 +811,96 @@ export type Database = {
             columns: ["pillar_id"]
             isOneToOne: false
             referencedRelation: "brand_pillars"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      content_outputs: {
+        Row: {
+          caption: string
+          client_id: string
+          content_id: string
+          created_at: string
+          cta: string
+          destination_link: string
+          engagement: number | null
+          format: string
+          hashtags: string
+          id: string
+          live_url: string
+          media_path: string | null
+          notes: string
+          platform: string
+          published_at: string | null
+          reach: number | null
+          scheduled_at: string | null
+          sort_order: number
+          status: string
+          thumbnail_path: string | null
+          updated_at: string
+          views: number | null
+        }
+        Insert: {
+          caption?: string
+          client_id: string
+          content_id: string
+          created_at?: string
+          cta?: string
+          destination_link?: string
+          engagement?: number | null
+          format?: string
+          hashtags?: string
+          id?: string
+          live_url?: string
+          media_path?: string | null
+          notes?: string
+          platform: string
+          published_at?: string | null
+          reach?: number | null
+          scheduled_at?: string | null
+          sort_order?: number
+          status?: string
+          thumbnail_path?: string | null
+          updated_at?: string
+          views?: number | null
+        }
+        Update: {
+          caption?: string
+          client_id?: string
+          content_id?: string
+          created_at?: string
+          cta?: string
+          destination_link?: string
+          engagement?: number | null
+          format?: string
+          hashtags?: string
+          id?: string
+          live_url?: string
+          media_path?: string | null
+          notes?: string
+          platform?: string
+          published_at?: string | null
+          reach?: number | null
+          scheduled_at?: string | null
+          sort_order?: number
+          status?: string
+          thumbnail_path?: string | null
+          updated_at?: string
+          views?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "content_outputs_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "content_outputs_content_id_fkey"
+            columns: ["content_id"]
+            isOneToOne: false
+            referencedRelation: "content_ideas"
             referencedColumns: ["id"]
           },
         ]
@@ -1100,6 +1220,62 @@ export type Database = {
           },
         ]
       }
+      social_strategies: {
+        Row: {
+          audience: string
+          client_id: string
+          content_types: string
+          created_at: string
+          cta_strategy: string
+          engagement_strategy: string
+          growth_strategy: string
+          id: string
+          objective: string
+          platform: string
+          posting_frequency: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          audience?: string
+          client_id: string
+          content_types?: string
+          created_at?: string
+          cta_strategy?: string
+          engagement_strategy?: string
+          growth_strategy?: string
+          id?: string
+          objective?: string
+          platform: string
+          posting_frequency?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          audience?: string
+          client_id?: string
+          content_types?: string
+          created_at?: string
+          cta_strategy?: string
+          engagement_strategy?: string
+          growth_strategy?: string
+          id?: string
+          objective?: string
+          platform?: string
+          posting_frequency?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "social_strategies_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       strategy_signoffs: {
         Row: {
           approved_at: string | null
@@ -1156,62 +1332,6 @@ export type Database = {
             columns: ["created_by"]
             isOneToOne: false
             referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      social_strategies: {
-        Row: {
-          audience: string
-          client_id: string
-          content_types: string
-          created_at: string
-          cta_strategy: string
-          engagement_strategy: string
-          growth_strategy: string
-          id: string
-          objective: string
-          platform: string
-          posting_frequency: string
-          sort_order: number
-          updated_at: string
-        }
-        Insert: {
-          audience?: string
-          client_id: string
-          content_types?: string
-          created_at?: string
-          cta_strategy?: string
-          engagement_strategy?: string
-          growth_strategy?: string
-          id?: string
-          objective?: string
-          platform: string
-          posting_frequency?: string
-          sort_order?: number
-          updated_at?: string
-        }
-        Update: {
-          audience?: string
-          client_id?: string
-          content_types?: string
-          created_at?: string
-          cta_strategy?: string
-          engagement_strategy?: string
-          growth_strategy?: string
-          id?: string
-          objective?: string
-          platform?: string
-          posting_frequency?: string
-          sort_order?: number
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "social_strategies_client_id_fkey"
-            columns: ["client_id"]
-            isOneToOne: false
-            referencedRelation: "clients"
             referencedColumns: ["id"]
           },
         ]
@@ -1304,6 +1424,11 @@ export type Database = {
         | "scheduled"
         | "published"
         | "measured"
+        | "approved_production"
+        | "in_production"
+        | "ready_for_approval"
+        | "changes_requested"
+        | "ready_to_schedule"
       file_category:
         | "headshot"
         | "presentation"
@@ -1470,6 +1595,11 @@ export const Constants = {
         "scheduled",
         "published",
         "measured",
+        "approved_production",
+        "in_production",
+        "ready_for_approval",
+        "changes_requested",
+        "ready_to_schedule",
       ],
       file_category: [
         "headshot",

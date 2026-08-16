@@ -9,6 +9,7 @@ import {
   getClientProgress,
   getRecentActivity,
   getOpenOpportunities,
+  getContentPipelineSummary,
 } from "@/lib/data/dashboard";
 import { getCurrentProfile } from "@/lib/current-user";
 import { Panel } from "@/components/dashboard/Panel";
@@ -24,7 +25,7 @@ export default async function DashboardPage() {
   const currentProfile = await getCurrentProfile();
   const isAdmin = currentProfile?.role === "admin";
 
-  const [actionsDue, meetings, contentGroups, attentionFlags, roster, clientProgress, openOpportunities, recentActivity] = await Promise.all([
+  const [actionsDue, meetings, contentGroups, attentionFlags, roster, clientProgress, openOpportunities, recentActivity, pipeline] = await Promise.all([
     getActionsDue(supabase),
     getMeetingsThisWeek(supabase),
     getContentAwaitingApproval(supabase),
@@ -33,6 +34,7 @@ export default async function DashboardPage() {
     getClientProgress(supabase),
     getOpenOpportunities(supabase),
     isAdmin ? getRecentActivity(supabase) : Promise.resolve([]),
+    getContentPipelineSummary(supabase),
   ]);
 
   const overdueCount = actionsDue.filter((a) => a.isOverdue).length;
@@ -65,6 +67,31 @@ export default async function DashboardPage() {
           <p className="text-xs text-ink-faint">Open opportunities</p>
           <p className="text-xl font-semibold text-ink">{openOpportunities.length}</p>
           <p className="text-xs text-ink-faint">across all clients</p>
+        </div>
+      </div>
+
+      <div className="mb-6 rounded-lg border border-border bg-surface p-3">
+        <div className="mb-2 flex items-center justify-between">
+          <p className="text-xs font-semibold uppercase tracking-wide text-ink-faint">Content pipeline · all clients</p>
+          <Link href="/calendar" className="text-xs text-accent underline-offset-2 hover:underline">
+            Open calendar →
+          </Link>
+        </div>
+        <div className="grid grid-cols-2 gap-3 text-center sm:grid-cols-4 lg:grid-cols-7">
+          {[
+            { label: "In production", value: pipeline.awaitingProduction },
+            { label: "Awaiting approval", value: pipeline.awaitingApproval },
+            { label: "Changes requested", value: pipeline.changesRequested, danger: pipeline.changesRequested > 0 },
+            { label: "Ready to schedule", value: pipeline.readyToSchedule },
+            { label: "Scheduled (7 days)", value: pipeline.scheduledNext7Days },
+            { label: "Published (7 days)", value: pipeline.publishedLast7Days },
+            { label: "Overdue / missed", value: pipeline.overdueScheduled, danger: pipeline.overdueScheduled > 0 },
+          ].map((stat) => (
+            <div key={stat.label}>
+              <p className={`text-lg font-semibold ${stat.danger ? "text-danger" : "text-ink"}`}>{stat.value}</p>
+              <p className="text-xs text-ink-faint">{stat.label}</p>
+            </div>
+          ))}
         </div>
       </div>
 

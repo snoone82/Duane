@@ -48,7 +48,12 @@ export async function buildClientContext(supabase: Client, clientId: string): Pr
     supabase.from("consultations").select("*").eq("client_id", clientId).order("meeting_date", { ascending: false }).limit(5),
     supabase.from("actions").select("*").eq("client_id", clientId).neq("status", "completed").order("due_date", { ascending: true, nullsFirst: false }).limit(20),
     supabase.from("metric_snapshots").select("*").eq("client_id", clientId).order("snapshot_date", { ascending: false }).limit(12),
-    supabase.from("content_ideas").select("*").eq("client_id", clientId).order("updated_at", { ascending: false }).limit(25),
+    supabase
+      .from("content_ideas")
+      .select("*,outputs:content_outputs(platform,status,reach,engagement)")
+      .eq("client_id", clientId)
+      .order("updated_at", { ascending: false })
+      .limit(25),
     supabase.from("authority_opportunities").select("*").eq("client_id", clientId).order("updated_at", { ascending: false }).limit(15),
   ]);
 
@@ -196,7 +201,14 @@ export async function buildClientContext(supabase: Client, clientId: string): Pr
     parts.push(
       section(
         "Content pipeline (most recently touched)",
-        ideas.map((i) => `- [${i.status}] ${i.title}${i.platform ? ` (${i.platform})` : ""}`).join("\n")
+        ideas
+          .map((i) => {
+            const outputs = (i.outputs ?? [])
+              .map((o) => `${o.platform}: ${o.status}${o.reach !== null ? `, reach ${o.reach}` : ""}${o.engagement !== null ? `, engagement ${o.engagement}` : ""}`)
+              .join("; ");
+            return `- [${i.status}] ${i.title}${outputs ? ` (${outputs})` : ""}`;
+          })
+          .join("\n")
       )
     );
   }

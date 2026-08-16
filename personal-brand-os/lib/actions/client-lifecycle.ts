@@ -12,6 +12,7 @@ const EXPORT_TABLES = [
   "audiences",
   "brand_pillars",
   "content_ideas",
+  "content_outputs",
   "authority_opportunities",
   "consultations",
   "actions",

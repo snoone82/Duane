@@ -90,6 +90,38 @@ export async function updateActionField(clientId: string, actionId: string, fiel
   });
 }
 
+/** Tick/untick one production-checklist step. Read-modify-write on the jsonb
+ * array; last write wins, which is fine for a checklist two people rarely
+ * touch in the same second. */
+export async function toggleChecklistItem(
+  clientId: string,
+  actionId: string,
+  index: number,
+  done: boolean
+): Promise<ActionResult> {
+  return runAction(async () => {
+    const supabase = await createClient();
+    const { data: action, error: readError } = await supabase
+      .from("actions")
+      .select("checklist")
+      .eq("id", actionId)
+      .single();
+    if (readError) throw new Error(readError.message);
+
+    const list = Array.isArray(action.checklist)
+      ? (action.checklist as { text: string; done: boolean }[])
+      : [];
+    if (index < 0 || index >= list.length) return undefined;
+    const next = list.map((item, i) => (i === index ? { ...item, done } : item));
+
+    const { error } = await supabase.from("actions").update({ checklist: next }).eq("id", actionId);
+    if (error) throw new Error(error.message);
+    revalidateActionPaths(clientId);
+    revalidatePath(`/clients/${clientId}/content`);
+    return undefined;
+  });
+}
+
 export async function deleteAction(clientId: string, actionId: string): Promise<ActionResult> {
   return runAction(async () => {
     const supabase = await createClient();

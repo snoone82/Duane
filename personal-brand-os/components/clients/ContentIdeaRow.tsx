@@ -1,49 +1,84 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useActionState, useEffect, useState, useTransition } from "react";
+import Link from "next/link";
 import { AutosaveInput } from "@/components/ui/AutosaveInput";
 import { AutosaveTextarea } from "@/components/ui/AutosaveTextarea";
 import { StatusSelect } from "@/components/ui/StatusSelect";
 import { Button } from "@/components/ui/Button";
-import { Label, Select } from "@/components/ui/Input";
-import { updateContentIdeaField, updateContentIdeaStatus, updateContentIdeaPriority, deleteContentIdea } from "@/lib/actions/content";
+import { Input, Label, Select, Textarea } from "@/components/ui/Input";
+import { Modal } from "@/components/ui/Modal";
+import { Notice } from "@/components/ui/Notice";
+import {
+  updateContentIdeaField,
+  updateContentIdeaStatus,
+  updateContentIdeaPriority,
+  deleteContentIdea,
+  approveForProduction,
+  requestContentChanges,
+  addContentOutput,
+} from "@/lib/actions/content";
 import { CONTENT_STATUS, CONTENT_PRIORITY } from "@/lib/status";
 import { formatDate } from "@/lib/format";
+import { ContentOutputRow } from "@/components/clients/ContentOutputRow";
 import type { Database } from "@/lib/database.types";
 
 type Idea = Database["public"]["Tables"]["content_ideas"]["Row"];
+type Output = Database["public"]["Tables"]["content_outputs"]["Row"];
 type Pillar = Database["public"]["Tables"]["brand_pillars"]["Row"];
 type Audience = Database["public"]["Tables"]["audiences"]["Row"];
+export type TeamMember = { id: string; name: string };
+
+const SUGGESTED_PLATFORMS = ["LinkedIn", "Instagram", "YouTube", "TikTok"];
 
 export function ContentIdeaRow({
   clientId,
   idea,
+  outputs,
   pillars,
   pillarName,
   audiences,
+  team,
+  defaultOpen = false,
 }: {
   clientId: string;
   idea: Idea;
+  outputs: Output[];
   pillars: Pillar[];
   pillarName: string | null;
   audiences: Audience[];
+  team: TeamMember[];
+  defaultOpen?: boolean;
 }) {
   const [isDeleting, startDelete] = useTransition();
+  const [isTransitioning, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [showApprove, setShowApprove] = useState(false);
+  const [showChanges, setShowChanges] = useState(false);
 
-  const save = (field: "title" | "body" | "platform" | "format" | "due_date" | "published_url" | "notes" | "pillar_id" | "audience_id" | "reach" | "engagement") =>
-    (value: string) => updateContentIdeaField(clientId, idea.id, field, value);
+  const save = (
+    field: "title" | "body" | "hook" | "due_date" | "notes" | "pillar_id" | "audience_id" | "approver_user_id" | "production_due_date" | "target_publish_date"
+  ) => (value: string) => updateContentIdeaField(clientId, idea.id, field, value);
 
   function handleDelete() {
-    if (!window.confirm(`Delete "${idea.title}"? This can't be undone.`)) return;
+    if (!window.confirm(`Delete "${idea.title}" and all its platform versions? This can't be undone.`)) return;
     startDelete(async () => {
       const result = await deleteContentIdea(clientId, idea.id);
       if (!result.ok) setError(result.message);
     });
   }
 
+  function moveTo(status: Idea["status"]) {
+    startTransition(async () => {
+      const result = await updateContentIdeaStatus(clientId, idea.id, status);
+      if (!result.ok) setError(result.message);
+    });
+  }
+
+  const platformSummary = outputs.map((o) => o.platform).join(" · ");
+
   return (
-    <details className="group rounded-lg border border-border bg-surface">
+    <details className="group rounded-lg border border-border bg-surface" open={defaultOpen}>
       <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 px-4 py-2.5">
         <div className="flex min-w-0 items-center gap-2">
           <span className="text-xs text-ink-faint transition-transform duration-150 group-open:rotate-180">▾</span>
@@ -51,9 +86,12 @@ export function ContentIdeaRow({
           {pillarName && (
             <span className="flex-shrink-0 rounded-full bg-surface-muted px-2 py-0.5 text-xs text-ink-soft">{pillarName}</span>
           )}
+          {platformSummary && <span className="hidden flex-shrink-0 text-xs text-ink-faint sm:inline">{platformSummary}</span>}
         </div>
         <div className="flex flex-shrink-0 items-center gap-3">
-          {idea.due_date && <span className="text-xs text-ink-faint">{formatDate(idea.due_date)}</span>}
+          {idea.target_publish_date && (
+            <span className="text-xs text-ink-faint" title="Target publication date">{formatDate(idea.target_publish_date)}</span>
+          )}
           <StatusSelect
             value={idea.priority}
             options={CONTENT_PRIORITY}
@@ -68,7 +106,51 @@ export function ContentIdeaRow({
           />
         </div>
       </summary>
-      <div className="space-y-3 border-t border-border p-4">
+      <div className="space-y-4 border-t border-border p-4">
+        {/* Workflow shortcuts for the current stage */}
+        <div className="flex flex-wrap items-center gap-2">
+          {idea.status === "idea" && (
+            <Button variant="primary" size="sm" onClick={() => setShowApprove(true)}>
+              Approve for production…
+            </Button>
+          )}
+          {(idea.status === "approved_production" || idea.status === "changes_requested") && (
+            <Button variant="secondary" size="sm" onClick={() => moveTo("in_production")} disabled={isTransitioning}>
+              Start production
+            </Button>
+          )}
+          {idea.status === "in_production" && (
+            <Button variant="primary" size="sm" onClick={() => moveTo("ready_for_approval")} disabled={isTransitioning}>
+              Ready for approval
+            </Button>
+          )}
+          {idea.status === "ready_for_approval" && (
+            <>
+              <Button variant="primary" size="sm" onClick={() => moveTo("ready_to_schedule")} disabled={isTransitioning}>
+                Approve — ready to schedule
+              </Button>
+              <Button variant="secondary" size="sm" onClick={() => setShowChanges(true)}>
+                Request changes…
+              </Button>
+            </>
+          )}
+          {idea.action_id && (
+            <Link
+              href={`/clients/${clientId}/actions`}
+              className="text-xs text-accent underline-offset-2 hover:underline"
+            >
+              View production action →
+            </Link>
+          )}
+        </div>
+
+        {idea.approval_comments && (
+          <Notice kind={idea.status === "changes_requested" ? "danger" : "info"}>
+            <span className="font-medium">Approval comments:</span> {idea.approval_comments}
+          </Notice>
+        )}
+
+        {/* Master (strategic) fields */}
         <AutosaveInput id={`idea-title-${idea.id}`} label="Title" initialValue={idea.title} onSave={save("title")} />
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div>
@@ -101,17 +183,50 @@ export function ContentIdeaRow({
               ))}
             </Select>
           </div>
-          <AutosaveInput id={`idea-due-${idea.id}`} label="Due date" type="date" initialValue={idea.due_date ?? ""} onSave={save("due_date")} />
-          <AutosaveInput id={`idea-platform-${idea.id}`} label="Platform" initialValue={idea.platform ?? ""} onSave={save("platform")} />
-          <AutosaveInput id={`idea-format-${idea.id}`} label="Format" initialValue={idea.format ?? ""} onSave={save("format")} placeholder="e.g. LinkedIn post, short video" />
-          <AutosaveInput id={`idea-url-${idea.id}`} label="Published URL" initialValue={idea.published_url ?? ""} onSave={save("published_url")} />
+          <div>
+            <Label htmlFor={`idea-approver-${idea.id}`}>Approver</Label>
+            <Select
+              id={`idea-approver-${idea.id}`}
+              defaultValue={idea.approver_user_id ?? ""}
+              onChange={(event) => save("approver_user_id")(event.target.value)}
+            >
+              <option value="">No approver set</option>
+              {team.map((member) => (
+                <option key={member.id} value={member.id}>
+                  {member.name}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <AutosaveInput id={`idea-proddue-${idea.id}`} label="Production due" type="date" initialValue={idea.production_due_date ?? ""} onSave={save("production_due_date")} />
+          <AutosaveInput id={`idea-target-${idea.id}`} label="Target publish date" type="date" initialValue={idea.target_publish_date ?? ""} onSave={save("target_publish_date")} />
+          <AutosaveInput id={`idea-due-${idea.id}`} label="Due date (work)" type="date" initialValue={idea.due_date ?? ""} onSave={save("due_date")} />
         </div>
-        <AutosaveTextarea id={`idea-body-${idea.id}`} label="Body / brief" initialValue={idea.body} onSave={save("body")} rows={3} />
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <AutosaveInput id={`idea-reach-${idea.id}`} label="Reach (once measured)" type="number" initialValue={idea.reach?.toString() ?? ""} onSave={save("reach")} />
-          <AutosaveInput id={`idea-engagement-${idea.id}`} label="Engagement (once measured)" type="number" initialValue={idea.engagement?.toString() ?? ""} onSave={save("engagement")} />
-        </div>
+        <AutosaveInput id={`idea-hook-${idea.id}`} label="Hook" initialValue={idea.hook} onSave={save("hook")} placeholder="The opening line / angle that earns attention" />
+        <AutosaveTextarea id={`idea-body-${idea.id}`} label="Brief / body" initialValue={idea.body} onSave={save("body")} rows={3} />
         <AutosaveTextarea id={`idea-notes-${idea.id}`} label="Notes" initialValue={idea.notes} onSave={save("notes")} rows={2} />
+
+        {/* Platform outputs */}
+        <div>
+          <div className="mb-2 flex items-center justify-between">
+            <h4 className="text-xs font-semibold uppercase tracking-wide text-ink-faint">
+              Platform versions · {outputs.length}
+            </h4>
+            <AddOutputInline clientId={clientId} contentId={idea.id} />
+          </div>
+          {outputs.length === 0 ? (
+            <p className="text-xs text-ink-faint">
+              No platform versions yet — they&rsquo;re created when the idea is approved for production, or add one manually.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {outputs.map((output) => (
+                <ContentOutputRow key={output.id} clientId={clientId} output={output} />
+              ))}
+            </div>
+          )}
+        </div>
+
         {error && <p className="text-xs text-danger">{error}</p>}
         <div className="flex justify-end">
           <Button variant="danger" size="sm" onClick={handleDelete} disabled={isDeleting}>
@@ -119,6 +234,201 @@ export function ContentIdeaRow({
           </Button>
         </div>
       </div>
+
+      {showApprove && (
+        <ApproveProductionModal
+          clientId={clientId}
+          idea={idea}
+          team={team}
+          onClose={() => setShowApprove(false)}
+        />
+      )}
+      {showChanges && (
+        <RequestChangesModal
+          clientId={clientId}
+          ideaId={idea.id}
+          onClose={() => setShowChanges(false)}
+        />
+      )}
     </details>
+  );
+}
+
+/** Duane's §1 confirm dialog: owner, dates, platforms, requirements,
+ * approver — submitting creates the linked production Action + outputs. */
+function ApproveProductionModal({
+  clientId,
+  idea,
+  team,
+  onClose,
+}: {
+  clientId: string;
+  idea: Idea;
+  team: TeamMember[];
+  onClose: () => void;
+}) {
+  const [state, formAction, isPending] = useActionState(approveForProduction, null);
+
+  useEffect(() => {
+    if (state?.ok) onClose();
+  }, [state, onClose]);
+
+  return (
+    <Modal title={`Approve for production — ${idea.title}`} onClose={onClose}>
+      <form
+        action={(formData) => {
+          formData.set("client_id", clientId);
+          formData.set("idea_id", idea.id);
+          formAction(formData);
+        }}
+        className="space-y-3"
+      >
+        {state && !state.ok && <Notice kind="danger">{state.message}</Notice>}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <Label htmlFor="ap-owner">Owner</Label>
+            <Select id="ap-owner" name="owner_user_id" defaultValue="">
+              <option value="">Someone else (name below)</option>
+              {team.map((member) => (
+                <option key={member.id} value={member.id}>
+                  {member.name}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div>
+            <Label htmlFor="ap-owner-name">Owner name (if not a team member)</Label>
+            <Input id="ap-owner-name" name="owner_name" autoComplete="off" placeholder="e.g. freelance editor" />
+          </div>
+          <div>
+            <Label htmlFor="ap-prod-due">Production due date</Label>
+            <Input id="ap-prod-due" name="production_due_date" type="date" />
+          </div>
+          <div>
+            <Label htmlFor="ap-target">Target publication date</Label>
+            <Input id="ap-target" name="target_publish_date" type="date" />
+          </div>
+        </div>
+        <div>
+          <Label>Platforms</Label>
+          <div className="mt-1 flex flex-wrap gap-3">
+            {SUGGESTED_PLATFORMS.map((platform) => (
+              <label key={platform} className="inline-flex items-center gap-1.5 text-sm text-ink-soft">
+                <input type="checkbox" name="platforms" value={platform} className="accent-[--color-accent]" />
+                {platform}
+              </label>
+            ))}
+          </div>
+          <Input name="platform_other" autoComplete="off" placeholder="Other platform…" className="mt-2" />
+        </div>
+        <div>
+          <Label htmlFor="ap-req">Content requirements</Label>
+          <Textarea id="ap-req" name="requirements" rows={3} placeholder="Format, angle, must-include points, references…" />
+        </div>
+        <div>
+          <Label htmlFor="ap-approver">Approver</Label>
+          <Select id="ap-approver" name="approver_user_id" defaultValue="">
+            <option value="">No approver set</option>
+            {team.map((member) => (
+              <option key={member.id} value={member.id}>
+                {member.name}
+              </option>
+            ))}
+          </Select>
+        </div>
+        <p className="text-xs text-ink-faint">
+          This creates a linked production Action with the standard checklist, and one platform version per platform ticked.
+        </p>
+        <div className="flex justify-end gap-2 pt-2">
+          <Button type="button" variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary" disabled={isPending}>
+            {isPending ? "Setting up…" : "Approve & create action"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function RequestChangesModal({
+  clientId,
+  ideaId,
+  onClose,
+}: {
+  clientId: string;
+  ideaId: string;
+  onClose: () => void;
+}) {
+  const [comments, setComments] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+
+  function submit() {
+    startTransition(async () => {
+      const result = await requestContentChanges(clientId, ideaId, comments);
+      if (!result.ok) setError(result.message);
+      else onClose();
+    });
+  }
+
+  return (
+    <Modal title="Request changes" onClose={onClose}>
+      <div className="space-y-3">
+        {error && <Notice kind="danger">{error}</Notice>}
+        <div>
+          <Label htmlFor="rc-comments">What needs to change?</Label>
+          <Textarea id="rc-comments" rows={4} value={comments} onChange={(e) => setComments(e.target.value)} autoFocus />
+        </div>
+        <p className="text-xs text-ink-faint">The linked production Action reopens and goes back to its owner.</p>
+        <div className="flex justify-end gap-2 pt-2">
+          <Button type="button" variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="button" variant="primary" onClick={submit} disabled={isPending}>
+            {isPending ? "Sending…" : "Send back for changes"}
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function AddOutputInline({ clientId, contentId }: { clientId: string; contentId: string }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [state, formAction, isPending] = useActionState(addContentOutput, null);
+
+  useEffect(() => {
+    if (state?.ok) setIsOpen(false);
+  }, [state]);
+
+  if (!isOpen) {
+    return (
+      <Button variant="ghost" size="sm" onClick={() => setIsOpen(true)}>
+        + Add platform version
+      </Button>
+    );
+  }
+
+  return (
+    <form
+      action={(formData) => {
+        formData.set("client_id", clientId);
+        formData.set("content_id", contentId);
+        formAction(formData);
+      }}
+      className="flex items-center gap-2"
+    >
+      {state && !state.ok && <span className="text-xs text-danger">{state.message}</span>}
+      <Input name="platform" autoComplete="off" placeholder="Platform" className="w-32" autoFocus required />
+      <Input name="format" autoComplete="off" placeholder="Format" className="w-32" />
+      <Button type="submit" variant="secondary" size="sm" disabled={isPending}>
+        {isPending ? "…" : "Add"}
+      </Button>
+      <Button type="button" variant="ghost" size="sm" onClick={() => setIsOpen(false)}>
+        Cancel
+      </Button>
+    </form>
   );
 }

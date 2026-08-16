@@ -62,16 +62,9 @@ export function AddContentIdeaButton({ clientId, pillars, audiences }: { clientI
                 </Select>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label htmlFor="idea-platform">Platform</Label>
-                <Input id="idea-platform" name="platform" autoComplete="off" placeholder="e.g. LinkedIn" />
-              </div>
-              <div>
-                <Label htmlFor="idea-format">Format</Label>
-                <Input id="idea-format" name="format" autoComplete="off" placeholder="e.g. Short video" />
-              </div>
-            </div>
+            <p className="text-xs text-ink-faint">
+              Platform versions (LinkedIn, Instagram…) are added when the idea is approved for production.
+            </p>
             <div className="flex justify-end gap-2 pt-2">
               <Button type="button" variant="ghost" onClick={() => setIsOpen(false)}>
                 Cancel

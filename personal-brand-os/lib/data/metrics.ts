@@ -95,18 +95,24 @@ export interface ContentMetrics {
   topPillar: { name: string; averageReach: number } | null;
 }
 
-/** §15 Content Metrics — derived from content_ideas rather than a separate
- * entry form: "published"/"measured" pieces with a reach/engagement number
- * attached are what "highest-performing content" and "most successful
- * pillar" rank against. */
+/** §15 Content Metrics — derived from published platform outputs (one row
+ * per platform version since the workflow rework): outputs with a
+ * reach/engagement number attached are what "highest-performing content"
+ * and "most successful pillar" rank against. */
 export async function getContentMetrics(supabase: Client, clientId: string): Promise<ContentMetrics> {
-  const { data: ideas } = await supabase
-    .from("content_ideas")
-    .select("id,title,status,reach,engagement,pillar_id")
+  const { data: outputs } = await supabase
+    .from("content_outputs")
+    .select("id,platform,reach,engagement,content:content_ideas(id,title,pillar_id)")
     .eq("client_id", clientId)
-    .in("status", ["published", "measured"]);
+    .eq("status", "published");
 
-  const rows = ideas ?? [];
+  const rows = (outputs ?? []).map((o) => ({
+    id: o.id,
+    title: `${o.content?.title ?? "Untitled"} · ${o.platform}`,
+    reach: o.reach,
+    engagement: o.engagement,
+    pillar_id: o.content?.pillar_id ?? null,
+  }));
   const withReach = rows.filter((r) => r.reach !== null);
   const withEngagement = rows.filter((r) => r.engagement !== null);
 

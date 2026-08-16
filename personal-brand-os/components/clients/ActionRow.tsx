@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { InlineEditText } from "@/components/ui/InlineEditText";
 import { StatusSelect } from "@/components/ui/StatusSelect";
-import { updateActionField, updateActionStatus, deleteAction } from "@/lib/actions/actions";
+import { updateActionField, updateActionStatus, deleteAction, toggleChecklistItem } from "@/lib/actions/actions";
 import { ACTION_STATUS } from "@/lib/status";
 import { Td, Tr } from "@/components/ui/Table";
 import { isOverdue } from "@/lib/format";
@@ -41,6 +41,9 @@ export function ActionRow({
   }
 
   const overdue = isOverdue(action.due_date) && action.status !== "completed";
+  const checklist = Array.isArray(action.checklist)
+    ? (action.checklist as { text: string; done: boolean }[])
+    : [];
 
   return (
     <Tr>
@@ -53,6 +56,40 @@ export function ActionRow({
       )}
       <Td className="p-0">
         <InlineEditText initialValue={action.title} onSave={save("title")} ariaLabel="Action title" />
+        {(checklist.length > 0 || action.content_id) && (
+          <div className="px-1.5 pb-1.5">
+            {action.content_id && (
+              <Link
+                href={`/clients/${clientId}/content`}
+                className="text-xs text-accent underline-offset-2 hover:underline"
+              >
+                Open content record →
+              </Link>
+            )}
+            {checklist.length > 0 && (
+              <details className="mt-0.5">
+                <summary className="cursor-pointer list-none text-xs text-ink-faint hover:text-ink">
+                  Checklist {checklist.filter((c) => c.done).length}/{checklist.length} ▾
+                </summary>
+                <ul className="mt-1 space-y-0.5">
+                  {checklist.map((item, index) => (
+                    <li key={index}>
+                      <label className="inline-flex items-center gap-1.5 text-xs text-ink-soft">
+                        <input
+                          type="checkbox"
+                          checked={item.done}
+                          className="accent-[--color-accent]"
+                          onChange={(e) => toggleChecklistItem(clientId, action.id, index, e.target.checked)}
+                        />
+                        <span className={item.done ? "line-through opacity-60" : ""}>{item.text}</span>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
+          </div>
+        )}
         {error && <p className="px-1.5 text-xs text-danger">{error}</p>}
       </Td>
       <Td className="p-0">
