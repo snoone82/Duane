@@ -11,6 +11,7 @@ import {
   getOpenOpportunities,
   getContentPipelineSummary,
 } from "@/lib/data/dashboard";
+import { getSalesOverview } from "@/lib/data/sales";
 import { getCurrentProfile } from "@/lib/current-user";
 import { Panel } from "@/components/dashboard/Panel";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -36,6 +37,7 @@ export default async function DashboardPage() {
     isAdmin ? getRecentActivity(supabase) : Promise.resolve([]),
     getContentPipelineSummary(supabase),
   ]);
+  const sales = await getSalesOverview(supabase);
 
   const overdueCount = actionsDue.filter((a) => a.isOverdue).length;
   const totalIdeas = contentGroups.reduce((sum, g) => sum + g.ideas.length, 0);
@@ -47,7 +49,7 @@ export default async function DashboardPage() {
         What needs attention this morning — and where things stand.
       </p>
 
-      <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
+      <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
         <div className="rounded-lg border border-border bg-surface p-3">
           <p className="text-xs text-ink-faint">Active clients</p>
           <p className="text-xl font-semibold text-ink">{roster.activeCount}</p>
@@ -58,6 +60,13 @@ export default async function DashboardPage() {
           <p className="text-xl font-semibold text-ink">{formatCurrency(roster.monthlyRetainerTotal)}</p>
           <p className="text-xs text-ink-faint">{roster.clientsWithRetainer} client{roster.clientsWithRetainer === 1 ? "" : "s"}</p>
         </div>
+        <Link href="/sales" className="rounded-lg border border-border bg-surface p-3 transition-colors hover:border-accent/50">
+          <p className="text-xs text-ink-faint">Monthly sales target</p>
+          <p className="text-xl font-semibold text-ink">
+            {sales.monthlyTarget !== null ? formatCurrency(sales.monthlyTarget) : "Set target →"}
+          </p>
+          <p className="text-xs text-ink-faint">{formatCurrency(sales.actualThisMonth)} recorded this month</p>
+        </Link>
         <div className="rounded-lg border border-border bg-surface p-3">
           <p className="text-xs text-ink-faint">Actions overdue</p>
           <p className="text-xl font-semibold text-ink">{overdueCount}</p>

@@ -200,6 +200,34 @@ export class PdfBuilder {
     this.cursor += 2;
   }
 
+  /** Embed an image inline (Publishing Pack media), scaled to fit the
+   * content width and capped in height, with a small caption above. */
+  async image(bytes: Uint8Array, kind: "png" | "jpg", caption: string) {
+    const image = kind === "png" ? await this.doc.embedPng(bytes) : await this.doc.embedJpg(bytes);
+    const maxHeight = 300;
+    const scale = Math.min(CONTENT_WIDTH / image.width, maxHeight / image.height, 1);
+    const w = image.width * scale;
+    const h = image.height * scale;
+
+    this.ensure(h + 24);
+    this.drawLines([sanitize(caption).toUpperCase()], this.bold, 7.5, FAINT, 11);
+    this.page.drawImage(image, {
+      x: MARGIN,
+      y: PAGE_HEIGHT - this.cursor - h,
+      width: w,
+      height: h,
+    });
+    this.page.drawRectangle({
+      x: MARGIN,
+      y: PAGE_HEIGHT - this.cursor - h,
+      width: w,
+      height: h,
+      borderColor: LINE,
+      borderWidth: 0.75,
+    });
+    this.cursor += h + 10;
+  }
+
   note(text: string) {
     this.drawLines(this.wrap(text, this.font, 8.5), this.font, 8.5, FAINT, 12);
     this.cursor += 2;

@@ -2,7 +2,8 @@
 
 import { useRef, useState, useTransition } from "react";
 import { Button } from "@/components/ui/Button";
-import { uploadOutputMedia, removeOutputMedia } from "@/lib/actions/content";
+import { attachOutputMedia, removeOutputMedia } from "@/lib/actions/content";
+import { createClient } from "@/lib/supabase/client";
 
 export function mediaKindFromUrl(url: string): "image" | "video" | "other" {
   const clean = url.split("?")[0]?.toLowerCase() ?? "";
@@ -50,12 +51,34 @@ export function OutputMediaSlot({
 
   function handleFile(file: File | undefined) {
     if (!file) return;
-    const formData = new FormData();
-    formData.set("file", file);
+    if (file.size > 200 * 1024 * 1024) {
+      setError("Keep media under 200 MB.");
+      return;
+    }
+    if (kind === "thumbnail" && !file.type.startsWith("image/")) {
+      setError("Thumbnails must be images.");
+      return;
+    }
     setError(null);
     startTransition(async () => {
-      const result = await uploadOutputMedia(clientId, outputId, kind, formData);
-      if (!result.ok) setError(result.message);
+      // Upload straight from the browser to storage — server actions can't
+      // carry files this large (1 MB action / 4.5 MB platform caps), which
+      // is why the original upload path failed for real media.
+      const supabase = createClient();
+      const safeName = file.name.replace(/[^\w.\- ]+/g, "_");
+      const storagePath = `clients/${clientId}/content/${outputId}/${kind}-${crypto.randomUUID()}-${safeName}`;
+      const { error: uploadError } = await supabase.storage
+        .from("client-files")
+        .upload(storagePath, file, { contentType: file.type || undefined });
+      if (uploadError) {
+        setError(uploadError.message);
+        return;
+      }
+      const result = await attachOutputMedia(clientId, outputId, kind, storagePath);
+      if (!result.ok) {
+        await supabase.storage.from("client-files").remove([storagePath]);
+        setError(result.message);
+      }
     });
   }
 

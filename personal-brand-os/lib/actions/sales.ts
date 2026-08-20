@@ -6,6 +6,31 @@ import { runAction, type ActionResult } from "@/lib/action-result";
 import { fieldPatch } from "@/lib/field-patch";
 import type { Database } from "@/lib/database.types";
 
+/** Business-level Monthly Sales Target (Duane §3) — one number in the
+ * single workspace_settings row. RLS makes writes admin-only; this check
+ * just gives a friendlier message than a silent 0-row update. */
+export async function setMonthlySalesTarget(value: string): Promise<ActionResult> {
+  const trimmed = value.trim();
+  const target = trimmed ? Number(trimmed) : null;
+  if (trimmed && (Number.isNaN(target) || (target as number) < 0)) {
+    return { ok: false, message: "Enter the target as a plain number." };
+  }
+
+  return runAction(async () => {
+    const supabase = await createClient();
+    const { error, data } = await supabase
+      .from("workspace_settings")
+      .update({ monthly_sales_target: target })
+      .eq("id", true)
+      .select("id");
+    if (error) throw new Error(error.message);
+    if (!data || data.length === 0) throw new Error("Only admins can change the sales target.");
+    revalidatePath("/sales");
+    revalidatePath("/");
+    return undefined;
+  });
+}
+
 const SALES_FIELDS = [
   "services_products",
   "target_customers",

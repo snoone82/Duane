@@ -7,6 +7,42 @@ import type { FileCategory } from "@/lib/enums";
 
 const BUCKET = "client-files";
 
+/** Record a file the browser uploaded straight to storage (server actions
+ * can't carry big files — 1 MB action / 4.5 MB platform caps). Verifies the
+ * path is inside this client's area, then writes the metadata row. */
+export async function registerClientFile(
+  clientId: string,
+  storagePath: string,
+  fileName: string,
+  category: FileCategory,
+  sizeBytes: number
+): Promise<ActionResult> {
+  if (!storagePath.startsWith(`clients/${clientId}/`) || storagePath.includes("..")) {
+    return { ok: false, message: "Unexpected storage path." };
+  }
+  if (!fileName.trim()) return { ok: false, message: "The file needs a name." };
+
+  return runAction(async () => {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    const { error } = await supabase.from("client_files").insert({
+      client_id: clientId,
+      file_name: fileName,
+      storage_path: storagePath,
+      category,
+      size_bytes: sizeBytes,
+      uploaded_by: user?.id ?? null,
+    });
+    if (error) throw new Error(error.message);
+
+    revalidatePath(`/clients/${clientId}/files`);
+    return undefined;
+  });
+}
+
 export async function uploadClientFile(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
   const clientId = String(formData.get("client_id") ?? "");
   const category = String(formData.get("category") ?? "other") as FileCategory;

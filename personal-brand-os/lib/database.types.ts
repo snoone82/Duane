@@ -817,6 +817,7 @@ export type Database = {
       }
       content_outputs: {
         Row: {
+          alt_text: string
           caption: string
           client_id: string
           content_id: string
@@ -843,6 +844,7 @@ export type Database = {
           views: number | null
         }
         Insert: {
+          alt_text?: string
           caption?: string
           client_id: string
           content_id: string
@@ -869,6 +871,7 @@ export type Database = {
           views?: number | null
         }
         Update: {
+          alt_text?: string
           caption?: string
           client_id?: string
           content_id?: string
@@ -1341,6 +1344,24 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+    workspace_settings: {
+        Row: {
+          id: boolean
+          monthly_sales_target: number | null
+          updated_at: string
+        }
+        Insert: {
+          id?: boolean
+          monthly_sales_target?: number | null
+          updated_at?: string
+        }
+        Update: {
+          id?: boolean
+          monthly_sales_target?: number | null
+          updated_at?: string
+        }
+        Relationships: []
       }
     }
     Views: {

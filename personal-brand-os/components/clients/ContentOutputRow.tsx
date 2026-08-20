@@ -27,11 +27,25 @@ export function ContentOutputRow({ clientId, output }: { clientId: string; outpu
   const [error, setError] = useState<string | null>(null);
   const [showSchedule, setShowSchedule] = useState(false);
   const [showPublish, setShowPublish] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const meta = outputStatusMeta(output.status as OutputStatus);
   const save = (
-    field: "platform" | "format" | "caption" | "cta" | "hashtags" | "destination_link" | "live_url" | "notes" | "reach" | "engagement" | "views"
+    field: "platform" | "format" | "caption" | "cta" | "hashtags" | "alt_text" | "destination_link" | "live_url" | "notes" | "reach" | "engagement" | "views"
   ) => (value: string) => updateContentOutputField(clientId, output.id, field, value);
+
+  function copyPost() {
+    const parts = [output.caption, output.hashtags, output.cta && `CTA: ${output.cta}`, output.destination_link]
+      .map((p) => (p ?? "").trim())
+      .filter(Boolean);
+    navigator.clipboard
+      .writeText(parts.join("\n\n"))
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      })
+      .catch(() => setError("Couldn't copy — your browser blocked clipboard access."));
+  }
 
   function handleDelete() {
     if (!window.confirm(`Delete the ${output.platform} version? This can't be undone.`)) return;
@@ -93,6 +107,15 @@ export function ContentOutputRow({ clientId, output }: { clientId: string; outpu
               View live post →
             </a>
           )}
+          <Button variant="ghost" size="sm" onClick={copyPost}>
+            {copied ? "Copied ✓" : "Copy post"}
+          </Button>
+          <a
+            href={`/api/publishing-pack/${output.id}`}
+            className="text-xs text-accent underline-offset-2 hover:underline"
+          >
+            Download Publishing Pack ↓
+          </a>
         </div>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -105,6 +128,7 @@ export function ContentOutputRow({ clientId, output }: { clientId: string; outpu
           <AutosaveInput id={`out-hashtags-${output.id}`} label="Hashtags / tags" initialValue={output.hashtags} onSave={save("hashtags")} />
           <AutosaveInput id={`out-dest-${output.id}`} label="Destination link" initialValue={output.destination_link} onSave={save("destination_link")} placeholder="Where the CTA points" />
           <AutosaveInput id={`out-live-${output.id}`} label="Live post URL" initialValue={output.live_url} onSave={save("live_url")} />
+          <AutosaveInput id={`out-alt-${output.id}`} label="Alt text" initialValue={output.alt_text} onSave={save("alt_text")} placeholder="Image description for accessibility" />
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <OutputMediaSlot clientId={clientId} outputId={output.id} kind="media" url={output.media_url} />

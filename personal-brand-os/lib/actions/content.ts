@@ -271,6 +271,7 @@ const OUTPUT_FIELDS = [
   "caption",
   "cta",
   "hashtags",
+  "alt_text",
   "destination_link",
   "live_url",
   "notes",
@@ -420,6 +421,56 @@ const MEDIA_KINDS = ["media", "thumbnail"] as const;
 type MediaKind = (typeof MEDIA_KINDS)[number];
 const MEDIA_BUCKET = "client-files";
 const MEDIA_MAX_BYTES = 200 * 1024 * 1024;
+
+/** Attach media that the browser has ALREADY uploaded straight to storage.
+ * Server actions can't carry real media files (Next caps action bodies at
+ * 1 MB and Vercel at ~4.5 MB — the bug Duane hit), so the browser uploads
+ * directly to the bucket under the client's RLS-guarded path and this
+ * action just verifies, signs and records it. */
+export async function attachOutputMedia(
+  clientId: string,
+  outputId: string,
+  kind: MediaKind,
+  storagePath: string
+): Promise<ActionResult> {
+  if (!MEDIA_KINDS.includes(kind)) return { ok: false, message: "Unknown media slot." };
+  // The path must be inside this client's content area — anything else is
+  // either a mistake or someone playing games.
+  if (!storagePath.startsWith(`clients/${clientId}/content/${outputId}/`) || storagePath.includes("..")) {
+    return { ok: false, message: "Unexpected storage path." };
+  }
+
+  return runAction(async () => {
+    const supabase = await createClient();
+    const { data: existing, error: readError } = await supabase
+      .from("content_outputs")
+      .select("media_path,thumbnail_path,client_id")
+      .eq("id", outputId)
+      .single();
+    if (readError) throw new Error(readError.message);
+    if (existing.client_id !== clientId) throw new Error("That platform version belongs to a different client.");
+
+    const { data: signed, error: signError } = await supabase.storage
+      .from(MEDIA_BUCKET)
+      .createSignedUrl(storagePath, 60 * 60 * 24 * 365 * 10);
+    if (signError || !signed) throw new Error(signError?.message ?? "Couldn't create the media link — was the upload interrupted?");
+
+    const patch =
+      kind === "media"
+        ? { media_path: storagePath, media_url: signed.signedUrl }
+        : { thumbnail_path: storagePath, thumbnail_url: signed.signedUrl };
+    const { error: updateError } = await supabase.from("content_outputs").update(patch).eq("id", outputId);
+    if (updateError) throw new Error(updateError.message);
+
+    const oldPath = kind === "media" ? existing.media_path : existing.thumbnail_path;
+    if (oldPath && oldPath !== storagePath) {
+      await supabase.storage.from(MEDIA_BUCKET).remove([oldPath]);
+    }
+
+    revalidateContent(clientId);
+    return undefined;
+  });
+}
 
 export async function uploadOutputMedia(clientId: string, outputId: string, kind: MediaKind, formData: FormData): Promise<ActionResult> {
   if (!MEDIA_KINDS.includes(kind)) return { ok: false, message: "Unknown media slot." };

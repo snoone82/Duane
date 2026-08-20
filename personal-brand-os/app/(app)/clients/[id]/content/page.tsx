@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { AddPillarButton } from "@/components/clients/AddPillarButton";
 import { AddContentIdeaButton } from "@/components/clients/AddContentIdeaButton";
@@ -135,7 +136,15 @@ export default async function ContentPage({ params }: { params: Promise<{ id: st
       <section>
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-ink">Content Pipeline</h2>
-          <AddContentIdeaButton clientId={id} pillars={pillarList} audiences={audienceList} />
+          <div className="flex items-center gap-2">
+            <Link
+              href={`/clients/${id}/content/import`}
+              className="rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-ink-soft transition-colors hover:bg-surface-muted hover:text-ink"
+            >
+              Import content
+            </Link>
+            <AddContentIdeaButton clientId={id} pillars={pillarList} audiences={audienceList} />
+          </div>
         </div>
         {ideaList.length === 0 ? (
           <EmptyState title="No content ideas yet" description="Add the first idea to start the pipeline." />

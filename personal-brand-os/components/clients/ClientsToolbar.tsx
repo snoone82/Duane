@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef } from "react";
+import Link from "next/link";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { Input, Select } from "@/components/ui/Input";
 import { CLIENT_STATUS } from "@/lib/status";
@@ -50,7 +51,15 @@ export function ClientsToolbar() {
           ))}
         </Select>
       </div>
-      <AddClientButton />
+      <div className="flex items-center gap-2">
+        <Link
+          href="/clients/import"
+          className="rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-ink-soft transition-colors hover:bg-surface-muted hover:text-ink"
+        >
+          Import client profile
+        </Link>
+        <AddClientButton />
+      </div>
     </div>
   );
 }

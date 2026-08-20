@@ -1,20 +1,56 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
-import { uploadClientFile } from "@/lib/actions/files";
+import { useRef, useState, useTransition } from "react";
+import { registerClientFile } from "@/lib/actions/files";
+import { createClient } from "@/lib/supabase/client";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Label, Select } from "@/components/ui/Input";
 import { Notice } from "@/components/ui/Notice";
 import { FILE_CATEGORIES } from "@/lib/files";
+import type { FileCategory } from "@/lib/enums";
 
 export function UploadFileButton({ clientId }: { clientId: string }) {
   const [isOpen, setIsOpen] = useState(false);
-  const [state, formAction, isPending] = useActionState(uploadClientFile, null);
+  const [error, setError] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const categoryRef = useRef<HTMLSelectElement>(null);
 
-  useEffect(() => {
-    if (state?.ok) setIsOpen(false);
-  }, [state]);
+  function handleUpload() {
+    const file = fileRef.current?.files?.[0];
+    const category = (categoryRef.current?.value ?? "other") as FileCategory;
+    if (!file || file.size === 0) {
+      setError("Choose a file first.");
+      return;
+    }
+    if (file.size > 500 * 1024 * 1024) {
+      setError("Keep files under 500 MB.");
+      return;
+    }
+    setError(null);
+    startTransition(async () => {
+      // Straight from the browser to storage — the old server-action path
+      // silently failed for anything over ~1 MB.
+      const supabase = createClient();
+      const safeName = file.name.replace(/[^\w.\- ]+/g, "_");
+      const storagePath = `clients/${clientId}/${crypto.randomUUID()}-${safeName}`;
+      const { error: uploadError } = await supabase.storage
+        .from("client-files")
+        .upload(storagePath, file, { contentType: file.type || undefined });
+      if (uploadError) {
+        setError(uploadError.message);
+        return;
+      }
+      const result = await registerClientFile(clientId, storagePath, file.name, category, file.size);
+      if (!result.ok) {
+        await supabase.storage.from("client-files").remove([storagePath]);
+        setError(result.message);
+        return;
+      }
+      setIsOpen(false);
+    });
+  }
 
   return (
     <>
@@ -23,19 +59,13 @@ export function UploadFileButton({ clientId }: { clientId: string }) {
       </Button>
       {isOpen && (
         <Modal title="Upload file" onClose={() => setIsOpen(false)}>
-          <form
-            action={(formData) => {
-              formData.set("client_id", clientId);
-              formAction(formData);
-            }}
-            className="space-y-3"
-          >
-            {state && !state.ok && <Notice kind="danger">{state.message}</Notice>}
+          <div className="space-y-3">
+            {error && <Notice kind="danger">{error}</Notice>}
             <div>
               <Label htmlFor="upload-file">File</Label>
               <input
                 id="upload-file"
-                name="file"
+                ref={fileRef}
                 type="file"
                 required
                 autoFocus
@@ -44,7 +74,7 @@ export function UploadFileButton({ clientId }: { clientId: string }) {
             </div>
             <div>
               <Label htmlFor="upload-category">Category</Label>
-              <Select id="upload-category" name="category" defaultValue="other">
+              <Select id="upload-category" ref={categoryRef} defaultValue="other">
                 {FILE_CATEGORIES.map((c) => (
                   <option key={c.value} value={c.value}>
                     {c.label}
@@ -56,11 +86,11 @@ export function UploadFileButton({ clientId }: { clientId: string }) {
               <Button type="button" variant="ghost" onClick={() => setIsOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit" variant="primary" disabled={isPending}>
+              <Button type="button" variant="primary" onClick={handleUpload} disabled={isPending}>
                 {isPending ? "Uploading…" : "Upload"}
               </Button>
             </div>
-          </form>
+          </div>
         </Modal>
       )}
     </>
