@@ -35,6 +35,14 @@ export default async function OverviewPage({ params }: { params: Promise<{ id: s
 
   return (
     <div className="max-w-5xl space-y-6">
+      <div className="flex justify-end">
+        <Link
+          href={`/clients/${id}/import`}
+          className="rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-ink-soft transition-colors hover:bg-surface-muted hover:text-ink"
+        >
+          Update via import
+        </Link>
+      </div>
       <NorthStarCard clientId={id} northStar={client.north_star} />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.3fr_1fr]">
@@ -115,6 +123,7 @@ export default async function OverviewPage({ params }: { params: Promise<{ id: s
               clientId={id}
               linkedUserId={client.portal_user_id}
               clientAccounts={clientAccounts}
+              clientEmail={client.email}
             />
           </section>
         )}

@@ -342,6 +342,495 @@ export async function commitClientImport(text: string): Promise<ActionResult<{ c
 }
 
 // ---------------------------------------------------------------------------
+// Update existing client via import (Duane's follow-up ask). Same format as
+// the create import — the AI includes only the sections that changed. Merge
+// semantics: provided non-empty values update matching records; unmatched
+// repeatable records are created; nothing is ever blanked or deleted; the
+// client is matched by its internal id (the page you're on), never by name.
+// Re-running the same import is safe — matching makes it a no-op.
+// ---------------------------------------------------------------------------
+
+export interface UpdateSection {
+  label: string;
+  /** "Field: old → new" style lines. */
+  updates: string[];
+  /** New records that will be created. */
+  creates: string[];
+  /** Records skipped (duplicates / already present). */
+  skips: string[];
+}
+
+export interface ClientUpdatePreview {
+  clientName: string;
+  nameMismatch: string | null;
+  sections: UpdateSection[];
+  needsConfirmation: string[];
+  warnings: string[];
+}
+
+const clip = (value: string, length = 60) => (value.length > length ? `${value.slice(0, length)}…` : value) || "(blank)";
+
+type UpdatePlan = {
+  preview: ClientUpdatePreview;
+  apply: () => Promise<void>;
+};
+
+/** Shared by preview and commit so what you saw is exactly what runs. */
+async function buildClientUpdatePlan(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  clientId: string,
+  text: string,
+  userId: string | null
+): Promise<{ ok: true; plan: UpdatePlan } | { ok: false; message: string }> {
+  const result = parseClientImport(text, { requireName: false });
+  if (!result.ok) return { ok: false, message: result.error };
+  const parsed = result.parsed;
+
+  const [
+    { data: client },
+    { data: vision },
+    { data: positioning },
+    { data: sales },
+    { data: audiences },
+    { data: socials },
+    { data: pillars },
+    { data: ideas },
+    { data: authority },
+    { data: consultations },
+    { data: actions },
+    { data: snapshots },
+    { data: targets },
+    { data: milestones },
+  ] = await Promise.all([
+    supabase.from("clients").select("*").eq("id", clientId).maybeSingle(),
+    supabase.from("brand_vision").select("*").eq("client_id", clientId).maybeSingle(),
+    supabase.from("positioning").select("*").eq("client_id", clientId).maybeSingle(),
+    supabase.from("sales_strategy").select("*").eq("client_id", clientId).maybeSingle(),
+    supabase.from("audiences").select("id,name").eq("client_id", clientId),
+    supabase.from("social_strategies").select("id,platform").eq("client_id", clientId),
+    supabase.from("brand_pillars").select("id,name").eq("client_id", clientId),
+    supabase.from("content_ideas").select("id,title").eq("client_id", clientId),
+    supabase.from("authority_opportunities").select("id,type,host").eq("client_id", clientId),
+    supabase.from("consultations").select("id,meeting_date,meeting_type").eq("client_id", clientId),
+    supabase.from("actions").select("id,title,status").eq("client_id", clientId),
+    supabase.from("metric_snapshots").select("id,platform,snapshot_date").eq("client_id", clientId),
+    supabase.from("metric_targets").select("id,platform").eq("client_id", clientId),
+    supabase.from("milestones").select("id,title,milestone_date").eq("client_id", clientId),
+  ]);
+  if (!client) return { ok: false, message: "Client not found (or you don't have access to it)." };
+
+  const sections: UpdateSection[] = [];
+  const work: (() => Promise<void>)[] = [];
+  const fail = (label: string, message: string) => new Error(`${label}: ${message}`);
+
+  // --- Overview + the three singleton strategy tables: field-level merge ---
+  type ScalarPatch = Record<string, string | number>;
+  const scalarSection = <T extends Record<string, unknown>>(
+    label: string,
+    current: T | null,
+    provided: Record<string, string | number | null>,
+    run: (patch: ScalarPatch) => PromiseLike<{ error: { message: string } | null }>
+  ) => {
+    if (!current) return;
+    const updates: string[] = [];
+    const patch: ScalarPatch = {};
+    for (const [key, raw] of Object.entries(provided)) {
+      if (raw === null || raw === "" || raw === undefined) continue; // blanks never overwrite
+      const existing = current[key];
+      if (String(existing ?? "") === String(raw)) continue;
+      patch[key] = raw;
+      updates.push(`${key.replace(/_/g, " ")}: ${clip(String(existing ?? ""))} → ${clip(String(raw))}`);
+    }
+    if (updates.length === 0) return;
+    sections.push({ label, updates, creates: [], skips: [] });
+    work.push(async () => {
+      const { error } = await run(patch);
+      if (error) throw fail(label, error.message);
+    });
+  };
+
+  type Tables = Database["public"]["Tables"];
+  scalarSection("Overview", client, { ...parsed.overview, name: parsed.overview.name || null }, (patch) =>
+    supabase.from("clients").update(patch as Tables["clients"]["Update"]).eq("id", clientId)
+  );
+  scalarSection("Vision", vision, parsed.vision, (patch) =>
+    supabase.from("brand_vision").update(patch as Tables["brand_vision"]["Update"]).eq("client_id", clientId)
+  );
+  scalarSection("Positioning", positioning, parsed.positioning, (patch) =>
+    supabase.from("positioning").update(patch as Tables["positioning"]["Update"]).eq("client_id", clientId)
+  );
+  scalarSection("Sales strategy", sales, parsed.sales, (patch) =>
+    supabase.from("sales_strategy").update(patch as Tables["sales_strategy"]["Update"]).eq("client_id", clientId)
+  );
+
+  // --- Repeatable records: match on a natural key; update matches, create
+  // the rest, never delete. ---
+  const repeatable = <P>(
+    label: string,
+    items: P[],
+    matchExisting: (item: P) => { id: string } | undefined,
+    itemLabel: (item: P) => string,
+    fields: (item: P) => Record<string, string>,
+    insert: (toCreate: P[]) => Promise<void>,
+    update: (id: string, patch: Record<string, string>, item: P) => Promise<void>
+  ) => {
+    if (items.length === 0) return;
+    const section: UpdateSection = { label, updates: [], creates: [], skips: [] };
+    const toCreate: P[] = [];
+    for (const item of items) {
+      const existing = matchExisting(item);
+      if (!existing) {
+        toCreate.push(item);
+        section.creates.push(itemLabel(item));
+        continue;
+      }
+      const patch: Record<string, string> = {};
+      for (const [key, value] of Object.entries(fields(item))) {
+        if (value.trim()) patch[key] = value;
+      }
+      if (Object.keys(patch).length === 0) {
+        section.skips.push(`${itemLabel(item)} — nothing new`);
+        continue;
+      }
+      section.updates.push(`${itemLabel(item)} (${Object.keys(patch).map((k) => k.replace(/_/g, " ")).join(", ")})`);
+      work.push(() => update(existing.id, patch, item));
+    }
+    if (toCreate.length > 0) work.push(() => insert(toCreate));
+    if (section.updates.length + section.creates.length + section.skips.length > 0) sections.push(section);
+  };
+
+  const lower = (value: string) => value.trim().toLowerCase();
+  const audienceByName = new Map((audiences ?? []).map((a) => [lower(a.name), a]));
+  const socialByPlatform = new Map((socials ?? []).map((s) => [lower(s.platform), s]));
+  const pillarByName = new Map((pillars ?? []).map((p) => [lower(p.name), p]));
+
+  repeatable(
+    "Audiences",
+    parsed.audiences,
+    (a) => audienceByName.get(lower(a.name)),
+    (a) => a.name,
+    (a) => a.fields,
+    async (create) => {
+      const { error } = await supabase
+        .from("audiences")
+        .insert(create.map((a, i) => ({ client_id: clientId, ...a.fields, name: a.name, sort_order: (audiences?.length ?? 0) + i })));
+      if (error) throw fail("Audiences", error.message);
+    },
+    async (id, patch) => {
+      const { error } = await supabase.from("audiences").update(patch as Tables["audiences"]["Update"]).eq("id", id);
+      if (error) throw fail("Audiences", error.message);
+    }
+  );
+
+  repeatable(
+    "Social strategies",
+    parsed.socials,
+    (s) => socialByPlatform.get(lower(s.platform)),
+    (s) => s.platform,
+    (s) => s.fields,
+    async (create) => {
+      const { error } = await supabase
+        .from("social_strategies")
+        .insert(create.map((s, i) => ({ client_id: clientId, ...s.fields, platform: s.platform, sort_order: (socials?.length ?? 0) + i })));
+      if (error) throw fail("Social strategies", error.message);
+    },
+    async (id, patch) => {
+      const { error } = await supabase.from("social_strategies").update(patch as Tables["social_strategies"]["Update"]).eq("id", id);
+      if (error) throw fail("Social strategies", error.message);
+    }
+  );
+
+  repeatable(
+    "Content pillars",
+    parsed.pillars,
+    (p) => pillarByName.get(lower(p.name)),
+    (p) => p.name,
+    (p) => p.fields,
+    async (create) => {
+      const { error } = await supabase
+        .from("brand_pillars")
+        .insert(create.map((p, i) => ({ client_id: clientId, ...p.fields, name: p.name, sort_order: (pillars?.length ?? 0) + i })));
+      if (error) throw fail("Content pillars", error.message);
+    },
+    async (id, patch) => {
+      const { error } = await supabase.from("brand_pillars").update(patch as Tables["brand_pillars"]["Update"]).eq("id", id);
+      if (error) throw fail("Content pillars", error.message);
+    }
+  );
+
+  // --- Create-only records: existing matches are duplicates to skip. ---
+  const ideaTitles = new Set((ideas ?? []).map((i) => lower(i.title)));
+  if (parsed.contentIdeas.length > 0) {
+    const section: UpdateSection = { label: "Content ideas", updates: [], creates: [], skips: [] };
+    const fresh = parsed.contentIdeas.filter((idea) => {
+      if (ideaTitles.has(lower(idea.title))) {
+        section.skips.push(`${idea.title} — already in the pipeline (use Import content to work on content)`);
+        return false;
+      }
+      section.creates.push(idea.title);
+      return true;
+    });
+    if (fresh.length > 0) {
+      work.push(async () => {
+        for (const idea of fresh) {
+          const { data: row, error } = await supabase
+            .from("content_ideas")
+            .insert({
+              client_id: clientId,
+              title: idea.title,
+              hook: idea.hook,
+              body: idea.body,
+              notes: idea.notes,
+              priority: idea.priority,
+              pillar_id: idea.pillar ? (pillarByName.get(lower(idea.pillar))?.id ?? null) : null,
+              audience_id: idea.audience ? (audienceByName.get(lower(idea.audience))?.id ?? null) : null,
+              created_by: userId,
+            })
+            .select("id")
+            .single();
+          if (error) throw fail("Content ideas", error.message);
+          if (idea.platforms.length > 0) {
+            const { error: outputError } = await supabase
+              .from("content_outputs")
+              .insert(idea.platforms.map((platform, i) => ({ content_id: row.id, client_id: clientId, platform, sort_order: i })));
+            if (outputError) throw fail("Content ideas", outputError.message);
+          }
+        }
+      });
+    }
+    sections.push(section);
+  }
+
+  const authorityKey = (type: string, host: string | null) => `${lower(type)}|${lower(host ?? "")}`;
+  const authorityKeys = new Set((authority ?? []).map((a) => authorityKey(a.type, a.host)));
+  if (parsed.authority.length > 0) {
+    const section: UpdateSection = { label: "Authority & opportunities", updates: [], creates: [], skips: [] };
+    const fresh = parsed.authority.filter((a) => {
+      const label = `${a.type}${a.host ? ` · ${a.host}` : ""}`;
+      if (authorityKeys.has(authorityKey(a.type, a.host))) {
+        section.skips.push(`${label} — already tracked`);
+        return false;
+      }
+      section.creates.push(label);
+      return true;
+    });
+    if (fresh.length > 0) {
+      work.push(async () => {
+        const { error } = await supabase.from("authority_opportunities").insert(
+          fresh.map((a) => ({
+            client_id: clientId,
+            type: a.type,
+            host: a.host,
+            status: a.status as "identified",
+            opportunity_date: a.opportunity_date,
+            audience_size: a.audience_size,
+            contact_name: a.contact_name,
+            contact_email: a.contact_email,
+            notes: a.notes,
+          }))
+        );
+        if (error) throw fail("Authority & opportunities", error.message);
+      });
+    }
+    sections.push(section);
+  }
+
+  const consultationKeys = new Set((consultations ?? []).map((c) => `${c.meeting_date}|${lower(c.meeting_type ?? "")}`));
+  if (parsed.consultations.length > 0) {
+    const section: UpdateSection = { label: "Meetings & consultations", updates: [], creates: [], skips: [] };
+    const fresh = parsed.consultations.filter((c, i) => {
+      const meetingDate = c.meeting_date ?? new Date().toISOString().slice(0, 10);
+      const label = `${meetingDate}${c.fields.meeting_type ? ` · ${c.fields.meeting_type}` : ""}`;
+      if (consultationKeys.has(`${meetingDate}|${lower(c.fields.meeting_type ?? "")}`)) {
+        section.skips.push(`${label} — already recorded`);
+        return false;
+      }
+      section.creates.push(label || `Meeting ${i + 1}`);
+      return true;
+    });
+    if (fresh.length > 0) {
+      work.push(async () => {
+        const { error } = await supabase.from("consultations").insert(
+          fresh.map((c) => {
+            const fields = { ...c.fields };
+            const next_meeting_date = fields.next_meeting_date;
+            delete fields.meeting_date;
+            delete fields.next_meeting_date;
+            return {
+              client_id: clientId,
+              ...fields,
+              meeting_date: c.meeting_date ?? new Date().toISOString().slice(0, 10),
+              next_meeting_date: next_meeting_date && /^\d{4}-\d{2}-\d{2}$/.test(next_meeting_date) ? next_meeting_date : null,
+              created_by: userId,
+            };
+          })
+        );
+        if (error) throw fail("Meetings & consultations", error.message);
+      });
+    }
+    sections.push(section);
+  }
+
+  const openActionTitles = new Set((actions ?? []).filter((a) => a.status !== "completed").map((a) => lower(a.title)));
+  const actionRows = parsed.actions.filter((a) => !openActionTitles.has(lower(a.title)));
+  if (parsed.actions.length > 0) {
+    const section: UpdateSection = { label: "Actions", updates: [], creates: [], skips: [] };
+    for (const a of parsed.actions) {
+      if (openActionTitles.has(lower(a.title))) section.skips.push(`${a.title} — already open`);
+      else section.creates.push(a.title);
+    }
+    sections.push(section);
+  }
+  if (parsed.needsConfirmation.length > 0) {
+    sections.push({
+      label: "Follow-up",
+      updates: [],
+      creates: [`Confirm outstanding details with client (${parsed.needsConfirmation.length} items)`],
+      skips: [],
+    });
+  }
+  if (actionRows.length > 0 || parsed.needsConfirmation.length > 0) {
+    work.push(async () => {
+      const rows = actionRows.map((a) => ({
+        client_id: clientId,
+        title: a.title,
+        description: a.description,
+        due_date: a.due_date,
+        owner_name: a.owner_name,
+        owner_user_id: a.owner_name ? null : userId,
+      }));
+      if (parsed.needsConfirmation.length > 0) {
+        rows.push({
+          client_id: clientId,
+          title: "Confirm outstanding profile details with client",
+          description: "Fields this update import couldn't confirm — check them with the client and fill them in.",
+          due_date: null,
+          owner_name: null,
+          owner_user_id: userId,
+          // @ts-expect-error checklist is jsonb; widens fine at runtime
+          checklist: parsed.needsConfirmation.map((label) => ({ text: label, done: false })),
+        });
+      }
+      const { error } = await supabase.from("actions").insert(rows);
+      if (error) throw fail("Actions", error.message);
+    });
+  }
+
+  const snapshotKeys = new Set((snapshots ?? []).map((s) => `${lower(s.platform)}|${s.snapshot_date}`));
+  if (parsed.metricSnapshots.length > 0) {
+    const section: UpdateSection = { label: "Metric snapshots", updates: [], creates: [], skips: [] };
+    const fresh = parsed.metricSnapshots.filter((m) => {
+      const label = `${m.platform} · ${m.snapshot_date}`;
+      if (snapshotKeys.has(`${lower(m.platform)}|${m.snapshot_date}`)) {
+        section.skips.push(`${label} — already recorded`);
+        return false;
+      }
+      section.creates.push(label);
+      return true;
+    });
+    if (fresh.length > 0) {
+      work.push(async () => {
+        const { error } = await supabase.from("metric_snapshots").insert(
+          fresh.map((m) => ({ client_id: clientId, platform: m.platform, snapshot_date: m.snapshot_date, followers: m.followers, ...m.extras }))
+        );
+        if (error) throw fail("Metric snapshots", error.message);
+      });
+    }
+    sections.push(section);
+  }
+
+  const targetByPlatform = new Map((targets ?? []).map((t) => [lower(t.platform), t]));
+  if (parsed.metricTargets.length > 0) {
+    const section: UpdateSection = { label: "Metric targets", updates: [], creates: [], skips: [] };
+    for (const target of parsed.metricTargets) {
+      const existing = targetByPlatform.get(lower(target.platform));
+      if (existing) {
+        section.updates.push(target.platform);
+        work.push(async () => {
+          const patch: Record<string, number | string> = {};
+          if (target.baseline_value !== null) patch.baseline_value = target.baseline_value;
+          if (target.target_value !== null) patch.target_value = target.target_value;
+          if (target.target_date !== null) patch.target_date = target.target_date;
+          if (Object.keys(patch).length === 0) return;
+          const { error } = await supabase.from("metric_targets").update(patch as Tables["metric_targets"]["Update"]).eq("id", existing.id);
+          if (error) throw fail("Metric targets", error.message);
+        });
+      } else {
+        section.creates.push(target.platform);
+        work.push(async () => {
+          const { error } = await supabase.from("metric_targets").insert({ client_id: clientId, ...target });
+          if (error) throw fail("Metric targets", error.message);
+        });
+      }
+    }
+    sections.push(section);
+  }
+
+  const milestoneKeys = new Set((milestones ?? []).map((m) => `${lower(m.title)}|${m.milestone_date}`));
+  if (parsed.milestones.length > 0) {
+    const section: UpdateSection = { label: "Timeline milestones", updates: [], creates: [], skips: [] };
+    const fresh = parsed.milestones.filter((m) => {
+      if (milestoneKeys.has(`${lower(m.title)}|${m.milestone_date}`)) {
+        section.skips.push(`${m.title} — already on the timeline`);
+        return false;
+      }
+      section.creates.push(m.title);
+      return true;
+    });
+    if (fresh.length > 0) {
+      work.push(async () => {
+        const { error } = await supabase.from("milestones").insert(fresh.map((m) => ({ client_id: clientId, ...m })));
+        if (error) throw fail("Timeline milestones", error.message);
+      });
+    }
+    sections.push(section);
+  }
+
+  return {
+    ok: true,
+    plan: {
+      preview: {
+        clientName: client.name,
+        nameMismatch:
+          parsed.overview.name && lower(parsed.overview.name) !== lower(client.name)
+            ? `The import says "${parsed.overview.name}" but this client is "${client.name}" — make sure you're importing into the right profile. The import always applies to THIS client.`
+            : null,
+        sections,
+        needsConfirmation: parsed.needsConfirmation,
+        warnings: parsed.warnings,
+      },
+      apply: async () => {
+        for (const job of work) await job();
+      },
+    },
+  };
+}
+
+export async function previewClientUpdate(clientId: string, text: string): Promise<ActionResult<ClientUpdatePreview>> {
+  return runAction(async () => {
+    const supabase = await createClient();
+    const built = await buildClientUpdatePlan(supabase, clientId, text, null);
+    if (!built.ok) throw new Error(built.message);
+    return built.plan.preview;
+  });
+}
+
+export async function commitClientUpdate(clientId: string, text: string): Promise<ActionResult<ClientUpdatePreview>> {
+  return runAction(async () => {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    const built = await buildClientUpdatePlan(supabase, clientId, text, user?.id ?? null);
+    if (!built.ok) throw new Error(built.message);
+    await built.plan.apply();
+    revalidatePath(`/clients/${clientId}`, "layout");
+    revalidatePath("/");
+    return built.plan.preview;
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Content Import (§2)
 // ---------------------------------------------------------------------------
 

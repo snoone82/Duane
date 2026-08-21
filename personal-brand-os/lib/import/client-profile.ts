@@ -184,7 +184,8 @@ function stripFences(input: string): string {
 
 export type ParseResult = { ok: true; parsed: ParsedClientImport } | { ok: false; error: string };
 
-export function parseClientImport(input: string): ParseResult {
+export function parseClientImport(input: string, options?: { requireName?: boolean }): ParseResult {
+  const requireName = options?.requireName ?? true;
   let root: unknown;
   try {
     root = JSON.parse(stripFences(input));
@@ -206,7 +207,9 @@ export function parseClientImport(input: string): ParseResult {
 
   const overviewRaw = (typeof doc.overview === "object" && doc.overview !== null ? doc.overview : {}) as Record<string, unknown>;
   const name = text(overviewRaw.name, "Overview → name", issues);
-  if (!name) return { ok: false, error: "The client's name (overview.name) is required — an import can't create a nameless client." };
+  if (!name && requireName) {
+    return { ok: false, error: "The client's name (overview.name) is required — an import can't create a nameless client." };
+  }
 
   const nullable = (v: string) => v || null;
   const overview: ParsedClientImport["overview"] = {

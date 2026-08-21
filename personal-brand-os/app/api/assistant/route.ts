@@ -74,6 +74,9 @@ export async function POST(request: Request) {
         }
         controller.close();
       } catch (err) {
+        // Log server-side too — streamed errors are otherwise invisible in
+        // Vercel's runtime logs, which made "it shows an error" undiagnosable.
+        console.error("assistant model call failed:", err);
         controller.enqueue(
           encoder.encode(`\n\n[The assistant hit an error: ${err instanceof Error ? err.message : "unknown error"}]`)
         );
