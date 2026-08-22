@@ -11,7 +11,7 @@ export default async function ContentImportPage({ params }: { params: Promise<{ 
   const [{ data: pillars }, { data: audiences }, { data: socials }] = await Promise.all([
     supabase.from("brand_pillars").select("name").eq("client_id", id).order("sort_order"),
     supabase.from("audiences").select("name").eq("client_id", id).order("sort_order"),
-    supabase.from("social_strategies").select("platform").eq("client_id", id).order("sort_order"),
+    supabase.from("social_strategies").select("platform,account_name").eq("client_id", id).order("sort_order"),
   ]);
 
   // Bake the client's approved strategy into the template so the AI has the
@@ -21,7 +21,11 @@ export default async function ContentImportPage({ params }: { params: Promise<{ 
     "This client's APPROVED strategy — use these exact names:",
     `Pillars: ${(pillars ?? []).map((p) => p.name).join("; ") || "none yet"}`,
     `Audiences: ${(audiences ?? []).map((a) => a.name).join("; ") || "none yet"}`,
-    `Platforms: ${(socials ?? []).map((s) => s.platform).join("; ") || "none yet"}`,
+    `Publishing accounts (use the account name in outputs.account): ${
+      (socials ?? [])
+        .map((s) => (s.account_name ? `${s.platform} — ${s.account_name}` : s.platform))
+        .join("; ") || "none yet"
+    }`,
     "",
   ].join("\n");
   const template = CONTENT_IMPORT_TEMPLATE.replace("Here is the content to convert:", `${strategyBlock}\nHere is the content to convert:`);

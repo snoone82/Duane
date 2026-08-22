@@ -7,6 +7,7 @@ import { ContentIdeaRow } from "@/components/clients/ContentIdeaRow";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { CONTENT_STATUS } from "@/lib/status";
 import { getAllTeamMembers } from "@/lib/data/client";
+import { socialAccountLabel } from "@/lib/format";
 
 export const metadata = { title: "Content" };
 
@@ -14,7 +15,7 @@ export default async function ContentPage({ params }: { params: Promise<{ id: st
   const { id } = await params;
   const supabase = await createClient();
 
-  const [{ data: pillars }, { data: ideas }, { data: audiences }, { data: outputs }, team, { data: auditRows }] = await Promise.all([
+  const [{ data: pillars }, { data: ideas }, { data: audiences }, { data: outputs }, team, { data: auditRows }, { data: socialAccounts }] = await Promise.all([
     supabase.from("brand_pillars").select("*").eq("client_id", id).order("sort_order", { ascending: true }).order("created_at", { ascending: true }),
     supabase.from("content_ideas").select("*").eq("client_id", id).order("created_at", { ascending: false }),
     supabase.from("audiences").select("*").eq("client_id", id).order("sort_order", { ascending: true }),
@@ -27,7 +28,22 @@ export default async function ContentPage({ params }: { params: Promise<{ id: st
       .in("table_name", ["content_ideas", "content_outputs"])
       .order("changed_at", { ascending: false })
       .limit(300),
+    supabase
+      .from("social_strategies")
+      .select("id,platform,account_name,account_status,publishing_enabled")
+      .eq("client_id", id)
+      .eq("publishing_enabled", true)
+      .neq("account_status", "inactive")
+      .order("is_primary", { ascending: false })
+      .order("sort_order"),
   ]);
+
+  // Publishing accounts (Duane's multi-account structure): content selects
+  // the actual account — "LinkedIn — Daniel Andrews" — not just a platform.
+  const publishingAccounts = (socialAccounts ?? []).map((account) => ({
+    id: account.id,
+    label: socialAccountLabel(account.platform, account.account_name),
+  }));
 
   const pillarList = pillars ?? [];
   const ideaList = ideas ?? [];
@@ -93,6 +109,7 @@ export default async function ContentPage({ params }: { params: Promise<{ id: st
       audiences={audienceList}
       pillarName={idea.pillar_id ? pillarNames.get(idea.pillar_id) ?? null : null}
       team={teamOptions}
+      accounts={publishingAccounts}
       history={historyForIdea(idea.id)}
       defaultOpen={defaultOpen}
     />

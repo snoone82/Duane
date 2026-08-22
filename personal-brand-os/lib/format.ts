@@ -75,6 +75,13 @@ export function slugify(label: string): string {
 
 /** audit_log's action values → past-tense verbs for activity feeds
  * ("insert" + "d" made "insertd" — caught live). */
+/** "LinkedIn — Daniel Andrews" when an account name is set, else "LinkedIn".
+ * The one label format for publishing accounts across content, calendar,
+ * portal and PDFs. */
+export function socialAccountLabel(platform: string, accountName?: string | null): string {
+  return accountName?.trim() ? `${platform} — ${accountName.trim()}` : platform;
+}
+
 export function auditVerb(action: string): string {
   switch (action) {
     case "insert":

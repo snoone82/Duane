@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { PdfBuilder } from "@/lib/pdf/builder";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTime, socialAccountLabel } from "@/lib/format";
 
 export const maxDuration = 60;
 
@@ -23,7 +23,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   // RLS scopes access (team with client access, or the linked portal client).
   const { data: output } = await supabase
     .from("content_outputs")
-    .select("*, content:content_ideas(title, hook, target_publish_date), client:clients(name)")
+    .select("*, content:content_ideas(title, hook, target_publish_date), client:clients(name), social:social_strategies(account_name)")
     .eq("id", id)
     .maybeSingle();
   if (!output) return Response.json({ error: "Platform version not found." }, { status: 404 });
@@ -41,7 +41,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
           : "Not yet scheduled";
 
   await pdf.header(
-    `Publishing Pack — ${output.platform}`,
+    `Publishing Pack — ${socialAccountLabel(output.platform, output.social?.account_name)}`,
     `${title} · ${clientName}`,
     `${output.format || "Format not set"} · ${when}`
   );

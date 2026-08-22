@@ -66,7 +66,7 @@ export async function buildStrategySnapshot(supabase: Client, clientId: string):
       ["Calls to action", sales?.calls_to_action],
     ]),
     platforms: (socials ?? []).map((s) => ({
-      platform: s.platform,
+      platform: s.account_name ? `${s.platform} — ${s.account_name}` : s.platform,
       objective: s.objective.trim(),
       postingFrequency: s.posting_frequency.trim(),
     })),

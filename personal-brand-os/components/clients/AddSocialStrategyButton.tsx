@@ -23,10 +23,10 @@ export function AddSocialStrategyButton({ clientId }: { clientId: string }) {
   return (
     <>
       <Button variant="primary" onClick={() => setIsOpen(true)}>
-        + Add platform
+        + Add account
       </Button>
       {isOpen && (
-        <Modal title="Add platform strategy" onClose={() => setIsOpen(false)}>
+        <Modal title="Add social account" onClose={() => setIsOpen(false)}>
           <form
             action={(formData) => {
               formData.set("client_id", clientId);
@@ -52,7 +52,11 @@ export function AddSocialStrategyButton({ clientId }: { clientId: string }) {
                 ))}
               </datalist>
             </div>
-            <p className="text-xs text-ink-faint">One strategy per platform — the objective, audience and cadence get filled in after.</p>
+            <div>
+              <Label htmlFor="social-account-name">Account / channel name</Label>
+              <Input id="social-account-name" name="account_name" autoComplete="off" placeholder="e.g. Daniel Andrews, CEG Programme" />
+            </div>
+            <p className="text-xs text-ink-faint">URL, owner/brand, type and the strategy fields get filled in after — the account card is the single source of truth for this account.</p>
             <div className="flex justify-end gap-2 pt-2">
               <Button type="button" variant="ghost" onClick={() => setIsOpen(false)}>
                 Cancel

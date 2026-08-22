@@ -452,9 +452,7 @@ export type Database = {
           email: string | null
           id: string
           industry: string | null
-          instagram_url: string | null
           job_title: string | null
-          linkedin_url: string | null
           location: string | null
           name: string
           north_star: string
@@ -465,11 +463,8 @@ export type Database = {
           portal_user_id: string | null
           retainer_amount: number | null
           status: Database["public"]["Enums"]["client_status"]
-          tiktok_url: string | null
-          twitter_url: string | null
           updated_at: string
           website_url: string | null
-          youtube_url: string | null
         }
         Insert: {
           company?: string | null
@@ -478,9 +473,7 @@ export type Database = {
           email?: string | null
           id?: string
           industry?: string | null
-          instagram_url?: string | null
           job_title?: string | null
-          linkedin_url?: string | null
           location?: string | null
           name: string
           north_star?: string
@@ -491,11 +484,8 @@ export type Database = {
           portal_user_id?: string | null
           retainer_amount?: number | null
           status?: Database["public"]["Enums"]["client_status"]
-          tiktok_url?: string | null
-          twitter_url?: string | null
           updated_at?: string
           website_url?: string | null
-          youtube_url?: string | null
         }
         Update: {
           company?: string | null
@@ -504,9 +494,7 @@ export type Database = {
           email?: string | null
           id?: string
           industry?: string | null
-          instagram_url?: string | null
           job_title?: string | null
-          linkedin_url?: string | null
           location?: string | null
           name?: string
           north_star?: string
@@ -517,11 +505,8 @@ export type Database = {
           portal_user_id?: string | null
           retainer_amount?: number | null
           status?: Database["public"]["Enums"]["client_status"]
-          tiktok_url?: string | null
-          twitter_url?: string | null
           updated_at?: string
           website_url?: string | null
-          youtube_url?: string | null
         }
         Relationships: [
           {
@@ -836,6 +821,7 @@ export type Database = {
           published_at: string | null
           reach: number | null
           scheduled_at: string | null
+          social_account_id: string | null
           sort_order: number
           status: string
           thumbnail_path: string | null
@@ -863,6 +849,7 @@ export type Database = {
           published_at?: string | null
           reach?: number | null
           scheduled_at?: string | null
+          social_account_id?: string | null
           sort_order?: number
           status?: string
           thumbnail_path?: string | null
@@ -890,6 +877,7 @@ export type Database = {
           published_at?: string | null
           reach?: number | null
           scheduled_at?: string | null
+          social_account_id?: string | null
           sort_order?: number
           status?: string
           thumbnail_path?: string | null
@@ -910,6 +898,13 @@ export type Database = {
             columns: ["content_id"]
             isOneToOne: false
             referencedRelation: "content_ideas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "content_outputs_social_account_id_fkey"
+            columns: ["social_account_id"]
+            isOneToOne: false
+            referencedRelation: "social_strategies"
             referencedColumns: ["id"]
           },
         ]
@@ -1231,6 +1226,9 @@ export type Database = {
       }
       social_strategies: {
         Row: {
+          account_name: string
+          account_status: string
+          account_type: string
           audience: string
           client_id: string
           content_types: string
@@ -1239,13 +1237,21 @@ export type Database = {
           engagement_strategy: string
           growth_strategy: string
           id: string
+          is_primary: boolean
           objective: string
+          owner_brand: string
           platform: string
           posting_frequency: string
+          publishing_enabled: boolean
+          show_on_overview: boolean
           sort_order: number
           updated_at: string
+          url: string
         }
         Insert: {
+          account_name?: string
+          account_status?: string
+          account_type?: string
           audience?: string
           client_id: string
           content_types?: string
@@ -1254,13 +1260,21 @@ export type Database = {
           engagement_strategy?: string
           growth_strategy?: string
           id?: string
+          is_primary?: boolean
           objective?: string
+          owner_brand?: string
           platform: string
           posting_frequency?: string
+          publishing_enabled?: boolean
+          show_on_overview?: boolean
           sort_order?: number
           updated_at?: string
+          url?: string
         }
         Update: {
+          account_name?: string
+          account_status?: string
+          account_type?: string
           audience?: string
           client_id?: string
           content_types?: string
@@ -1269,11 +1283,16 @@ export type Database = {
           engagement_strategy?: string
           growth_strategy?: string
           id?: string
+          is_primary?: boolean
           objective?: string
+          owner_brand?: string
           platform?: string
           posting_frequency?: string
+          publishing_enabled?: boolean
+          show_on_overview?: boolean
           sort_order?: number
           updated_at?: string
+          url?: string
         }
         Relationships: [
           {
@@ -1345,7 +1364,7 @@ export type Database = {
           },
         ]
       }
-    workspace_settings: {
+      workspace_settings: {
         Row: {
           id: boolean
           monthly_sales_target: number | null
@@ -1429,6 +1448,7 @@ export type Database = {
         Args: { target_client_id: string }
         Returns: boolean
       }
+      is_team_member: { Args: never; Returns: boolean }
     }
     Enums: {
       action_status: "not_started" | "in_progress" | "completed" | "waiting"

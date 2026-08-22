@@ -25,12 +25,19 @@ export default async function OverviewPage({ params }: { params: Promise<{ id: s
   const currentProfile = await getCurrentProfile();
   const isAdmin = currentProfile?.role === "admin";
 
-  const [{ openActions, lastConsultation, nextMeeting }, assignedMembers, allMembers, activity, clientAccounts] = await Promise.all([
+  const [{ openActions, lastConsultation, nextMeeting }, assignedMembers, allMembers, activity, clientAccounts, { data: socialAccounts }] = await Promise.all([
     getOverviewSummary(supabase, id),
     getAssignedMembers(supabase, id),
     getAllTeamMembers(supabase),
     isAdmin ? getClientActivity(supabase, id) : Promise.resolve([]),
     isAdmin ? getClientRoleProfiles(supabase) : Promise.resolve([]),
+    supabase
+      .from("social_strategies")
+      .select("id,platform,account_name,owner_brand,url,account_status,is_primary,show_on_overview")
+      .eq("client_id", id)
+      .eq("show_on_overview", true)
+      .order("is_primary", { ascending: false })
+      .order("sort_order"),
   ]);
 
   return (
@@ -48,6 +55,41 @@ export default async function OverviewPage({ params }: { params: Promise<{ id: s
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.3fr_1fr]">
       <div className="space-y-6">
         <ClientDetailsForms client={client} />
+
+        <section className="rounded-lg border border-border bg-surface p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-ink">Social profiles</h2>
+            <Link href={`/clients/${id}/social`} className="text-xs text-accent underline-offset-2 hover:underline">
+              Manage on the Social tab →
+            </Link>
+          </div>
+          {(socialAccounts ?? []).length === 0 ? (
+            <p className="text-sm text-ink-faint">
+              No social accounts marked &ldquo;Show on Overview&rdquo; yet — accounts are entered once, on the Social tab.
+            </p>
+          ) : (
+            <ul className="space-y-1.5">
+              {(socialAccounts ?? []).map((account) => (
+                <li key={account.id} className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="min-w-0 text-sm text-ink">
+                    {account.url ? (
+                      <a href={account.url} target="_blank" rel="noreferrer" className="text-accent underline-offset-2 hover:underline">
+                        {account.account_name ? `${account.platform} — ${account.account_name}` : account.platform}
+                      </a>
+                    ) : (
+                      <>{account.account_name ? `${account.platform} — ${account.account_name}` : account.platform}</>
+                    )}
+                    {account.owner_brand && <span className="ml-2 text-xs text-ink-faint">{account.owner_brand}</span>}
+                  </span>
+                  <span className="flex flex-shrink-0 items-center gap-1.5 text-xs text-ink-faint">
+                    {account.is_primary && <span className="rounded-full bg-surface-muted px-2 py-0.5">Primary</span>}
+                    {account.account_status !== "active" && <span className="capitalize">{account.account_status}</span>}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
 
         <section className="rounded-lg border border-border bg-surface p-4">
           <div className="mb-3 flex items-center justify-between">

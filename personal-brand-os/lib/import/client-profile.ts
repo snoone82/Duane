@@ -35,11 +35,6 @@ export interface ParsedClientImport extends ImportIssues {
     north_star: string;
     notes: string | null;
     website_url: string | null;
-    linkedin_url: string | null;
-    instagram_url: string | null;
-    twitter_url: string | null;
-    youtube_url: string | null;
-    tiktok_url: string | null;
   };
   vision: Record<string, string>;
   positioning: Record<string, string>;
@@ -88,7 +83,10 @@ const AUDIENCE_FIELDS = [
   "description", "demographics", "stage", "pain_points", "goals", "content_interests",
   "target_belief", "target_action", "where_they_are", "notes",
 ];
-const SOCIAL_FIELDS = ["objective", "audience", "content_types", "posting_frequency", "growth_strategy", "engagement_strategy", "cta_strategy"];
+const SOCIAL_FIELDS = [
+  "account_name", "owner_brand", "url", "objective", "audience", "content_types",
+  "posting_frequency", "growth_strategy", "engagement_strategy", "cta_strategy",
+];
 const PILLAR_FIELDS = [
   "description", "target_audience", "purpose", "key_messages", "example_topics",
   "associated_stories", "relevant_expertise", "calls_to_action",
@@ -225,11 +223,6 @@ export function parseClientImport(input: string, options?: { requireName?: boole
     north_star: text(overviewRaw.north_star, "Overview → North Star", issues),
     notes: nullable(text(overviewRaw.notes, "Overview → notes", issues)),
     website_url: nullable(text(overviewRaw.website_url, "Overview → website", issues)),
-    linkedin_url: nullable(text(overviewRaw.linkedin_url, "Overview → LinkedIn", issues)),
-    instagram_url: nullable(text(overviewRaw.instagram_url, "Overview → Instagram", issues)),
-    twitter_url: nullable(text(overviewRaw.twitter_url, "Overview → X/Twitter", issues)),
-    youtube_url: nullable(text(overviewRaw.youtube_url, "Overview → YouTube", issues)),
-    tiktok_url: nullable(text(overviewRaw.tiktok_url, "Overview → TikTok", issues)),
   };
 
   const audiences = asArray(doc.audiences, "Audiences", issues).flatMap((raw, i) => {

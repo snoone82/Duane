@@ -151,13 +151,16 @@ export async function approveForProduction(_prev: ActionResult | null, formData:
   const productionDue = String(formData.get("production_due_date") ?? "") || null;
   const targetPublish = String(formData.get("target_publish_date") ?? "") || null;
   const requirements = String(formData.get("requirements") ?? "").trim();
-  const platforms = formData
-    .getAll("platforms")
-    .map((p) => String(p).trim())
+  // Publishing accounts from the client's Social tab (ids), plus an optional
+  // free-text platform for one-offs not set up as an account.
+  const accountIds = formData
+    .getAll("accounts")
+    .map((value) => String(value).trim())
     .filter(Boolean);
   const extraPlatform = String(formData.get("platform_other") ?? "").trim();
-  if (extraPlatform) platforms.push(extraPlatform);
-  if (platforms.length === 0) return { ok: false, message: "Pick at least one platform." };
+  if (accountIds.length === 0 && !extraPlatform) {
+    return { ok: false, message: "Pick at least one publishing account (or type a platform)." };
+  }
 
   return runAction(async () => {
     const supabase = await createClient();
@@ -186,12 +189,32 @@ export async function approveForProduction(_prev: ActionResult | null, formData:
       .single();
     if (actionError) throw new Error(actionError.message);
 
-    // One pending output per platform (dedup against any that already exist).
-    const { data: existing } = await supabase.from("content_outputs").select("platform").eq("content_id", ideaId);
-    const have = new Set((existing ?? []).map((o) => o.platform.toLowerCase()));
-    const rows = platforms
-      .filter((p) => !have.has(p.toLowerCase()))
-      .map((platform, i) => ({ content_id: ideaId, client_id: clientId, platform, sort_order: i }));
+    // One pending output per selected publishing account (dedup against any
+    // that already exist for this idea).
+    const { data: accounts } = accountIds.length
+      ? await supabase.from("social_strategies").select("id,platform").eq("client_id", clientId).in("id", accountIds)
+      : { data: [] };
+    const { data: existing } = await supabase
+      .from("content_outputs")
+      .select("platform,social_account_id")
+      .eq("content_id", ideaId);
+    const haveAccounts = new Set((existing ?? []).map((o) => o.social_account_id).filter(Boolean));
+    const havePlatforms = new Set((existing ?? []).map((o) => o.platform.toLowerCase()));
+
+    const rows = [
+      ...(accounts ?? [])
+        .filter((account) => !haveAccounts.has(account.id))
+        .map((account, i) => ({
+          content_id: ideaId,
+          client_id: clientId,
+          platform: account.platform,
+          social_account_id: account.id,
+          sort_order: i,
+        })),
+      ...(extraPlatform && !havePlatforms.has(extraPlatform.toLowerCase())
+        ? [{ content_id: ideaId, client_id: clientId, platform: extraPlatform, social_account_id: null, sort_order: accountIds.length }]
+        : []),
+    ];
     if (rows.length > 0) {
       const { error: outputError } = await supabase.from("content_outputs").insert(rows);
       if (outputError) throw new Error(outputError.message);
@@ -250,15 +273,50 @@ export async function requestContentChanges(clientId: string, ideaId: string, co
 export async function addContentOutput(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
   const clientId = String(formData.get("client_id") ?? "");
   const contentId = String(formData.get("content_id") ?? "");
-  const platform = String(formData.get("platform") ?? "").trim();
+  const accountId = String(formData.get("account_id") ?? "").trim();
+  const platformRaw = String(formData.get("platform") ?? "").trim();
   const format = String(formData.get("format") ?? "").trim();
-  if (!platform) return { ok: false, message: "Platform is required." };
+  if (!accountId && !platformRaw) return { ok: false, message: "Pick a publishing account or type a platform." };
 
   return runAction(async () => {
     const supabase = await createClient();
+    let platform = platformRaw;
+    if (accountId) {
+      const { data: account } = await supabase
+        .from("social_strategies")
+        .select("platform")
+        .eq("id", accountId)
+        .eq("client_id", clientId)
+        .maybeSingle();
+      if (!account) throw new Error("That publishing account doesn't belong to this client.");
+      platform = account.platform;
+    }
     const { error } = await supabase
       .from("content_outputs")
-      .insert({ content_id: contentId, client_id: clientId, platform, format });
+      .insert({ content_id: contentId, client_id: clientId, platform, format, social_account_id: accountId || null });
+    if (error) throw new Error(error.message);
+    revalidateContent(clientId);
+    return undefined;
+  });
+}
+
+/** Point a platform version at a different publishing account (or clear it).
+ * Choosing an account also syncs the platform label from the account. */
+export async function assignOutputAccount(clientId: string, outputId: string, accountId: string | null): Promise<ActionResult> {
+  return runAction(async () => {
+    const supabase = await createClient();
+    let patch: { social_account_id: string | null; platform?: string } = { social_account_id: accountId };
+    if (accountId) {
+      const { data: account } = await supabase
+        .from("social_strategies")
+        .select("platform")
+        .eq("id", accountId)
+        .eq("client_id", clientId)
+        .maybeSingle();
+      if (!account) throw new Error("That publishing account doesn't belong to this client.");
+      patch = { social_account_id: accountId, platform: account.platform };
+    }
+    const { error } = await supabase.from("content_outputs").update(patch).eq("id", outputId);
     if (error) throw new Error(error.message);
     revalidateContent(clientId);
     return undefined;

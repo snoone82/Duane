@@ -78,11 +78,6 @@ export async function commitClientImport(text: string): Promise<ActionResult<{ c
         north_star: parsed.overview.north_star,
         notes: parsed.overview.notes,
         website_url: parsed.overview.website_url,
-        linkedin_url: parsed.overview.linkedin_url,
-        instagram_url: parsed.overview.instagram_url,
-        twitter_url: parsed.overview.twitter_url,
-        youtube_url: parsed.overview.youtube_url,
-        tiktok_url: parsed.overview.tiktok_url,
         created_by: user?.id ?? null,
       })
       .select("id")
@@ -854,12 +849,13 @@ export async function previewContentImport(clientId: string, text: string): Prom
     const [{ data: pillars }, { data: audiences }, { data: socials }, { data: existing }] = await Promise.all([
       supabase.from("brand_pillars").select("name").eq("client_id", clientId),
       supabase.from("audiences").select("name").eq("client_id", clientId),
-      supabase.from("social_strategies").select("platform").eq("client_id", clientId),
+      supabase.from("social_strategies").select("platform,account_name").eq("client_id", clientId),
       supabase.from("content_ideas").select("title").eq("client_id", clientId),
     ]);
     const pillarNames = new Set((pillars ?? []).map((p) => p.name.toLowerCase()));
     const audienceNames = new Set((audiences ?? []).map((a) => a.name.toLowerCase()));
     const strategyPlatforms = new Set((socials ?? []).map((s) => s.platform.toLowerCase()));
+    const accountNames = new Set((socials ?? []).map((s) => s.account_name.toLowerCase()).filter(Boolean));
     const existingTitles = new Set((existing ?? []).map((c) => c.title.toLowerCase()));
 
     const ideas = parsed.ideas.map((idea) => {
@@ -871,7 +867,10 @@ export async function previewContentImport(clientId: string, text: string): Prom
         flags.push(`Audience "${idea.audience}" isn't in this client's audiences — it will be left unassigned, not created.`);
       }
       for (const output of idea.outputs) {
-        if (strategyPlatforms.size > 0 && !strategyPlatforms.has(output.platform.toLowerCase())) {
+        if (output.account && !accountNames.has(output.account.toLowerCase())) {
+          flags.push(`Account "${output.account}" isn't on this client's Social tab — the version will be created without an account link.`);
+        }
+        if (!output.account && strategyPlatforms.size > 0 && !strategyPlatforms.has(output.platform.toLowerCase())) {
           flags.push(`Platform "${output.platform}" isn't in this client's social strategy — check it's intentional.`);
         }
       }
@@ -901,14 +900,18 @@ export async function commitContentImport(
       data: { user },
     } = await supabase.auth.getUser();
 
-    const [{ data: pillars }, { data: audiences }, { data: existing }] = await Promise.all([
+    const [{ data: pillars }, { data: audiences }, { data: existing }, { data: socials }] = await Promise.all([
       supabase.from("brand_pillars").select("id,name").eq("client_id", clientId),
       supabase.from("audiences").select("id,name").eq("client_id", clientId),
       supabase.from("content_ideas").select("title").eq("client_id", clientId),
+      supabase.from("social_strategies").select("id,platform,account_name").eq("client_id", clientId),
     ]);
     const pillarIds = new Map((pillars ?? []).map((p) => [p.name.toLowerCase(), p.id]));
     const audienceIds = new Map((audiences ?? []).map((a) => [a.name.toLowerCase(), a.id]));
     const existingTitles = new Set((existing ?? []).map((c) => c.title.toLowerCase()));
+    const accountsByName = new Map(
+      (socials ?? []).filter((s) => s.account_name).map((s) => [s.account_name.toLowerCase(), s])
+    );
 
     let created = 0;
     const skippedDuplicates: string[] = [];
@@ -939,19 +942,25 @@ export async function commitContentImport(
 
       if (idea.outputs.length > 0) {
         const { error: outputError } = await supabase.from("content_outputs").insert(
-          idea.outputs.map((output, i) => ({
-            content_id: row.id,
-            client_id: clientId,
-            platform: output.platform,
-            format: output.format,
-            caption: output.caption,
-            cta: output.cta,
-            hashtags: output.hashtags,
-            alt_text: output.alt_text,
-            destination_link: output.destination_link,
-            notes: output.notes,
-            sort_order: i,
-          }))
+          idea.outputs.map((output, i) => {
+            // Match the named publishing account from the Social tab; the
+            // matched account also wins on the platform label.
+            const account = output.account ? accountsByName.get(output.account.toLowerCase()) : undefined;
+            return {
+              content_id: row.id,
+              client_id: clientId,
+              platform: account?.platform ?? output.platform,
+              social_account_id: account?.id ?? null,
+              format: output.format,
+              caption: output.caption,
+              cta: output.cta,
+              hashtags: output.hashtags,
+              alt_text: output.alt_text,
+              destination_link: output.destination_link,
+              notes: output.notes,
+              sort_order: i,
+            };
+          })
         );
         if (outputError) {
           // Remove the half-made master so a retry doesn't hit the

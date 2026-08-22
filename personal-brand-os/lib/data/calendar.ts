@@ -1,6 +1,7 @@
 import type { SupabaseServerClient } from "@/lib/supabase/server";
 import type { TagColor } from "@/lib/status";
 import { getClientsMap } from "@/lib/data/shared";
+import { socialAccountLabel } from "@/lib/format";
 
 type Client = SupabaseServerClient;
 
@@ -104,7 +105,7 @@ export async function getCalendarItems(
     maybeFilter(
       supabase
         .from("content_outputs")
-        .select("id,client_id,platform,status,scheduled_at,content:content_ideas(title)")
+        .select("id,client_id,platform,status,scheduled_at,content:content_ideas(title),social:social_strategies(account_name)")
         .eq("status", "scheduled")
         .not("scheduled_at", "is", null)
         .gte("scheduled_at", fromTs)
@@ -113,7 +114,7 @@ export async function getCalendarItems(
     maybeFilter(
       supabase
         .from("content_outputs")
-        .select("id,client_id,platform,status,published_at,content:content_ideas(title)")
+        .select("id,client_id,platform,status,published_at,content:content_ideas(title),social:social_strategies(account_name)")
         .eq("status", "published")
         .not("published_at", "is", null)
         .gte("published_at", fromTs)
@@ -165,7 +166,7 @@ export async function getCalendarItems(
       date: datePart(when),
       time: timePart(when),
       type: "scheduled",
-      label: `${o.content?.title ?? "Content"} · ${o.platform}`,
+      label: `${o.content?.title ?? "Content"} · ${socialAccountLabel(o.platform, o.social?.account_name)}`,
       clientId: o.client_id,
       clientName: name(o.client_id),
       tab: "content",
@@ -178,7 +179,7 @@ export async function getCalendarItems(
       date: datePart(when),
       time: timePart(when),
       type: "published",
-      label: `${o.content?.title ?? "Content"} · ${o.platform}`,
+      label: `${o.content?.title ?? "Content"} · ${socialAccountLabel(o.platform, o.social?.account_name)}`,
       clientId: o.client_id,
       clientName: name(o.client_id),
       tab: "content",

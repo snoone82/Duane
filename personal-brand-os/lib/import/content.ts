@@ -17,6 +17,7 @@ export interface ParsedContentImport extends ImportIssues {
     target_publish_date: string | null;
     outputs: {
       platform: string;
+      account: string | null;
       format: string;
       caption: string;
       cta: string;
@@ -113,6 +114,7 @@ export function parseContentImport(input: string): ContentParseResult {
       return [
         {
           platform,
+          account: text(out.account, `"${title}" → ${platform} → account`, issues) || null,
           format: text(out.format, `"${title}" → ${platform} → format`, issues),
           caption: text(out.caption, `"${title}" → ${platform} → caption`, issues),
           cta: text(out.cta, `"${title}" → ${platform} → CTA`, issues),

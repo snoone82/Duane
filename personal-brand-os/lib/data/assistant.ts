@@ -136,7 +136,7 @@ export async function buildClientContext(supabase: Client, clientId: string): Pr
         socials
           .map(
             (s) =>
-              `- ${s.platform}: objective ${s.objective || "unset"}; content types ${s.content_types || "unset"}; cadence ${s.posting_frequency || "unset"}${s.cta_strategy ? `; CTA ${s.cta_strategy}` : ""}`
+              `- ${s.platform}${s.account_name ? ` — ${s.account_name}` : ""}${s.owner_brand ? ` (${s.owner_brand})` : ""}: objective ${s.objective || "unset"}; content types ${s.content_types || "unset"}; cadence ${s.posting_frequency || "unset"}${s.cta_strategy ? `; CTA ${s.cta_strategy}` : ""}`
           )
           .join("\n")
       )

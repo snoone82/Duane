@@ -29,15 +29,14 @@ export function ClientDetailsForms({ client }: { client: ClientRow }) {
       </section>
 
       <section className="rounded-lg border border-border bg-surface p-4">
-        <h2 className="mb-3 text-sm font-semibold text-ink">Social profiles</h2>
+        <h2 className="mb-3 text-sm font-semibold text-ink">Website</h2>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <AutosaveInput id="linkedin_url" label="LinkedIn URL" initialValue={client.linkedin_url ?? ""} onSave={save("linkedin_url")} />
           <AutosaveInput id="website_url" label="Website URL" initialValue={client.website_url ?? ""} onSave={save("website_url")} />
-          <AutosaveInput id="twitter_url" label="X / Twitter URL" initialValue={client.twitter_url ?? ""} onSave={save("twitter_url")} />
-          <AutosaveInput id="instagram_url" label="Instagram URL" initialValue={client.instagram_url ?? ""} onSave={save("instagram_url")} />
-          <AutosaveInput id="youtube_url" label="YouTube URL" initialValue={client.youtube_url ?? ""} onSave={save("youtube_url")} />
-          <AutosaveInput id="tiktok_url" label="TikTok URL" initialValue={client.tiktok_url ?? ""} onSave={save("tiktok_url")} />
         </div>
+        <p className="mt-2 text-xs text-ink-faint">
+          Social account URLs live on the Social tab — the single source of truth. Mark accounts as Primary or Show on
+          Overview there to control what appears here and in the header.
+        </p>
       </section>
     </>
   );

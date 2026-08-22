@@ -16,16 +16,15 @@ import type { Database } from "@/lib/database.types";
 
 type ClientRow = Database["public"]["Tables"]["clients"]["Row"];
 
-const LINKS: { key: keyof ClientRow; label: string }[] = [
-  { key: "linkedin_url", label: "LinkedIn" },
-  { key: "website_url", label: "Website" },
-  { key: "twitter_url", label: "X / Twitter" },
-  { key: "instagram_url", label: "Instagram" },
-  { key: "youtube_url", label: "YouTube" },
-  { key: "tiktok_url", label: "TikTok" },
-];
+/** Header link strip: the client's PRIMARY social accounts (from the Social
+ * tab — the single source of truth) plus their website. Computed server-side
+ * in the layout, displayed here. */
+export interface HeaderLink {
+  label: string;
+  url: string;
+}
 
-export function ClientHeader({ client }: { client: ClientRow }) {
+export function ClientHeader({ client, links = [] }: { client: ClientRow; links?: HeaderLink[] }) {
   const roleLine = [client.job_title, client.company].filter(Boolean).join(" at ");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, startUpload] = useTransition();
@@ -88,21 +87,17 @@ export function ClientHeader({ client }: { client: ClientRow }) {
               ariaLabel={`Status for ${client.name}`}
               onChange={(value) => updateClientField(client.id, "status", value)}
             />
-            {LINKS.map(({ key, label }) => {
-              const url = client[key] as string | null;
-              if (!url) return null;
-              return (
-                <a
-                  key={key}
-                  href={url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-xs font-medium text-accent hover:underline"
-                >
-                  {label}
-                </a>
-              );
-            })}
+            {links.map(({ label, url }) => (
+              <a
+                key={`${label}-${url}`}
+                href={url}
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs font-medium text-accent hover:underline"
+              >
+                {label}
+              </a>
+            ))}
           </div>
         </div>
       </div>

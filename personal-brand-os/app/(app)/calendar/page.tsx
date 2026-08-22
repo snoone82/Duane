@@ -4,6 +4,7 @@ import { getCalendarItems, CALENDAR_TYPE_META, type CalendarItem } from "@/lib/d
 import { CalendarFilters } from "@/components/calendar/CalendarFilters";
 import { DraggableOutputChip, DroppableDay, type TrayOutput } from "@/components/calendar/CalendarDnD";
 import { getAllTeamMembers } from "@/lib/data/client";
+import { socialAccountLabel } from "@/lib/format";
 import type { TagColor } from "@/lib/status";
 
 export const metadata = { title: "Calendar" };
@@ -74,7 +75,7 @@ export default async function CalendarPage({
   const supabase = await createClient();
   let trayQuery = supabase
     .from("content_outputs")
-    .select("id,client_id,platform,status,content:content_ideas!inner(title,status)")
+    .select("id,client_id,platform,status,content:content_ideas!inner(title,status),social:social_strategies(account_name)")
     .eq("status", "pending")
     .in("content.status", ["ready_to_schedule", "scheduled"]);
   if (clientFilter) trayQuery = trayQuery.eq("client_id", clientFilter);
@@ -100,7 +101,7 @@ export default async function CalendarPage({
     clientId: o.client_id,
     clientName: clientNames.get(o.client_id) ?? "Unknown client",
     title: o.content?.title ?? "Content",
-    platform: o.platform,
+    platform: socialAccountLabel(o.platform, o.social?.account_name),
   }));
   const byDate = new Map<string, CalendarItem[]>();
   for (const item of items) {

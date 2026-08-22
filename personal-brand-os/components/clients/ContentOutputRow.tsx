@@ -5,7 +5,7 @@ import { AutosaveInput } from "@/components/ui/AutosaveInput";
 import { AutosaveTextarea } from "@/components/ui/AutosaveTextarea";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { Button } from "@/components/ui/Button";
-import { Input, Label, Textarea } from "@/components/ui/Input";
+import { Input, Label, Select, Textarea } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { Notice } from "@/components/ui/Notice";
 import {
@@ -14,6 +14,7 @@ import {
   scheduleContentOutput,
   unscheduleContentOutput,
   publishContentOutput,
+  assignOutputAccount,
 } from "@/lib/actions/content";
 import { outputStatusMeta, type OutputStatus } from "@/lib/status";
 import { OutputMediaSlot } from "@/components/clients/OutputMediaSlot";
@@ -22,7 +23,17 @@ import type { Database } from "@/lib/database.types";
 
 type Output = Database["public"]["Tables"]["content_outputs"]["Row"];
 
-export function ContentOutputRow({ clientId, output }: { clientId: string; output: Output }) {
+export type PublishingAccount = { id: string; label: string };
+
+export function ContentOutputRow({
+  clientId,
+  output,
+  accounts = [],
+}: {
+  clientId: string;
+  output: Output;
+  accounts?: PublishingAccount[];
+}) {
   const [isBusy, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [showSchedule, setShowSchedule] = useState(false);
@@ -67,7 +78,9 @@ export function ContentOutputRow({ clientId, output }: { clientId: string; outpu
       <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 px-3 py-2">
         <div className="flex min-w-0 items-center gap-2">
           <span className="text-xs text-ink-faint transition-transform duration-150 group-open/output:rotate-180">▾</span>
-          <span className="text-sm font-medium text-ink">{output.platform}</span>
+          <span className="truncate text-sm font-medium text-ink">
+            {(output.social_account_id && accounts.find((a) => a.id === output.social_account_id)?.label) || output.platform}
+          </span>
           {output.format && <span className="text-xs text-ink-faint">{output.format}</span>}
         </div>
         <div className="flex flex-shrink-0 items-center gap-2">
@@ -119,7 +132,33 @@ export function ContentOutputRow({ clientId, output }: { clientId: string; outpu
         </div>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <AutosaveInput id={`out-platform-${output.id}`} label="Platform" initialValue={output.platform} onSave={save("platform")} />
+          {accounts.length > 0 ? (
+            <div>
+              <Label htmlFor={`out-account-${output.id}`}>Publishing account</Label>
+              <Select
+                id={`out-account-${output.id}`}
+                value={output.social_account_id ?? ""}
+                disabled={isBusy}
+                onChange={(e) => {
+                  const accountId = e.target.value || null;
+                  startTransition(async () => {
+                    const result = await assignOutputAccount(clientId, output.id, accountId);
+                    if (!result.ok) setError(result.message);
+                  });
+                }}
+              >
+                <option value="">No account — platform only</option>
+                {accounts.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.label}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          ) : null}
+          {!output.social_account_id && (
+            <AutosaveInput id={`out-platform-${output.id}`} label="Platform" initialValue={output.platform} onSave={save("platform")} />
+          )}
           <AutosaveInput id={`out-format-${output.id}`} label="Format" initialValue={output.format} onSave={save("format")} placeholder="e.g. Carousel, Reel, Text post" />
         </div>
         <AutosaveTextarea id={`out-caption-${output.id}`} label="Final caption / copy" initialValue={output.caption} onSave={save("caption")} rows={3} />

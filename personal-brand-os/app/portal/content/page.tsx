@@ -5,7 +5,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { PortalContentApproval } from "@/components/portal/PortalContentApproval";
 import { MediaPreview } from "@/components/clients/OutputMediaSlot";
 import { contentStatusMeta, outputStatusMeta, type OutputStatus } from "@/lib/status";
-import { formatDate, formatDateTime } from "@/lib/format";
+import { formatDate, formatDateTime, socialAccountLabel } from "@/lib/format";
 
 export const metadata = { title: "Content" };
 
@@ -23,7 +23,7 @@ export default async function PortalContentPage() {
       .order("updated_at", { ascending: false }),
     supabase
       .from("content_outputs")
-      .select("*")
+      .select("*, social:social_strategies(account_name)")
       .eq("client_id", client.id)
       .order("sort_order", { ascending: true }),
   ]);
@@ -41,7 +41,7 @@ export default async function PortalContentPage() {
   const upcoming = all.filter((i) => i.status !== "published" && i.status !== "ready_for_approval");
 
   const outputLine = (contentId: string) =>
-    (outputsByContent.get(contentId) ?? []).map((o) => o.platform).join(" · ");
+    (outputsByContent.get(contentId) ?? []).map((o) => socialAccountLabel(o.platform, o.social?.account_name)).join(" · ");
 
   return (
     <div className="space-y-5">
@@ -65,7 +65,7 @@ export default async function PortalContentPage() {
                     {(outputsByContent.get(idea.id) ?? []).map((output) => (
                       <div key={output.id} className="mt-2 rounded-md bg-surface-muted/50 p-3">
                         <p className="text-xs font-semibold text-ink">
-                          {output.platform}
+                          {socialAccountLabel(output.platform, output.social?.account_name)}
                           {output.format ? ` · ${output.format}` : ""}
                         </p>
                         {output.caption ? (
@@ -112,7 +112,7 @@ export default async function PortalContentPage() {
                         <ul className="mt-2 space-y-0.5">
                           {scheduled.map((o) => (
                             <li key={o.id} className="text-xs text-ink-soft">
-                              {o.platform} — going out {o.scheduled_at ? formatDateTime(o.scheduled_at) : "soon"}
+                              {socialAccountLabel(o.platform, o.social?.account_name)} — going out {o.scheduled_at ? formatDateTime(o.scheduled_at) : "soon"}
                             </li>
                           ))}
                         </ul>
@@ -144,12 +144,12 @@ export default async function PortalContentPage() {
                               <li key={o.id} className="flex items-center gap-2 text-xs text-ink-soft">
                                 {o.live_url ? (
                                   <a href={o.live_url} target="_blank" rel="noreferrer" className="text-accent underline-offset-2 hover:underline">
-                                    {o.platform}
+                                    {socialAccountLabel(o.platform, o.social?.account_name)}
                                     {o.format ? ` · ${o.format}` : ""} →
                                   </a>
                                 ) : (
                                   <span>
-                                    {o.platform}
+                                    {socialAccountLabel(o.platform, o.social?.account_name)}
                                     {o.format ? ` · ${o.format}` : ""}
                                   </span>
                                 )}

@@ -28,9 +28,9 @@ type Output = Database["public"]["Tables"]["content_outputs"]["Row"];
 type Pillar = Database["public"]["Tables"]["brand_pillars"]["Row"];
 type Audience = Database["public"]["Tables"]["audiences"]["Row"];
 export type TeamMember = { id: string; name: string };
+export type PublishingAccount = { id: string; label: string };
 export type HistoryEntry = { at: string; by: string; summary: string };
 
-const SUGGESTED_PLATFORMS = ["LinkedIn", "Instagram", "YouTube", "TikTok"];
 
 export function ContentIdeaRow({
   clientId,
@@ -40,6 +40,7 @@ export function ContentIdeaRow({
   pillarName,
   audiences,
   team,
+  accounts = [],
   history = [],
   defaultOpen = false,
 }: {
@@ -50,6 +51,7 @@ export function ContentIdeaRow({
   pillarName: string | null;
   audiences: Audience[];
   team: TeamMember[];
+  accounts?: PublishingAccount[];
   history?: HistoryEntry[];
   defaultOpen?: boolean;
 }) {
@@ -78,7 +80,9 @@ export function ContentIdeaRow({
     });
   }
 
-  const platformSummary = outputs.map((o) => o.platform).join(" · ");
+  const accountLabel = (output: Output) =>
+    (output.social_account_id && accounts.find((a) => a.id === output.social_account_id)?.label) || output.platform;
+  const platformSummary = outputs.map(accountLabel).join(" · ");
 
   return (
     <details className="group rounded-lg border border-border bg-surface" open={defaultOpen}>
@@ -215,7 +219,7 @@ export function ContentIdeaRow({
             <h4 className="text-xs font-semibold uppercase tracking-wide text-ink-faint">
               Platform versions · {outputs.length}
             </h4>
-            <AddOutputInline clientId={clientId} contentId={idea.id} />
+            <AddOutputInline clientId={clientId} contentId={idea.id} accounts={accounts} />
           </div>
           {outputs.length === 0 ? (
             <p className="text-xs text-ink-faint">
@@ -224,7 +228,7 @@ export function ContentIdeaRow({
           ) : (
             <div className="space-y-2">
               {outputs.map((output) => (
-                <ContentOutputRow key={output.id} clientId={clientId} output={output} />
+                <ContentOutputRow key={output.id} clientId={clientId} output={output} accounts={accounts} />
               ))}
             </div>
           )}
@@ -258,6 +262,7 @@ export function ContentIdeaRow({
           clientId={clientId}
           idea={idea}
           team={team}
+          accounts={accounts}
           onClose={() => setShowApprove(false)}
         />
       )}
@@ -278,11 +283,13 @@ function ApproveProductionModal({
   clientId,
   idea,
   team,
+  accounts = [],
   onClose,
 }: {
   clientId: string;
   idea: Idea;
   team: TeamMember[];
+  accounts?: PublishingAccount[];
   onClose: () => void;
 }) {
   const [state, formAction, isPending] = useActionState(approveForProduction, null);
@@ -328,16 +335,22 @@ function ApproveProductionModal({
           </div>
         </div>
         <div>
-          <Label>Platforms</Label>
-          <div className="mt-1 flex flex-wrap gap-3">
-            {SUGGESTED_PLATFORMS.map((platform) => (
-              <label key={platform} className="inline-flex items-center gap-1.5 text-sm text-ink-soft">
-                <input type="checkbox" name="platforms" value={platform} className="accent-[--color-accent]" />
-                {platform}
-              </label>
-            ))}
-          </div>
-          <Input name="platform_other" autoComplete="off" placeholder="Other platform…" className="mt-2" />
+          <Label>Publishing accounts</Label>
+          {accounts.length > 0 ? (
+            <div className="mt-1 flex flex-col gap-1.5">
+              {accounts.map((account) => (
+                <label key={account.id} className="inline-flex items-center gap-1.5 text-sm text-ink-soft">
+                  <input type="checkbox" name="accounts" value={account.id} className="accent-[--color-accent]" />
+                  {account.label}
+                </label>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-1 text-xs text-ink-faint">
+              No publishing accounts on the Social tab yet — add them there, or type a platform below for a one-off.
+            </p>
+          )}
+          <Input name="platform_other" autoComplete="off" placeholder="One-off platform (no account)…" className="mt-2" />
         </div>
         <div>
           <Label htmlFor="ap-req">Content requirements</Label>
@@ -355,7 +368,8 @@ function ApproveProductionModal({
           </Select>
         </div>
         <p className="text-xs text-ink-faint">
-          This creates a linked production Action with the standard checklist, and one platform version per platform ticked.
+          This creates a linked production Action with the standard checklist, and one platform version per publishing
+          account ticked.
         </p>
         <div className="flex justify-end gap-2 pt-2">
           <Button type="button" variant="ghost" onClick={onClose}>
@@ -413,7 +427,15 @@ function RequestChangesModal({
   );
 }
 
-function AddOutputInline({ clientId, contentId }: { clientId: string; contentId: string }) {
+function AddOutputInline({
+  clientId,
+  contentId,
+  accounts = [],
+}: {
+  clientId: string;
+  contentId: string;
+  accounts?: PublishingAccount[];
+}) {
   const [isOpen, setIsOpen] = useState(false);
   const [state, formAction, isPending] = useActionState(addContentOutput, null);
 
@@ -436,10 +458,20 @@ function AddOutputInline({ clientId, contentId }: { clientId: string; contentId:
         formData.set("content_id", contentId);
         formAction(formData);
       }}
-      className="flex items-center gap-2"
+      className="flex flex-wrap items-center gap-2"
     >
       {state && !state.ok && <span className="text-xs text-danger">{state.message}</span>}
-      <Input name="platform" autoComplete="off" placeholder="Platform" className="w-32" autoFocus required />
+      {accounts.length > 0 ? (
+        <Select name="account_id" defaultValue="" className="w-56" autoFocus>
+          <option value="">One-off platform (type it) →</option>
+          {accounts.map((account) => (
+            <option key={account.id} value={account.id}>
+              {account.label}
+            </option>
+          ))}
+        </Select>
+      ) : null}
+      <Input name="platform" autoComplete="off" placeholder="Platform (if no account)" className="w-36" autoFocus={accounts.length === 0} />
       <Input name="format" autoComplete="off" placeholder="Format" className="w-32" />
       <Button type="submit" variant="secondary" size="sm" disabled={isPending}>
         {isPending ? "…" : "Add"}

@@ -22,8 +22,7 @@ RULES — follow these exactly:
     "location": "", "package": "", "retainer_amount": 0,
     "north_star": "The single guiding sentence for this personal brand",
     "notes": "",
-    "website_url": "", "linkedin_url": "", "instagram_url": "",
-    "twitter_url": "", "youtube_url": "", "tiktok_url": ""
+    "website_url": ""
   },
   "vision": {
     "long_term_goal": "", "desired_positioning": "", "authority_goal": "",
@@ -43,7 +42,11 @@ RULES — follow these exactly:
   ],
   "social_strategies": [
     {
-      "platform": "REQUIRED e.g. LinkedIn", "objective": "", "audience": "",
+      "platform": "REQUIRED e.g. LinkedIn",
+      "account_name": "The account/channel name, e.g. Daniel Andrews or CEG Programme",
+      "owner_brand": "Who the account belongs to, e.g. Daniel / CEG",
+      "url": "The account URL — social URLs live HERE, never in overview",
+      "objective": "", "audience": "",
       "content_types": "", "posting_frequency": "", "growth_strategy": "",
       "engagement_strategy": "", "cta_strategy": ""
     }
@@ -133,6 +136,7 @@ RULES — follow these exactly:
       "outputs": [
         {
           "platform": "REQUIRED e.g. LinkedIn",
+          "account": "The publishing account's name from the client's Social tab (will be provided) — one output per account, e.g. LinkedIn — Daniel Andrews and LinkedIn — CEG are two outputs. null if no matching account.",
           "format": "e.g. Carousel / Text post / Reel",
           "caption": "The full final or draft copy for this platform",
           "cta": "", "hashtags": "", "alt_text": "",
