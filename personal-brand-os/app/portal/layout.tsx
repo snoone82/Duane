@@ -61,11 +61,12 @@ export default async function PortalLayout({ children }: { children: React.React
       </header>
       <PortalNav
         tabs={[
-          ...(context.can("view_strategy") ? [{ href: "/portal", label: "Strategy" }] : []),
+          { href: "/portal", label: "Dashboard" },
+          ...(context.can("view_strategy") ? [{ href: "/portal/strategy", label: "Strategy" }] : []),
           ...(context.can("view_strategy") ? [{ href: "/portal/signoff", label: "Sign-off" }] : []),
           { href: "/portal/priorities", label: "Actions" },
           ...(context.can("view_content") ? [{ href: "/portal/content", label: "Content" }] : []),
-          ...(context.can("view_progress") ? [{ href: "/portal/progress", label: "Progress" }] : []),
+          { href: "/portal/calendar", label: "Calendar" },
           ...(context.can("view_meetings") ? [{ href: "/portal/meetings", label: "Meetings" }] : []),
         ]}
       />

@@ -5,10 +5,11 @@ import { EmptyState } from "@/components/ui/EmptyState";
 
 export const metadata = { title: "Actions" };
 
-/** Duane Part I: the client team's task view. "My Actions" = assigned to
- * this signed-in person; "Client actions" = the other client-visible tasks
- * their permissions let them see. Updates land on the same Action records
- * the Aligned Media dashboard shows — there is no separate client copy. */
+/** Duane Part I + his portal feedback: three clearly-separated groups —
+ * My Actions (assigned to the signed-in person), Client Actions (the
+ * client team's), and Aligned Media Actions (what the agency is working
+ * on, read-only). Updates land on the same Action records the dashboard
+ * shows — there is no separate client copy. */
 export default async function PortalActionsPage() {
   const context = await getPortalContext();
   if (!context) return null;
@@ -27,21 +28,37 @@ export default async function PortalActionsPage() {
   ]);
 
   const memberNames = new Map((teamMembers ?? []).filter((m) => m.user_id).map((m) => [m.user_id as string, m.name]));
+  const memberNameSet = new Set((teamMembers ?? []).map((m) => m.name.trim().toLowerCase()));
   const ownerLabel = (action: { owner_user_id: string | null; owner_name: string | null }) => {
     if (action.owner_user_id === context.userId) return "Assigned to you";
     if (action.owner_user_id) return memberNames.get(action.owner_user_id) ?? "Aligned Media team";
     return action.owner_name ?? "Aligned Media team";
   };
+  const isClientSide = (a: { owner_user_id: string | null; owner_name: string | null }) =>
+    (a.owner_user_id !== null && memberNames.has(a.owner_user_id)) ||
+    (a.owner_user_id === null && a.owner_name !== null && memberNameSet.has(a.owner_name.trim().toLowerCase()));
 
   const all = actions ?? [];
   const mine = all.filter((a) => a.owner_user_id === context.userId);
-  const others = all.filter((a) => a.owner_user_id !== context.userId);
+  const clientTeam = all.filter((a) => a.owner_user_id !== context.userId && isClientSide(a));
+  const alignedMedia = all.filter((a) => a.owner_user_id !== context.userId && !isClientSide(a));
   const canManageOthers = context.can("manage_actions");
 
-  const openMine = mine.filter((a) => a.status !== "completed");
-  const doneMine = mine.filter((a) => a.status === "completed").slice(0, 5);
-  const openOthers = others.filter((a) => a.status !== "completed");
-  const doneOthers = others.filter((a) => a.status === "completed").slice(0, 10);
+  const split = (list: typeof all, doneCap: number) => [
+    ...list.filter((a) => a.status !== "completed"),
+    ...list.filter((a) => a.status === "completed").slice(0, doneCap),
+  ];
+
+  const groups: { title: string; note?: string; items: typeof all; canManage: boolean }[] = [
+    { title: "My actions", items: split(mine, 5), canManage: true },
+    { title: "Client actions", note: "Tasks with you and your team.", items: split(clientTeam, 5), canManage: canManageOthers },
+    {
+      title: "Aligned Media actions",
+      note: "What the team is working on for you right now.",
+      items: split(alignedMedia, 10),
+      canManage: false,
+    },
+  ];
 
   return (
     <div className="space-y-6">
@@ -53,33 +70,25 @@ export default async function PortalActionsPage() {
         <EmptyState title="No actions yet" description="Tasks agreed with the team will show up here." />
       )}
 
-      {(openMine.length > 0 || doneMine.length > 0) && (
-        <section>
-          <h2 className="mb-2 text-sm font-semibold text-ink">My actions</h2>
-          <div className="space-y-2">
-            {openMine.map((action) => (
-              <PortalActionCard key={action.id} action={action} ownerLabel={ownerLabel(action)} canManage />
-            ))}
-            {openMine.length === 0 && <p className="text-sm text-ink-faint">Nothing assigned to you right now.</p>}
-            {doneMine.map((action) => (
-              <PortalActionCard key={action.id} action={action} ownerLabel={ownerLabel(action)} canManage />
-            ))}
-          </div>
-        </section>
-      )}
-
-      {(openOthers.length > 0 || doneOthers.length > 0) && (
-        <section>
-          <h2 className="mb-2 text-sm font-semibold text-ink">Client actions</h2>
-          <div className="space-y-2">
-            {openOthers.map((action) => (
-              <PortalActionCard key={action.id} action={action} ownerLabel={ownerLabel(action)} canManage={canManageOthers} />
-            ))}
-            {doneOthers.map((action) => (
-              <PortalActionCard key={action.id} action={action} ownerLabel={ownerLabel(action)} canManage={canManageOthers} />
-            ))}
-          </div>
-        </section>
+      {groups.map(
+        (group) =>
+          group.items.length > 0 && (
+            <section key={group.title}>
+              <h2 className="text-sm font-semibold text-ink">{group.title}</h2>
+              {group.note && <p className="mb-2 mt-0.5 text-xs text-ink-faint">{group.note}</p>}
+              <div className={`space-y-2 ${group.note ? "" : "mt-2"}`}>
+                {group.items.map((action) => (
+                  <PortalActionCard
+                    key={action.id}
+                    action={action}
+                    ownerLabel={ownerLabel(action)}
+                    canManage={group.canManage}
+                    contentHref={action.content_id ? `/portal/content#idea-${action.content_id}` : null}
+                  />
+                ))}
+              </div>
+            </section>
+          )
       )}
     </div>
   );

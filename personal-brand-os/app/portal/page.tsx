@@ -1,108 +1,337 @@
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { getPortalClient } from "@/lib/data/portal";
-import { PortalCard, ReadOnlyField } from "@/components/portal/ReadOnlyField";
-import { EmptyState } from "@/components/ui/EmptyState";
+import { getPortalContext } from "@/lib/data/portal";
+import { StatusPill } from "@/components/ui/StatusPill";
+import { MediaThumb } from "@/components/portal/MediaThumb";
+import { contentStatusMeta, actionStatusMeta } from "@/lib/status";
+import { signoffStatusMeta } from "@/lib/signoff-snapshot";
+import { formatDate, formatRelativeToToday, formatDateTime, socialAccountLabel } from "@/lib/format";
+import { thumbUrl } from "@/lib/media";
 
-export const metadata = { title: "Strategy" };
+export const metadata = { title: "Dashboard" };
 
-export default async function PortalStrategyPage() {
-  const client = await getPortalClient();
-  if (!client) return null; // layout already renders the not-linked state
+function Card({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <section className="rounded-lg border border-border bg-surface p-4">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold text-ink">{title}</h2>
+        {action}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function CardLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <Link href={href} className="flex-shrink-0 text-xs font-medium text-accent underline-offset-2 hover:underline">
+      {children}
+    </Link>
+  );
+}
+
+/** Duane's client dashboard: log in and understand the state of your
+ * personal brand in 20–30 seconds — what needs you, what's happening this
+ * week, where the pipeline stands, and what Aligned Media are working on. */
+export default async function PortalDashboardPage() {
+  const context = await getPortalContext();
+  if (!context) return null;
+  const { client, can, userId } = context;
 
   const supabase = await createClient();
-  const [{ data: vision }, { data: positioning }, { data: pillars }, { data: audiences }, { data: socials }] =
-    await Promise.all([
-      supabase.from("brand_vision").select("*").eq("client_id", client.id).maybeSingle(),
-      supabase.from("positioning").select("*").eq("client_id", client.id).maybeSingle(),
-      supabase.from("brand_pillars").select("*").eq("client_id", client.id).order("sort_order").order("created_at"),
-      supabase.from("audiences").select("*").eq("client_id", client.id).order("sort_order").order("created_at"),
-      supabase.from("social_strategies").select("*").eq("client_id", client.id).order("sort_order").order("created_at"),
-    ]);
+  const today = new Date().toISOString().slice(0, 10);
+  const weekAhead = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+  const fortnightAgo = new Date(Date.now() - 14 * 86400000).toISOString();
 
-  const hasAnything =
-    Boolean(vision?.long_term_goal || positioning?.positioning_statement) ||
-    (pillars?.length ?? 0) > 0 ||
-    (audiences?.length ?? 0) > 0 ||
-    (socials?.length ?? 0) > 0;
+  const [
+    { data: signoffs },
+    { data: ideas },
+    { data: outputs },
+    { data: actions },
+    { data: members },
+    { data: meetings },
+    { data: milestones },
+  ] = await Promise.all([
+    supabase.from("strategy_signoffs").select("id,version,title,status,created_at,updated_at,approved_at,approved_by_name").eq("client_id", client.id).order("version", { ascending: false }),
+    supabase.from("content_ideas").select("id,title,status,updated_at,target_publish_date").eq("client_id", client.id).order("updated_at", { ascending: false }),
+    supabase
+      .from("content_outputs")
+      .select("id,content_id,platform,status,scheduled_at,published_at,thumbnail_url,media_url,social:social_strategies(account_name),content:content_ideas(title)")
+      .eq("client_id", client.id),
+    supabase.from("actions").select("*").eq("client_id", client.id).order("due_date", { ascending: true, nullsFirst: false }),
+    supabase.from("client_members").select("user_id,name").eq("client_id", client.id),
+    supabase.from("portal_meeting_summaries").select("id,meeting_date,next_meeting_date").eq("client_id", client.id).order("meeting_date", { ascending: false }).limit(12),
+    can("view_progress")
+      ? supabase.from("milestones").select("id,title,milestone_date,is_highlighted").eq("client_id", client.id).order("milestone_date", { ascending: false }).limit(3)
+      : Promise.resolve({ data: [] as { id: string; title: string; milestone_date: string; is_highlighted: boolean }[] }),
+  ]);
+
+  // --- Who owns what: mine / client team / Aligned Media ---
+  const memberUserIds = new Set((members ?? []).filter((m) => m.user_id).map((m) => m.user_id as string));
+  const memberNames = new Set((members ?? []).map((m) => m.name.trim().toLowerCase()));
+  const isClientSide = (a: { owner_user_id: string | null; owner_name: string | null }) =>
+    (a.owner_user_id !== null && memberUserIds.has(a.owner_user_id)) ||
+    (a.owner_user_id === null && a.owner_name !== null && memberNames.has(a.owner_name.trim().toLowerCase()));
+
+  const allActions = actions ?? [];
+  const openActions = allActions.filter((a) => a.status !== "completed");
+  const myOpen = openActions.filter((a) => a.owner_user_id === userId);
+  const clientOpen = openActions.filter((a) => a.owner_user_id !== userId && isClientSide(a));
+  const teamOpen = openActions.filter((a) => a.owner_user_id !== userId && !isClientSide(a));
+  const myOverdue = myOpen.filter((a) => a.due_date && a.due_date < today);
+
+  // --- Pipeline buckets ---
+  const allIdeas = ideas ?? [];
+  const bucket = (statuses: string[]) => allIdeas.filter((i) => statuses.includes(i.status)).length;
+  const pipeline = [
+    { label: "Ideas", count: bucket(["idea"]) },
+    { label: "In production", count: bucket(["approved_production", "in_production", "changes_requested"]) },
+    { label: "Awaiting your approval", count: bucket(["ready_for_approval"]) },
+    { label: "Scheduled", count: bucket(["ready_to_schedule", "scheduled"]) },
+    { label: "Published", count: bucket(["published"]) },
+  ];
+  const awaitingApproval = bucket(["ready_for_approval"]);
+
+  // --- Strategy status ---
+  const latestPack = (signoffs ?? [])[0];
+
+  // --- Needs your attention ---
+  const attention: { label: string; href: string; urgent?: boolean }[] = [];
+  if (latestPack?.status === "sent" && can("approve_strategy")) {
+    attention.push({ label: `Strategy pack v${latestPack.version} is waiting for your approval`, href: "/portal/signoff" });
+  }
+  if (awaitingApproval > 0 && can("approve_content")) {
+    attention.push({
+      label: `${awaitingApproval} piece${awaitingApproval === 1 ? "" : "s"} of content awaiting your approval`,
+      href: "/portal/content",
+    });
+  }
+  if (myOverdue.length > 0) {
+    attention.push({
+      label: `${myOverdue.length} of your action${myOverdue.length === 1 ? " is" : "s are"} overdue`,
+      href: "/portal/priorities",
+      urgent: true,
+    });
+  } else if (myOpen.length > 0) {
+    attention.push({ label: `${myOpen.length} open action${myOpen.length === 1 ? "" : "s"} assigned to you`, href: "/portal/priorities" });
+  }
+
+  // --- This week ---
+  const nowIso = new Date().toISOString();
+  const weekAheadTs = `${weekAhead}T23:59:59Z`;
+  const scheduledThisWeek = (outputs ?? [])
+    .filter((o) => o.status === "scheduled" && o.scheduled_at && o.scheduled_at >= nowIso && o.scheduled_at <= weekAheadTs)
+    .sort((a, b) => (a.scheduled_at ?? "").localeCompare(b.scheduled_at ?? ""))
+    .slice(0, 5);
+  const dueThisWeek = openActions.filter((a) => a.due_date && a.due_date >= today && a.due_date <= weekAhead).slice(0, 5);
+  const nextMeeting = (meetings ?? [])
+    .map((m) => m.next_meeting_date)
+    .filter((d): d is string => Boolean(d && d >= today))
+    .sort()[0];
+
+  // --- Recent activity (derived from the data itself — portal-safe) ---
+  const activity: { when: string; label: string }[] = [];
+  for (const pack of signoffs ?? []) {
+    activity.push({ when: pack.created_at, label: `Strategy pack v${pack.version} shared for review` });
+    if (pack.status === "approved" && pack.approved_at) {
+      activity.push({
+        when: pack.approved_at,
+        label: `Strategy v${pack.version} approved${pack.approved_by_name ? ` by ${pack.approved_by_name}` : ""}`,
+      });
+    }
+    if (pack.status === "changes_requested") {
+      activity.push({ when: pack.updated_at, label: `Changes requested on strategy v${pack.version}` });
+    }
+  }
+  for (const idea of allIdeas.slice(0, 8)) {
+    activity.push({ when: idea.updated_at, label: `“${idea.title}” — ${contentStatusMeta(idea.status).label.toLowerCase()}` });
+  }
+  for (const o of outputs ?? []) {
+    if (o.status === "published" && o.published_at) {
+      activity.push({
+        when: o.published_at,
+        label: `Published on ${socialAccountLabel(o.platform, o.social?.account_name)}: ${o.content?.title ?? "content"}`,
+      });
+    }
+  }
+  for (const a of allActions) {
+    if (a.status === "completed" && a.completed_at) {
+      activity.push({ when: a.completed_at, label: `Action completed: ${a.title}` });
+    }
+  }
+  const recentActivity = activity
+    .filter((item) => item.when >= fortnightAgo)
+    .sort((a, b) => b.when.localeCompare(a.when))
+    .slice(0, 7);
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-ink-soft">The strategy behind your personal brand — kept up to date by the Aligned Media team.</p>
+      <p className="text-sm text-ink-soft">
+        {client.name} — here&rsquo;s where your personal brand stands right now.
+      </p>
 
-      {client.north_star.trim() && (
-        <section className="rounded-lg border border-accent/40 bg-surface p-4">
-          <p className="text-xs font-medium uppercase tracking-wide text-ink-faint">North Star</p>
-          <p className="mt-1 whitespace-pre-wrap text-base font-medium text-ink">{client.north_star}</p>
+      {attention.length > 0 && (
+        <section className="rounded-lg border border-accent/40 bg-accent/5 p-4">
+          <h2 className="mb-2 text-sm font-semibold text-ink">Needs your attention</h2>
+          <ul className="space-y-1.5">
+            {attention.map((item) => (
+              <li key={item.label}>
+                <Link
+                  href={item.href}
+                  className={`text-sm underline-offset-2 hover:underline ${item.urgent ? "font-medium text-danger" : "text-ink"}`}
+                >
+                  {item.label} →
+                </Link>
+              </li>
+            ))}
+          </ul>
         </section>
       )}
 
-      {!hasAnything && (
-        <EmptyState
-          title="Your strategy is being built"
-          description="As the team fills in your vision, positioning, pillars and platform plans, they'll appear here."
-        />
-      )}
-
-      {vision && (
-        <PortalCard title="Vision">
-          <ReadOnlyField label="Long-term goal" value={vision.long_term_goal} />
-          <ReadOnlyField label="Desired positioning" value={vision.desired_positioning} />
-          <ReadOnlyField label="Authority goal" value={vision.authority_goal} />
-          <ReadOnlyField label="Commercial goal" value={vision.commercial_goal} />
-          <ReadOnlyField label="Impact goal" value={vision.impact_goal} />
-          <ReadOnlyField label="Legacy / contribution" value={vision.legacy_contribution} />
-        </PortalCard>
-      )}
-
-      {positioning && (
-        <PortalCard title="Positioning">
-          <ReadOnlyField label="Positioning statement" value={positioning.positioning_statement} />
-          <ReadOnlyField label="Expertise" value={positioning.expertise} />
-          <ReadOnlyField label="Differentiators" value={positioning.differentiators} />
-          <ReadOnlyField label="Unique story" value={positioning.unique_story} />
-          <ReadOnlyField label="Core beliefs" value={positioning.core_beliefs} />
-        </PortalCard>
-      )}
-
-      {pillars && pillars.length > 0 && (
-        <PortalCard title="Content pillars">
-          {pillars.map((pillar) => (
-            <div key={pillar.id} className="rounded-md border border-border p-3">
-              <p className="text-sm font-medium text-ink">{pillar.name}</p>
-              {pillar.description.trim() && (
-                <p className="mt-1 whitespace-pre-wrap text-sm text-ink-soft">{pillar.description}</p>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <Card title="This week" action={<CardLink href="/portal/calendar">Calendar →</CardLink>}>
+          {scheduledThisWeek.length === 0 && dueThisWeek.length === 0 && !nextMeeting ? (
+            <p className="text-sm text-ink-faint">Nothing scheduled in the next seven days.</p>
+          ) : (
+            <ul className="space-y-2">
+              {nextMeeting && (
+                <li className="flex items-center gap-2 text-sm text-ink">
+                  <StatusPill label="Meeting" color="teal" />
+                  <span>{formatRelativeToToday(nextMeeting)}</span>
+                </li>
               )}
-            </div>
-          ))}
-        </PortalCard>
-      )}
+              {scheduledThisWeek.map((o) => {
+                const thumb = thumbUrl(o);
+                return (
+                  <li key={o.id} className="flex items-center gap-2 text-sm text-ink">
+                    {thumb ? <MediaThumb url={thumb} size="sm" /> : <StatusPill label="Post" color="orange" />}
+                    <span className="min-w-0 truncate">
+                      {o.content?.title ?? "Content"} · {socialAccountLabel(o.platform, o.social?.account_name)}
+                      <span className="text-ink-faint"> — {o.scheduled_at ? formatDateTime(o.scheduled_at) : ""}</span>
+                    </span>
+                  </li>
+                );
+              })}
+              {dueThisWeek.map((a) => (
+                <li key={a.id} className="flex items-center gap-2 text-sm text-ink">
+                  <StatusPill label="Action" color="amber" />
+                  <span className="min-w-0 truncate">
+                    {a.title}
+                    {a.due_date && <span className="text-ink-faint"> — due {formatRelativeToToday(a.due_date)}</span>}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
 
-      {audiences && audiences.length > 0 && (
-        <PortalCard title="Audiences">
-          {audiences.map((audience) => (
-            <div key={audience.id} className="rounded-md border border-border p-3">
-              <p className="text-sm font-medium text-ink">{audience.name}</p>
-              {audience.description.trim() && (
-                <p className="mt-1 whitespace-pre-wrap text-sm text-ink-soft">{audience.description}</p>
-              )}
-            </div>
-          ))}
-        </PortalCard>
-      )}
+        <Card title="Content pipeline" action={can("view_content") ? <CardLink href="/portal/content">Content →</CardLink> : undefined}>
+          <ul className="space-y-1.5">
+            {pipeline.map((stage) => (
+              <li key={stage.label} className="flex items-center justify-between text-sm">
+                <span className={stage.label === "Awaiting your approval" && stage.count > 0 ? "font-medium text-ink" : "text-ink-soft"}>
+                  {stage.label}
+                </span>
+                <span className="tabular-nums text-ink">{stage.count}</span>
+              </li>
+            ))}
+          </ul>
+        </Card>
 
-      {socials && socials.length > 0 && (
-        <PortalCard title="Platform strategy">
-          {socials.map((social) => (
-            <div key={social.id} className="rounded-md border border-border p-3">
-              <p className="text-sm font-medium text-ink">{social.platform}</p>
-              <div className="mt-2 space-y-2">
-                <ReadOnlyField label="Objective" value={social.objective} />
-                <ReadOnlyField label="Content types" value={social.content_types} />
-                <ReadOnlyField label="Posting frequency" value={social.posting_frequency} />
+        <Card title="Strategy status" action={can("view_strategy") ? <CardLink href="/portal/signoff">Sign-off →</CardLink> : undefined}>
+          {latestPack ? (
+            <div className="space-y-1.5 text-sm">
+              <div className="flex items-center justify-between gap-2">
+                <span className="min-w-0 truncate text-ink">
+                  {latestPack.title} — v{latestPack.version}
+                </span>
+                <StatusPill label={signoffStatusMeta(latestPack.status).label} color={signoffStatusMeta(latestPack.status).color} />
               </div>
+              {latestPack.status === "approved" && (
+                <p className="text-xs text-ink-faint">
+                  Approved {formatDate(latestPack.approved_at?.slice(0, 10))} — this is your agreed baseline.
+                </p>
+              )}
+              {latestPack.status === "sent" && <p className="text-xs text-ink-faint">Waiting for your review and approval.</p>}
+              {latestPack.status === "changes_requested" && (
+                <p className="text-xs text-ink-faint">You asked for changes — the team is updating it.</p>
+              )}
             </div>
-          ))}
-        </PortalCard>
+          ) : (
+            <p className="text-sm text-ink-faint">Your first strategy pack is being prepared.</p>
+          )}
+          {can("view_strategy") && (
+            <p className="mt-2 text-xs">
+              <Link href="/portal/strategy" className="text-accent underline-offset-2 hover:underline">
+                View the live strategy →
+              </Link>
+            </p>
+          )}
+        </Card>
+
+        <Card title="Actions" action={<CardLink href="/portal/priorities">All actions →</CardLink>}>
+          <ul className="space-y-1.5 text-sm">
+            <li className="flex items-center justify-between">
+              <span className="text-ink-soft">Assigned to you</span>
+              <span className={`tabular-nums ${myOverdue.length > 0 ? "font-medium text-danger" : "text-ink"}`}>
+                {myOpen.length}
+                {myOverdue.length > 0 ? ` (${myOverdue.length} overdue)` : ""}
+              </span>
+            </li>
+            {clientOpen.length > 0 && (
+              <li className="flex items-center justify-between">
+                <span className="text-ink-soft">With your team</span>
+                <span className="tabular-nums text-ink">{clientOpen.length}</span>
+              </li>
+            )}
+            <li className="flex items-center justify-between">
+              <span className="text-ink-soft">Aligned Media working on</span>
+              <span className="tabular-nums text-ink">{teamOpen.length}</span>
+            </li>
+          </ul>
+          {teamOpen.length > 0 && (
+            <ul className="mt-2 space-y-1 border-t border-border pt-2">
+              {teamOpen.slice(0, 3).map((a) => {
+                const meta = actionStatusMeta(a.status);
+                return (
+                  <li key={a.id} className="flex items-center justify-between gap-2 text-xs">
+                    <span className="min-w-0 truncate text-ink-soft">{a.title}</span>
+                    <StatusPill label={meta.label} color={meta.color} />
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Card>
+      </div>
+
+      {(recentActivity.length > 0 || (milestones ?? []).length > 0) && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {recentActivity.length > 0 && (
+            <Card title="Recent activity">
+              <ul className="space-y-1.5">
+                {recentActivity.map((item, index) => (
+                  <li key={index} className="text-xs">
+                    <span className="text-ink">{item.label}</span>
+                    <span className="block text-ink-faint">{formatDate(item.when.slice(0, 10))}</span>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
+          {(milestones ?? []).length > 0 && (
+            <Card title="Progress" action={<CardLink href="/portal/progress">Timeline →</CardLink>}>
+              <ul className="space-y-1.5">
+                {(milestones ?? []).map((m) => (
+                  <li key={m.id} className="text-sm text-ink">
+                    {m.title}
+                    <span className="block text-xs text-ink-faint">{formatDate(m.milestone_date)}</span>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
+        </div>
       )}
     </div>
   );

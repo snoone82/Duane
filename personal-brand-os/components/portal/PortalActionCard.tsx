@@ -20,10 +20,13 @@ export function PortalActionCard({
   action,
   ownerLabel,
   canManage,
+  contentHref = null,
 }: {
   action: ActionRowData;
   ownerLabel: string;
   canManage: boolean;
+  /** Link to the content item this action produces, when there is one. */
+  contentHref?: string | null;
 }) {
   const [isBusy, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -79,6 +82,14 @@ export function PortalActionCard({
 
       {action.description.trim() && (
         <p className="mt-2 whitespace-pre-wrap text-sm text-ink-soft">{action.description}</p>
+      )}
+
+      {contentHref && (
+        <p className="mt-2">
+          <a href={contentHref} className="text-xs font-medium text-accent underline-offset-2 hover:underline">
+            View the content this relates to →
+          </a>
+        </p>
       )}
 
       {checklist.length > 0 && (
