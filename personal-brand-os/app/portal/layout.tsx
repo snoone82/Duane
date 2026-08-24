@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentProfile } from "@/lib/current-user";
-import { getPortalClient } from "@/lib/data/portal";
+import { getPortalContext } from "@/lib/data/portal";
 import { PortalNav } from "@/components/portal/PortalNav";
 import { signOut } from "@/lib/actions/auth";
 import { Button } from "@/components/ui/Button";
@@ -19,9 +19,9 @@ export default async function PortalLayout({ children }: { children: React.React
   // Team roles have the full workspace — the portal is only for client accounts.
   if (profile && profile.role !== "client") redirect("/");
 
-  const client = await getPortalClient();
+  const context = await getPortalContext();
 
-  if (!profile || !client) {
+  if (!profile || !context) {
     return (
       <div className="flex min-h-dvh items-center justify-center px-4">
         <div className="w-full max-w-sm rounded-lg border border-border bg-surface p-6 text-center shadow-sm">
@@ -47,8 +47,10 @@ export default async function PortalLayout({ children }: { children: React.React
           {/* eslint-disable-next-line @next/next/no-img-element -- static local asset, next/image adds no value here */}
           <img src="/brand/logo-lockup.png" alt="Aligned Media" className="h-8 w-auto" />
           <div>
-            <p className="text-sm font-semibold text-ink">{client.name}</p>
-            <p className="text-xs text-ink-faint">Your personal brand, at a glance</p>
+            <p className="text-sm font-semibold text-ink">{context.client.name}</p>
+            <p className="text-xs text-ink-faint">
+              {context.member ? `Signed in as ${context.member.name}` : "Your personal brand, at a glance"}
+            </p>
           </div>
         </div>
         <form action={signOut}>
@@ -57,8 +59,17 @@ export default async function PortalLayout({ children }: { children: React.React
           </Button>
         </form>
       </header>
-      <PortalNav />
-      <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-6">{children}</main>
+      <PortalNav
+        tabs={[
+          ...(context.can("view_strategy") ? [{ href: "/portal", label: "Strategy" }] : []),
+          ...(context.can("view_strategy") ? [{ href: "/portal/signoff", label: "Sign-off" }] : []),
+          { href: "/portal/priorities", label: "Actions" },
+          ...(context.can("view_content") ? [{ href: "/portal/content", label: "Content" }] : []),
+          ...(context.can("view_progress") ? [{ href: "/portal/progress", label: "Progress" }] : []),
+          ...(context.can("view_meetings") ? [{ href: "/portal/meetings", label: "Meetings" }] : []),
+        ]}
+      />
+      <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-6 md:px-6">{children}</main>
     </div>
   );
 }

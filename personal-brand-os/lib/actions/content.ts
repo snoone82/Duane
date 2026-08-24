@@ -183,6 +183,7 @@ export async function approveForProduction(_prev: ActionResult | null, formData:
         owner_name: ownerUserId ? null : ownerName,
         status: "in_progress",
         content_id: ideaId,
+        source: "content",
         checklist: PRODUCTION_CHECKLIST.map((text) => ({ text, done: false })),
       })
       .select("id")

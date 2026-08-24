@@ -246,13 +246,20 @@ export async function commitClientImport(text: string): Promise<ActionResult<{ c
         );
       }
 
-      const actionRows = parsed.actions.map((a) => ({
+      // action_id entries are update references — meaningless on a brand-new
+      // client, so they're dropped here.
+      const actionRows = parsed.actions.filter((a) => !a.id).map((a) => ({
         client_id: clientId,
         title: a.title,
         description: a.description,
         due_date: a.due_date,
         owner_name: a.owner_name,
         owner_user_id: a.owner_name ? null : (user?.id ?? null),
+        status: a.status ?? "not_started",
+        completed_at: a.status === "completed" ? new Date().toISOString() : null,
+        priority: a.priority ?? "medium",
+        source: "import",
+        checklist: [] as { text: string; done: boolean }[],
       }));
       // The follow-up list Duane asked for: everything the AI marked as
       // needing the client's word becomes one action with a checklist.
@@ -264,7 +271,10 @@ export async function commitClientImport(text: string): Promise<ActionResult<{ c
           due_date: null,
           owner_name: null,
           owner_user_id: user?.id ?? null,
-          // @ts-expect-error checklist is jsonb; the insert type widens fine at runtime
+          status: "not_started",
+          completed_at: null,
+          priority: "medium",
+          source: "client_confirmation",
           checklist: parsed.needsConfirmation.map((label) => ({ text: label, done: false })),
         });
       }
@@ -272,7 +282,9 @@ export async function commitClientImport(text: string): Promise<ActionResult<{ c
         await step(
           "Actions",
           async () => {
-            const { error } = await supabase.from("actions").insert(actionRows);
+            const { error } = await supabase
+              .from("actions")
+              .insert(actionRows as Database["public"]["Tables"]["actions"]["Insert"][]);
             if (error) throw new Error(`Actions: ${error.message}`);
           },
           actionRows.length
@@ -396,21 +408,28 @@ async function buildClientUpdatePlan(
     { data: snapshots },
     { data: targets },
     { data: milestones },
+    { data: profilesList },
+    { data: membersList },
   ] = await Promise.all([
     supabase.from("clients").select("*").eq("id", clientId).maybeSingle(),
     supabase.from("brand_vision").select("*").eq("client_id", clientId).maybeSingle(),
     supabase.from("positioning").select("*").eq("client_id", clientId).maybeSingle(),
     supabase.from("sales_strategy").select("*").eq("client_id", clientId).maybeSingle(),
     supabase.from("audiences").select("id,name").eq("client_id", clientId),
-    supabase.from("social_strategies").select("id,platform").eq("client_id", clientId),
+    supabase.from("social_strategies").select("id,platform,account_name").eq("client_id", clientId),
     supabase.from("brand_pillars").select("id,name").eq("client_id", clientId),
     supabase.from("content_ideas").select("id,title").eq("client_id", clientId),
     supabase.from("authority_opportunities").select("id,type,host").eq("client_id", clientId),
     supabase.from("consultations").select("id,meeting_date,meeting_type").eq("client_id", clientId),
-    supabase.from("actions").select("id,title,status").eq("client_id", clientId),
+    supabase
+      .from("actions")
+      .select("id,title,status,owner_name,owner_user_id,due_date,priority,description,checklist")
+      .eq("client_id", clientId),
     supabase.from("metric_snapshots").select("id,platform,snapshot_date").eq("client_id", clientId),
     supabase.from("metric_targets").select("id,platform").eq("client_id", clientId),
     supabase.from("milestones").select("id,title,milestone_date").eq("client_id", clientId),
+    supabase.from("profiles").select("id,full_name,email,role").in("role", ["admin", "member", "contractor"]),
+    supabase.from("client_members").select("name,user_id").eq("client_id", clientId),
   ]);
   if (!client) return { ok: false, message: "Client not found (or you don't have access to it)." };
 
@@ -496,8 +515,23 @@ async function buildClientUpdatePlan(
 
   const lower = (value: string) => value.trim().toLowerCase();
   const audienceByName = new Map((audiences ?? []).map((a) => [lower(a.name), a]));
-  const socialByPlatform = new Map((socials ?? []).map((s) => [lower(s.platform), s]));
   const pillarByName = new Map((pillars ?? []).map((p) => [lower(p.name), p]));
+
+  // Multi-account social (migration 0017): the natural key is platform +
+  // account name. A row with no account name still matches by platform alone
+  // when the client has exactly one account on that platform.
+  const socialKey = (platform: string, account: string) => `${lower(platform)}|${lower(account)}`;
+  const socialByKey = new Map((socials ?? []).map((s) => [socialKey(s.platform, s.account_name), s]));
+  const matchSocial = (item: { platform: string; fields: Record<string, string> }) => {
+    const account = item.fields.account_name ?? "";
+    const exact = socialByKey.get(socialKey(item.platform, account));
+    if (exact) return exact;
+    if (!account.trim()) {
+      const samePlatform = (socials ?? []).filter((s) => lower(s.platform) === lower(item.platform));
+      if (samePlatform.length === 1) return samePlatform[0];
+    }
+    return undefined;
+  };
 
   repeatable(
     "Audiences",
@@ -520,8 +554,8 @@ async function buildClientUpdatePlan(
   repeatable(
     "Social strategies",
     parsed.socials,
-    (s) => socialByPlatform.get(lower(s.platform)),
-    (s) => s.platform,
+    matchSocial,
+    (s) => (s.fields.account_name ? `${s.platform} — ${s.fields.account_name}` : s.platform),
     (s) => s.fields,
     async (create) => {
       const { error } = await supabase
@@ -666,50 +700,169 @@ async function buildClientUpdatePlan(
     sections.push(section);
   }
 
-  const openActionTitles = new Set((actions ?? []).filter((a) => a.status !== "completed").map((a) => lower(a.title)));
-  const actionRows = parsed.actions.filter((a) => !openActionTitles.has(lower(a.title)));
-  if (parsed.actions.length > 0) {
+  // --- Actions: update-or-create (Duane's Actions-update spec). Matched by
+  // internal id (actions.action_id in the JSON) first, then by title; only
+  // the fields the file supplies change; missing field = preserve existing
+  // value, never reset; nothing is ever deleted by an import. ---
+  const CONFIRM_TITLE = "Confirm outstanding profile details with client";
+  type ExistingAction = NonNullable<typeof actions>[number];
+  const actionById = new Map((actions ?? []).map((a) => [a.id, a]));
+  const findActionByTitle = (title: string): ExistingAction | undefined => {
+    const matches = (actions ?? []).filter((a) => lower(a.title) === lower(title));
+    return matches.find((a) => a.status !== "completed") ?? matches[0];
+  };
+
+  // Owner names resolve to real accounts where possible: an Aligned Media
+  // profile or a linked client-team member becomes owner_user_id; anything
+  // else stays a free-text owner_name.
+  const profileByName = new Map((profilesList ?? []).map((p) => [lower(p.full_name || p.email), p.id]));
+  const memberByName = new Map((membersList ?? []).map((m) => [lower(m.name), m]));
+  const resolveOwner = (name: string): { owner_user_id: string | null; owner_name: string | null } => {
+    const profileId = profileByName.get(lower(name));
+    if (profileId) return { owner_user_id: profileId, owner_name: null };
+    const member = memberByName.get(lower(name));
+    if (member?.user_id) return { owner_user_id: member.user_id, owner_name: null };
+    return { owner_user_id: null, owner_name: name };
+  };
+
+  const importActions = parsed.actions.filter((a) => lower(a.title) !== lower(CONFIRM_TITLE));
+  if (importActions.length > 0) {
     const section: UpdateSection = { label: "Actions", updates: [], creates: [], skips: [] };
-    for (const a of parsed.actions) {
-      if (openActionTitles.has(lower(a.title))) section.skips.push(`${a.title} — already open`);
-      else section.creates.push(a.title);
+    const toCreate: typeof importActions = [];
+    for (const a of importActions) {
+      const existing = (a.id ? actionById.get(a.id) : undefined) ?? findActionByTitle(a.title);
+      if (!existing) {
+        if (a.id) {
+          // Never guess: an explicit action_id that doesn't belong to this
+          // client is flagged, not turned into a new action.
+          section.skips.push(`${a.title} — action_id not found for this client, skipped`);
+          continue;
+        }
+        toCreate.push(a);
+        section.creates.push(a.title);
+        continue;
+      }
+      const patch: Record<string, unknown> = {};
+      const changes: string[] = [];
+      if (a.status && a.status !== existing.status) {
+        patch.status = a.status;
+        patch.completed_at = a.status === "completed" ? new Date().toISOString() : null;
+        changes.push(`status: ${existing.status.replace(/_/g, " ")} → ${a.status.replace(/_/g, " ")}`);
+      }
+      if (a.priority && a.priority !== existing.priority) {
+        patch.priority = a.priority;
+        changes.push(`priority: ${existing.priority} → ${a.priority}`);
+      }
+      if (a.due_date && a.due_date !== existing.due_date) {
+        patch.due_date = a.due_date;
+        changes.push(`due date: ${existing.due_date ?? "(none)"} → ${a.due_date}`);
+      }
+      if (a.owner_name) {
+        const next = resolveOwner(a.owner_name);
+        if (next.owner_user_id !== existing.owner_user_id || (next.owner_name ?? "") !== (existing.owner_name ?? "")) {
+          patch.owner_user_id = next.owner_user_id;
+          patch.owner_name = next.owner_name;
+          changes.push(`owner → ${a.owner_name}`);
+        }
+      }
+      if (a.description.trim() && a.description.trim() !== existing.description.trim()) {
+        patch.description = a.description;
+        changes.push("description");
+      }
+      if (Object.keys(patch).length === 0) {
+        section.skips.push(`${existing.title} — nothing new`);
+        continue;
+      }
+      section.updates.push(`${existing.title} (${changes.join(", ")})`);
+      const targetId = existing.id;
+      work.push(async () => {
+        const { error } = await supabase
+          .from("actions")
+          .update(patch as Tables["actions"]["Update"])
+          .eq("id", targetId);
+        if (error) throw fail("Actions", error.message);
+      });
+    }
+    if (toCreate.length > 0) {
+      work.push(async () => {
+        const rows = toCreate.map((a) => {
+          const owner = a.owner_name ? resolveOwner(a.owner_name) : { owner_user_id: userId, owner_name: null };
+          return {
+            client_id: clientId,
+            title: a.title,
+            description: a.description,
+            due_date: a.due_date,
+            ...owner,
+            status: a.status ?? "not_started",
+            completed_at: a.status === "completed" ? new Date().toISOString() : null,
+            priority: a.priority ?? "medium",
+            source: "import",
+          };
+        });
+        const { error } = await supabase.from("actions").insert(rows as Tables["actions"]["Insert"][]);
+        if (error) throw fail("Actions", error.message);
+      });
     }
     sections.push(section);
   }
-  if (parsed.needsConfirmation.length > 0) {
-    sections.push({
-      label: "Follow-up",
-      updates: [],
-      creates: [`Confirm outstanding details with client (${parsed.needsConfirmation.length} items)`],
-      skips: [],
-    });
-  }
-  if (actionRows.length > 0 || parsed.needsConfirmation.length > 0) {
-    work.push(async () => {
-      const rows = actionRows.map((a) => ({
-        client_id: clientId,
-        title: a.title,
-        description: a.description,
-        due_date: a.due_date,
-        owner_name: a.owner_name,
-        owner_user_id: a.owner_name ? null : userId,
-      }));
-      if (parsed.needsConfirmation.length > 0) {
-        rows.push({
-          client_id: clientId,
-          title: "Confirm outstanding profile details with client",
-          description: "Fields this update import couldn't confirm — check them with the client and fill them in.",
-          due_date: null,
-          owner_name: null,
-          owner_user_id: userId,
-          // @ts-expect-error checklist is jsonb; widens fine at runtime
-          checklist: parsed.needsConfirmation.map((label) => ({ text: label, done: false })),
-        });
+
+  // --- The confirmation follow-up (Duane Part H): ONE live parent Action.
+  // New unconfirmed fields append to its checklist; fields this update now
+  // supplies get their checklist items ticked automatically; when everything
+  // is confirmed the parent Action completes itself. ---
+  const confirmOpen = (actions ?? []).find((a) => lower(a.title) === lower(CONFIRM_TITLE) && a.status !== "completed");
+  const followUp: UpdateSection = { label: "Follow-up", updates: [], creates: [], skips: [] };
+  if (confirmOpen) {
+    const current = Array.isArray(confirmOpen.checklist)
+      ? (confirmOpen.checklist as { text: string; done: boolean }[]).map((c) => ({ text: String(c.text ?? ""), done: c.done === true }))
+      : [];
+    const resolved = new Set(parsed.resolvedLabels);
+    let ticked = 0;
+    let nextChecklist = current.map((item) => {
+      if (!item.done && resolved.has(item.text)) {
+        ticked += 1;
+        return { ...item, done: true };
       }
-      const { error } = await supabase.from("actions").insert(rows);
-      if (error) throw fail("Actions", error.message);
+      return item;
+    });
+    const existingTexts = new Set(nextChecklist.map((c) => c.text));
+    const newItems = parsed.needsConfirmation.filter((label) => !existingTexts.has(label));
+    if (ticked > 0 || newItems.length > 0) {
+      nextChecklist = [...nextChecklist, ...newItems.map((label) => ({ text: label, done: false }))];
+      if (ticked > 0) followUp.updates.push(`${ticked} outstanding item(s) now confirmed — ticked off automatically`);
+      if (newItems.length > 0) followUp.updates.push(`${newItems.length} new item(s) added to "${CONFIRM_TITLE}"`);
+      const allDone = nextChecklist.length > 0 && nextChecklist.every((c) => c.done);
+      if (allDone) followUp.updates.push("every item is confirmed — the follow-up action will be marked Completed");
+      const confirmId = confirmOpen.id;
+      const checklistToSave = nextChecklist;
+      work.push(async () => {
+        const patch: Record<string, unknown> = { checklist: checklistToSave };
+        if (allDone) {
+          patch.status = "completed";
+          patch.completed_at = new Date().toISOString();
+        }
+        const { error } = await supabase
+          .from("actions")
+          .update(patch as Tables["actions"]["Update"])
+          .eq("id", confirmId);
+        if (error) throw fail("Follow-up", error.message);
+      });
+    }
+  } else if (parsed.needsConfirmation.length > 0) {
+    followUp.creates.push(`${CONFIRM_TITLE} (${parsed.needsConfirmation.length} items)`);
+    work.push(async () => {
+      const { error } = await supabase.from("actions").insert({
+        client_id: clientId,
+        title: CONFIRM_TITLE,
+        description: "Fields this update import couldn't confirm — check them with the client and fill them in.",
+        owner_user_id: userId,
+        source: "client_confirmation",
+        checklist: parsed.needsConfirmation.map((label) => ({ text: label, done: false })),
+      });
+      if (error) throw fail("Follow-up", error.message);
     });
   }
+  if (followUp.updates.length + followUp.creates.length > 0) sections.push(followUp);
 
   const snapshotKeys = new Set((snapshots ?? []).map((s) => `${lower(s.platform)}|${s.snapshot_date}`));
   if (parsed.metricSnapshots.length > 0) {

@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { getGlobalActions } from "@/lib/data/actions";
 import { getProfilesMap } from "@/lib/data/shared";
+import { getOwnerOptionsByClient } from "@/lib/data/owners";
 import { ActionsToolbar } from "@/components/actions/ActionsToolbar";
 import { ActionRow } from "@/components/clients/ActionRow";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -18,9 +19,10 @@ export default async function GlobalActionsPage({
   const params = await searchParams;
   const supabase = await createClient();
 
-  const [{ data: clients }, profiles, actions] = await Promise.all([
+  const [{ data: clients }, profiles, ownerOptionsByClient, actions] = await Promise.all([
     supabase.from("clients").select("id,name").order("name", { ascending: true }),
     getProfilesMap(supabase),
+    getOwnerOptionsByClient(supabase),
     getGlobalActions(supabase, {
       status: (params.status as ActionStatus | "all" | "not_done") || "not_done",
       clientId: params.client,
@@ -58,6 +60,7 @@ export default async function GlobalActionsPage({
                 action={action}
                 clientName={action.clientName}
                 ownerLabel={action.owner_user_id ? profiles.get(action.owner_user_id) : undefined}
+                ownerOptions={ownerOptionsByClient.get(action.client_id) ?? ownerOptionsByClient.get("")}
               />
             ))}
           </tbody>

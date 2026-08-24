@@ -88,7 +88,7 @@ export function parseContentImport(input: string): ContentParseResult {
     return { ok: false, error: "The import has no ideas — nothing to create." };
   }
 
-  const issues: ImportIssues = { needsConfirmation: [], warnings: [] };
+  const issues: ImportIssues = { needsConfirmation: [], warnings: [], resolvedLabels: [] };
 
   const ideas = (doc.ideas as unknown[]).flatMap((raw, i) => {
     const record = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;

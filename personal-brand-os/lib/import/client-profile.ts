@@ -19,6 +19,10 @@ export interface ImportIssues {
   needsConfirmation: string[];
   /** Non-fatal problems: dropped bad dates, unknown values coerced, etc. */
   warnings: string[];
+  /** Every field label that arrived with a real value this time. Update
+   * imports use this to auto-tick matching items on the outstanding
+   * "Confirm outstanding profile details" checklist (Duane Part H §14). */
+  resolvedLabels: string[];
 }
 
 export interface ParsedClientImport extends ImportIssues {
@@ -63,7 +67,16 @@ export interface ParsedClientImport extends ImportIssues {
     notes: string;
   }[];
   consultations: { meeting_date: string | null; fields: Record<string, string> }[];
-  actions: { title: string; description: string; due_date: string | null; owner_name: string | null }[];
+  actions: {
+    /** Internal PBOS action id when the AI is updating a known action. */
+    id: string | null;
+    title: string;
+    description: string;
+    due_date: string | null;
+    owner_name: string | null;
+    status: "not_started" | "in_progress" | "waiting" | "completed" | null;
+    priority: "low" | "medium" | "high" | null;
+  }[];
   metricSnapshots: { platform: string; snapshot_date: string; followers: number; extras: Record<string, number | null> }[];
   metricTargets: { platform: string; baseline_value: number | null; target_value: number | null; target_date: string | null }[];
   milestones: { title: string; milestone_date: string; description: string; is_highlighted: boolean }[];
@@ -115,6 +128,7 @@ function text(raw: unknown, label: string, issues: ImportIssues): string {
     return "";
   }
   if (value === NOT_APPLICABLE) return "";
+  if (value) issues.resolvedLabels.push(label);
   return value;
 }
 
@@ -132,6 +146,7 @@ function num(raw: unknown, label: string, issues: ImportIssues): number | null {
     issues.warnings.push(`${label}: "${String(raw)}" isn't a number — left blank.`);
     return null;
   }
+  issues.resolvedLabels.push(label);
   return value;
 }
 
@@ -201,7 +216,7 @@ export function parseClientImport(input: string, options?: { requireName?: boole
     return { ok: false, error: `Unsupported import version "${String(doc.version)}" — this build understands version 1.` };
   }
 
-  const issues: ImportIssues = { needsConfirmation: [], warnings: [] };
+  const issues: ImportIssues = { needsConfirmation: [], warnings: [], resolvedLabels: [] };
 
   const overviewRaw = (typeof doc.overview === "object" && doc.overview !== null ? doc.overview : {}) as Record<string, unknown>;
   const name = text(overviewRaw.name, "Overview → name", issues);
@@ -317,17 +332,38 @@ export function parseClientImport(input: string, options?: { requireName?: boole
 
   const actions = asArray(doc.actions, "Actions", issues).flatMap((raw, i) => {
     const record = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
-    const title = text(record.title, `Action ${i + 1} → title`, issues);
+    const id = text(record.action_id ?? record.id, `Action ${i + 1} → action id`, issues) || null;
+    // A title is required to CREATE an action; an update can arrive as just
+    // {action_id, status} — the existing record supplies the title.
+    const title = text(record.title, `Action ${i + 1} → title`, issues) || (id ? `(action ${id.slice(0, 8)})` : "");
     if (!title) {
-      issues.warnings.push(`Action ${i + 1} has no title — skipped.`);
+      issues.warnings.push(`Action ${i + 1} has no title or action_id — skipped.`);
       return [];
     }
+    // Status arrives in Duane's display form ("In Progress") or as the enum.
+    const statusRaw = text(record.status, `Action "${title}" → status`, issues).toLowerCase().replace(/[ -]/g, "_");
+    const STATUS_ALIASES: Record<string, "not_started" | "in_progress" | "waiting" | "completed"> = {
+      not_started: "not_started",
+      in_progress: "in_progress",
+      waiting: "waiting",
+      completed: "completed",
+      complete: "completed",
+      done: "completed",
+    };
+    const status = STATUS_ALIASES[statusRaw] ?? null;
+    if (statusRaw && !status) issues.warnings.push(`Action "${title}": unknown status "${statusRaw}" — left unchanged.`);
+    const priorityRaw = text(record.priority, `Action "${title}" → priority`, issues).toLowerCase();
+    const priority: "low" | "medium" | "high" | null =
+      priorityRaw === "low" || priorityRaw === "medium" || priorityRaw === "high" ? priorityRaw : null;
     return [
       {
+        id,
         title,
         description: text(record.description, `Action "${title}" → description`, issues),
         due_date: date(record.due_date, `Action "${title}" → due date`, issues),
         owner_name: text(record.owner, `Action "${title}" → owner`, issues) || null,
+        status,
+        priority,
       },
     ];
   });

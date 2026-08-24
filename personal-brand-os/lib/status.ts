@@ -70,6 +70,34 @@ export const CONTENT_PRIORITY: { value: ContentPriority; label: string; color: T
   { value: "high", label: "High", color: "red" },
 ];
 
+// --- Actions as the master task layer (Duane batch 6) ---
+
+export type ActionPriority = "low" | "medium" | "high";
+export type ActionVisibility = "internal" | "client";
+
+export const ACTION_PRIORITY: { value: ActionPriority; label: string; color: TagColor }[] = [
+  { value: "low", label: "Low", color: "slate" },
+  { value: "medium", label: "Medium", color: "amber" },
+  { value: "high", label: "High", color: "red" },
+];
+
+export const ACTION_VISIBILITY: { value: ActionVisibility; label: string; color: TagColor }[] = [
+  { value: "internal", label: "Internal (Aligned Media)", color: "slate" },
+  { value: "client", label: "Client visible", color: "teal" },
+];
+
+/** Where an Action originated — set automatically, shown read-only. */
+export const ACTION_SOURCE_LABELS: Record<string, string> = {
+  manual: "Manual",
+  meeting: "Meeting / Consultation",
+  opportunity: "Authority Opportunity",
+  content: "Content workflow",
+  import: "AI Import",
+  client_confirmation: "AI / Client Confirmation",
+  signoff: "Strategy Sign-off",
+  system: "System",
+};
+
 function lookup<V extends string>(
   list: { value: V; label: string; color: TagColor }[],
   value: V
@@ -81,5 +109,6 @@ export const clientStatusMeta = (value: ClientStatus) => lookup(CLIENT_STATUS, v
 export const contentStatusMeta = (value: ContentStatus) => lookup(CONTENT_STATUS, value);
 export const authorityStatusMeta = (value: AuthorityStatus) => lookup(AUTHORITY_STATUS, value);
 export const actionStatusMeta = (value: ActionStatus) => lookup(ACTION_STATUS, value);
+export const actionPriorityMeta = (value: string) => lookup(ACTION_PRIORITY, value as ActionPriority);
 export const contentPriorityMeta = (value: ContentPriority) => lookup(CONTENT_PRIORITY, value);
 export const outputStatusMeta = (value: OutputStatus) => lookup(OUTPUT_STATUS, value);

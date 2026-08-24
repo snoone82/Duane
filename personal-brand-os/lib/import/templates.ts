@@ -12,6 +12,7 @@ RULES — follow these exactly:
 5. Dates must be YYYY-MM-DD. Numbers must be plain numbers (no currency symbols or commas).
 6. content_ideas.pillar and content_ideas.audience must exactly match a name from content_pillars / audiences in this same document — never introduce new ones there.
 7. Write in UK English, in the client's own words where possible.
+8. For UPDATE imports into an existing client: include ONLY the sections and fields that changed. An omitted field always keeps its current value — never restate a field just to include it, and never use blank values to try to clear something. Existing actions are matched by action_id (preferred, when provided to you) or by their exact title; supplying just {"title": "...", "status": "Completed"} is enough to change only the status. Nothing is ever deleted by an import.
 
 {
   "pbos_import": "client_profile",
@@ -90,7 +91,13 @@ RULES — follow these exactly:
     }
   ],
   "actions": [
-    { "title": "REQUIRED", "description": "", "due_date": "YYYY-MM-DD or null", "owner": "person's name or null" }
+    {
+      "action_id": "internal PBOS id — include when updating a known existing action, omit for new ones",
+      "title": "REQUIRED — for updates, must exactly match the existing action title (or supply action_id)",
+      "description": "", "due_date": "YYYY-MM-DD or null", "owner": "person's name or null",
+      "status": "Not Started | In Progress | Waiting | Completed",
+      "priority": "low | medium | high"
+    }
   ],
   "metric_snapshots": [
     {

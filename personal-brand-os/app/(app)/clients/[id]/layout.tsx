@@ -35,12 +35,12 @@ export default async function ClientLayout({
   ];
 
   return (
-    <div className="-mx-6 -my-6">
+    <div className="-mx-4 -my-4 md:-mx-6 md:-my-6">
       <div className="border-b border-border bg-surface">
         <ClientHeader client={client} links={headerLinks} />
         <ClientTabs clientId={id} />
       </div>
-      <div className="px-6 py-6">{children}</div>
+      <div className="px-4 py-4 md:px-6 md:py-6">{children}</div>
     </div>
   );
 }

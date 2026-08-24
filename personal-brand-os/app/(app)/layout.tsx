@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getCurrentProfile } from "@/lib/current-user";
 import { createClient } from "@/lib/supabase/server";
 import { Sidebar } from "@/components/layout/Sidebar";
+import { MobileHeader } from "@/components/layout/MobileHeader";
 import { TopBar } from "@/components/layout/TopBar";
 import { signOut } from "@/lib/actions/auth";
 import { Button } from "@/components/ui/Button";
@@ -40,11 +41,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <div className="flex h-dvh overflow-hidden">
+    <div className="flex h-dvh flex-col overflow-hidden md:flex-row">
+      <MobileHeader name={profile.full_name || profile.email} role={profile.role} />
       <Sidebar name={profile.full_name || profile.email} role={profile.role} />
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar />
-        <main className="min-w-0 flex-1 overflow-y-auto px-6 py-6">{children}</main>
+        <main className="min-w-0 flex-1 overflow-y-auto px-4 py-4 md:px-6 md:py-6">{children}</main>
       </div>
     </div>
   );

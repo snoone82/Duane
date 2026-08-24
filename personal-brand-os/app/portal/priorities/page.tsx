@@ -1,72 +1,85 @@
 import { createClient } from "@/lib/supabase/server";
-import { getPortalClient } from "@/lib/data/portal";
-import { StatusPill } from "@/components/ui/StatusPill";
+import { getPortalContext } from "@/lib/data/portal";
+import { PortalActionCard } from "@/components/portal/PortalActionCard";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { actionStatusMeta } from "@/lib/status";
-import { formatRelativeToToday, isOverdue } from "@/lib/format";
 
-export const metadata = { title: "Priorities" };
+export const metadata = { title: "Actions" };
 
-export default async function PortalPrioritiesPage() {
-  const client = await getPortalClient();
-  if (!client) return null;
+/** Duane Part I: the client team's task view. "My Actions" = assigned to
+ * this signed-in person; "Client actions" = the other client-visible tasks
+ * their permissions let them see. Updates land on the same Action records
+ * the Aligned Media dashboard shows — there is no separate client copy. */
+export default async function PortalActionsPage() {
+  const context = await getPortalContext();
+  if (!context) return null;
 
   const supabase = await createClient();
-  const { data: actions } = await supabase
-    .from("actions")
-    .select("*")
-    .eq("client_id", client.id)
-    .order("due_date", { ascending: true, nullsFirst: false })
-    .order("created_at", { ascending: true });
+  // RLS already scopes this to what this account may see (own actions +
+  // client-visible ones when permitted) — no extra filtering needed here.
+  const [{ data: actions }, { data: teamMembers }] = await Promise.all([
+    supabase
+      .from("actions")
+      .select("*")
+      .eq("client_id", context.client.id)
+      .order("due_date", { ascending: true, nullsFirst: false })
+      .order("created_at", { ascending: true }),
+    supabase.from("client_members").select("user_id,name").eq("client_id", context.client.id),
+  ]);
 
-  const open = (actions ?? []).filter((a) => a.status !== "completed");
-  const done = (actions ?? []).filter((a) => a.status === "completed").slice(0, 10);
+  const memberNames = new Map((teamMembers ?? []).filter((m) => m.user_id).map((m) => [m.user_id as string, m.name]));
+  const ownerLabel = (action: { owner_user_id: string | null; owner_name: string | null }) => {
+    if (action.owner_user_id === context.userId) return "Assigned to you";
+    if (action.owner_user_id) return memberNames.get(action.owner_user_id) ?? "Aligned Media team";
+    return action.owner_name ?? "Aligned Media team";
+  };
+
+  const all = actions ?? [];
+  const mine = all.filter((a) => a.owner_user_id === context.userId);
+  const others = all.filter((a) => a.owner_user_id !== context.userId);
+  const canManageOthers = context.can("manage_actions");
+
+  const openMine = mine.filter((a) => a.status !== "completed");
+  const doneMine = mine.filter((a) => a.status === "completed").slice(0, 5);
+  const openOthers = others.filter((a) => a.status !== "completed");
+  const doneOthers = others.filter((a) => a.status === "completed").slice(0, 10);
 
   return (
-    <div className="space-y-5">
-      <p className="text-sm text-ink-soft">What&rsquo;s being worked on for your brand right now.</p>
+    <div className="space-y-6">
+      <p className="text-sm text-ink-soft">
+        The work being done for {context.client.name} — updates you make here go straight to the Aligned Media team.
+      </p>
 
-      {open.length === 0 && done.length === 0 ? (
-        <EmptyState title="No actions yet" description="Priorities agreed with the team will show up here." />
-      ) : (
-        <>
+      {all.length === 0 && (
+        <EmptyState title="No actions yet" description="Tasks agreed with the team will show up here." />
+      )}
+
+      {(openMine.length > 0 || doneMine.length > 0) && (
+        <section>
+          <h2 className="mb-2 text-sm font-semibold text-ink">My actions</h2>
           <div className="space-y-2">
-            {open.map((action) => {
-              const meta = actionStatusMeta(action.status);
-              return (
-                <div key={action.id} className="flex items-start justify-between gap-3 rounded-lg border border-border bg-surface px-4 py-3">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-ink">{action.title}</p>
-                    {action.description.trim() && (
-                      <p className="mt-0.5 whitespace-pre-wrap text-sm text-ink-soft">{action.description}</p>
-                    )}
-                    {action.due_date && (
-                      <p className={`mt-1 text-xs ${isOverdue(action.due_date) ? "text-danger" : "text-ink-faint"}`}>
-                        Due {formatRelativeToToday(action.due_date)}
-                      </p>
-                    )}
-                  </div>
-                  <StatusPill label={meta.label} color={meta.color} />
-                </div>
-              );
-            })}
-            {open.length === 0 && <p className="text-sm text-ink-faint">Nothing open right now — everything&rsquo;s done.</p>}
+            {openMine.map((action) => (
+              <PortalActionCard key={action.id} action={action} ownerLabel={ownerLabel(action)} canManage />
+            ))}
+            {openMine.length === 0 && <p className="text-sm text-ink-faint">Nothing assigned to you right now.</p>}
+            {doneMine.map((action) => (
+              <PortalActionCard key={action.id} action={action} ownerLabel={ownerLabel(action)} canManage />
+            ))}
           </div>
+        </section>
+      )}
 
-          {done.length > 0 && (
-            <div>
-              <h2 className="mb-2 text-sm font-semibold text-ink">Recently completed</h2>
-              <div className="space-y-2">
-                {done.map((action) => (
-                  <div key={action.id} className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface px-4 py-2.5">
-                    <p className="text-sm text-ink-soft line-through decoration-ink-faint">{action.title}</p>
-                    <StatusPill label="Completed" color="green" />
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </>
+      {(openOthers.length > 0 || doneOthers.length > 0) && (
+        <section>
+          <h2 className="mb-2 text-sm font-semibold text-ink">Client actions</h2>
+          <div className="space-y-2">
+            {openOthers.map((action) => (
+              <PortalActionCard key={action.id} action={action} ownerLabel={ownerLabel(action)} canManage={canManageOthers} />
+            ))}
+            {doneOthers.map((action) => (
+              <PortalActionCard key={action.id} action={action} ownerLabel={ownerLabel(action)} canManage={canManageOthers} />
+            ))}
+          </div>
+        </section>
       )}
     </div>
   );

@@ -4,13 +4,14 @@ import { ActionRow } from "@/components/clients/ActionRow";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Table, Thead, Th } from "@/components/ui/Table";
 import { getProfilesMap } from "@/lib/data/shared";
+import { getOwnerOptions } from "@/lib/data/owners";
 
 export const metadata = { title: "Actions" };
 
 export default async function ClientActionsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const supabase = await createClient();
-  const [{ data: actions }, profiles] = await Promise.all([
+  const [{ data: actions }, profiles, ownerOptions] = await Promise.all([
     supabase
       .from("actions")
       .select("*")
@@ -18,6 +19,7 @@ export default async function ClientActionsPage({ params }: { params: Promise<{ 
       .order("due_date", { ascending: true, nullsFirst: false })
       .order("created_at", { ascending: false }),
     getProfilesMap(supabase),
+    getOwnerOptions(supabase, id),
   ]);
 
   const open = (actions ?? []).filter((a) => a.status !== "completed");
@@ -28,7 +30,7 @@ export default async function ClientActionsPage({ params }: { params: Promise<{ 
     <div>
       <div className="mb-4 flex items-center justify-between">
         <p className="text-sm text-ink-soft">{open.length} open, {done.length} done</p>
-        <AddActionButton clientId={id} />
+        <AddActionButton clientId={id} ownerOptions={ownerOptions} />
       </div>
 
       {ordered.length === 0 ? (
@@ -51,6 +53,7 @@ export default async function ClientActionsPage({ params }: { params: Promise<{ 
                 clientId={id}
                 action={action}
                 ownerLabel={action.owner_user_id ? profiles.get(action.owner_user_id) : undefined}
+                ownerOptions={ownerOptions}
               />
             ))}
           </tbody>

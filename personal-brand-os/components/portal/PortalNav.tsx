@@ -3,21 +3,15 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-const TABS = [
-  { href: "/portal", label: "Strategy" },
-  { href: "/portal/signoff", label: "Sign-off" },
-  { href: "/portal/priorities", label: "Priorities" },
-  { href: "/portal/content", label: "Content" },
-  { href: "/portal/progress", label: "Progress" },
-  { href: "/portal/meetings", label: "Meetings" },
-];
-
-export function PortalNav() {
+/** The tab list arrives from the layout, already filtered by the signed-in
+ * portal user's permissions (the principal client sees everything; client
+ * team members see what their membership allows). */
+export function PortalNav({ tabs }: { tabs: { href: string; label: string }[] }) {
   const pathname = usePathname();
 
   return (
-    <nav aria-label="Portal sections" className="flex gap-1 overflow-x-auto border-b border-border px-6">
-      {TABS.map((tab) => {
+    <nav aria-label="Portal sections" className="flex gap-1 overflow-x-auto border-b border-border px-4 md:px-6">
+      {tabs.map((tab) => {
         const isActive = pathname === tab.href;
         return (
           <Link

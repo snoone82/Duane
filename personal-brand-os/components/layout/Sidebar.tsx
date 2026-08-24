@@ -4,24 +4,14 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "@/lib/actions/auth";
 import { initials } from "@/lib/format";
-
-const NAV_ITEMS = [
-  { href: "/", label: "Dashboard" },
-  { href: "/clients", label: "Clients" },
-  { href: "/calendar", label: "Calendar" },
-  { href: "/actions", label: "Actions" },
-  { href: "/sales", label: "Sales" },
-  { href: "/search", label: "Search" },
-];
-
-const ADMIN_NAV_ITEMS = [{ href: "/team", label: "Team & access" }];
+import { navItemsForRole } from "@/components/layout/nav-items";
 
 export function Sidebar({ name, role }: { name: string; role: string }) {
   const pathname = usePathname();
-  const navItems = role === "admin" ? [...NAV_ITEMS, ...ADMIN_NAV_ITEMS] : NAV_ITEMS;
+  const navItems = navItemsForRole(role);
 
   return (
-    <aside className="flex h-dvh w-[--sidebar-width] flex-shrink-0 flex-col border-r border-border bg-surface">
+    <aside className="hidden h-dvh w-[--sidebar-width] flex-shrink-0 flex-col border-r border-border bg-surface md:flex">
       <div className="flex h-[--topbar-height] items-center gap-2 border-b border-border px-4">
         {/* eslint-disable-next-line @next/next/no-img-element -- static local asset, next/image adds no value here */}
         <img src="/brand/icon-mark.png" alt="" className="h-6 w-auto flex-shrink-0" />

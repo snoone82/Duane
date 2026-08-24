@@ -6,6 +6,7 @@ import { getOverviewSummary } from "@/lib/data/overview";
 import { getCurrentProfile } from "@/lib/current-user";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { TeamAssignments } from "@/components/clients/TeamAssignments";
+import { ClientTeamPanel } from "@/components/clients/ClientTeamPanel";
 import { PortalAccessControl } from "@/components/clients/PortalAccessControl";
 import { NorthStarCard } from "@/components/clients/NorthStarCard";
 import { ClientDangerZone } from "@/components/clients/ClientDangerZone";
@@ -25,7 +26,7 @@ export default async function OverviewPage({ params }: { params: Promise<{ id: s
   const currentProfile = await getCurrentProfile();
   const isAdmin = currentProfile?.role === "admin";
 
-  const [{ openActions, lastConsultation, nextMeeting }, assignedMembers, allMembers, activity, clientAccounts, { data: socialAccounts }] = await Promise.all([
+  const [{ openActions, lastConsultation, nextMeeting }, assignedMembers, allMembers, activity, clientAccounts, { data: socialAccounts }, { data: clientTeam }] = await Promise.all([
     getOverviewSummary(supabase, id),
     getAssignedMembers(supabase, id),
     getAllTeamMembers(supabase),
@@ -38,6 +39,7 @@ export default async function OverviewPage({ params }: { params: Promise<{ id: s
       .eq("show_on_overview", true)
       .order("is_primary", { ascending: false })
       .order("sort_order"),
+    supabase.from("client_members").select("*").eq("client_id", id).order("created_at"),
   ]);
 
   return (
@@ -156,6 +158,15 @@ export default async function OverviewPage({ params }: { params: Promise<{ id: s
             allMembers={allMembers}
             isAdmin={isAdmin}
           />
+        </section>
+
+        <section className="rounded-lg border border-border bg-surface p-4">
+          <h2 className="mb-1 text-sm font-semibold text-ink">Client team</h2>
+          <p className="mb-3 text-xs text-ink-faint">
+            The client&rsquo;s own people — portal access, permissions and assignable actions, limited strictly to this
+            client.
+          </p>
+          <ClientTeamPanel clientId={id} members={clientTeam ?? []} isAdmin={isAdmin} />
         </section>
 
         {isAdmin && (

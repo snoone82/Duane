@@ -9,13 +9,31 @@ export const metadata = { title: "Update via import" };
 export default async function ClientUpdateImportPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const supabase = await createClient();
-  const { data: client } = await supabase.from("clients").select("name").eq("id", id).maybeSingle();
+  const [{ data: client }, { data: openActions }] = await Promise.all([
+    supabase.from("clients").select("name").eq("id", id).maybeSingle(),
+    supabase
+      .from("actions")
+      .select("id,title,status")
+      .eq("client_id", id)
+      .neq("status", "completed")
+      .order("created_at"),
+  ]);
   if (!client) notFound();
+
+  // Bake the client's live open actions (with their internal ids) into the
+  // template so the AI can update them safely by action_id instead of
+  // relying on exact title matches (Duane's Action-ID ask).
+  const actionsBlock =
+    (openActions ?? []).length > 0
+      ? `\nThis client's OPEN actions right now (use action_id to update one):\n${(openActions ?? [])
+          .map((a) => `- action_id "${a.id}" — "${a.title}" (currently ${a.status.replace(/_/g, " ")})`)
+          .join("\n")}\n`
+      : "";
 
   const template = CLIENT_PROFILE_TEMPLATE.replace(
     "RULES — follow these exactly:",
-    `THIS IS AN UPDATE for the existing client "${client.name}" — include ONLY the sections and fields that are new or have changed since the last import. Omit everything that hasn't changed. Repeatable records (audiences, pillars, meetings, actions…) are matched by name/date: matching records are updated, new ones are added, and nothing is ever deleted.
-
+    `THIS IS AN UPDATE for the existing client "${client.name}" — include ONLY the sections and fields that are new or have changed since the last import. Omit everything that hasn't changed. Repeatable records (audiences, pillars, meetings, actions…) are matched by name/date: matching records are updated, new ones are added, and nothing is ever deleted. For actions, a partial record like {"action_id": "…", "status": "Completed"} is enough — omitted fields keep their current values.
+${actionsBlock}
 RULES — follow these exactly:`
   );
 

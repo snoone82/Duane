@@ -27,9 +27,13 @@ export type Database = {
           id: string
           owner_name: string | null
           owner_user_id: string | null
+          portal_notes: string
+          priority: string
+          source: string
           status: Database["public"]["Enums"]["action_status"]
           title: string
           updated_at: string
+          visibility: string
         }
         Insert: {
           checklist?: Json
@@ -43,9 +47,13 @@ export type Database = {
           id?: string
           owner_name?: string | null
           owner_user_id?: string | null
+          portal_notes?: string
+          priority?: string
+          source?: string
           status?: Database["public"]["Enums"]["action_status"]
           title: string
           updated_at?: string
+          visibility?: string
         }
         Update: {
           checklist?: Json
@@ -59,9 +67,13 @@ export type Database = {
           id?: string
           owner_name?: string | null
           owner_user_id?: string | null
+          portal_notes?: string
+          priority?: string
+          source?: string
           status?: Database["public"]["Enums"]["action_status"]
           title?: string
           updated_at?: string
+          visibility?: string
         }
         Relationships: [
           {
@@ -438,6 +450,69 @@ export type Database = {
           {
             foreignKeyName: "client_files_uploaded_by_fkey"
             columns: ["uploaded_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      client_members: {
+        Row: {
+          can_be_assigned: boolean
+          client_id: string
+          created_at: string
+          email: string
+          id: string
+          job_title: string
+          member_role: string
+          name: string
+          organisation: string
+          permissions: Json
+          status: string
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          can_be_assigned?: boolean
+          client_id: string
+          created_at?: string
+          email?: string
+          id?: string
+          job_title?: string
+          member_role?: string
+          name: string
+          organisation?: string
+          permissions?: Json
+          status?: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          can_be_assigned?: boolean
+          client_id?: string
+          created_at?: string
+          email?: string
+          id?: string
+          job_title?: string
+          member_role?: string
+          name?: string
+          organisation?: string
+          permissions?: Json
+          status?: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_members_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_members_user_id_fkey"
+            columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
@@ -1449,6 +1524,10 @@ export type Database = {
         Returns: boolean
       }
       is_team_member: { Args: never; Returns: boolean }
+      portal_can: {
+        Args: { perm: string; target_client_id: string }
+        Returns: boolean
+      }
     }
     Enums: {
       action_status: "not_started" | "in_progress" | "completed" | "waiting"
