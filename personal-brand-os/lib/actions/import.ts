@@ -258,8 +258,9 @@ export async function commitClientImport(text: string): Promise<ActionResult<{ c
         status: a.status ?? "not_started",
         completed_at: a.status === "completed" ? new Date().toISOString() : null,
         priority: a.priority ?? "medium",
+        visibility: a.visibility ?? "internal",
         source: "import",
-        checklist: [] as { text: string; done: boolean }[],
+        checklist: a.checklist,
       }));
       // The follow-up list Duane asked for: everything the AI marked as
       // needing the client's word becomes one action with a checklist.
@@ -271,9 +272,10 @@ export async function commitClientImport(text: string): Promise<ActionResult<{ c
           due_date: null,
           owner_name: null,
           owner_user_id: user?.id ?? null,
-          status: "not_started",
+          status: "not_started" as const,
           completed_at: null,
           priority: "medium",
+          visibility: "internal",
           source: "client_confirmation",
           checklist: parsed.needsConfirmation.map((label) => ({ text: label, done: false })),
         });
@@ -423,7 +425,7 @@ async function buildClientUpdatePlan(
     supabase.from("consultations").select("id,meeting_date,meeting_type").eq("client_id", clientId),
     supabase
       .from("actions")
-      .select("id,title,status,owner_name,owner_user_id,due_date,priority,description,checklist")
+      .select("id,title,status,owner_name,owner_user_id,due_date,priority,description,visibility,checklist")
       .eq("client_id", clientId),
     supabase.from("metric_snapshots").select("id,platform,snapshot_date").eq("client_id", clientId),
     supabase.from("metric_targets").select("id,platform").eq("client_id", clientId),
@@ -769,6 +771,35 @@ async function buildClientUpdatePlan(
         patch.description = a.description;
         changes.push("description");
       }
+      if (a.visibility && a.visibility !== existing.visibility) {
+        patch.visibility = a.visibility;
+        changes.push(`visibility → ${a.visibility}`);
+      }
+      if (a.checklist.length > 0) {
+        // Merge by item text: new items append, done:true ticks a matching
+        // existing item, and nothing supplied never unticks or removes.
+        const current = Array.isArray(existing.checklist)
+          ? (existing.checklist as { text: string; done: boolean }[]).map((c) => ({ text: String(c.text ?? ""), done: c.done === true }))
+          : [];
+        const byText = new Map(current.map((c) => [lower(c.text), c]));
+        let added = 0;
+        let ticked = 0;
+        const merged = [...current];
+        for (const item of a.checklist) {
+          const match = byText.get(lower(item.text));
+          if (!match) {
+            merged.push(item);
+            added += 1;
+          } else if (item.done && !match.done) {
+            match.done = true;
+            ticked += 1;
+          }
+        }
+        if (added > 0 || ticked > 0) {
+          patch.checklist = merged;
+          changes.push(`checklist (${[added > 0 ? `+${added}` : null, ticked > 0 ? `${ticked} ticked` : null].filter(Boolean).join(", ")})`);
+        }
+      }
       if (Object.keys(patch).length === 0) {
         section.skips.push(`${existing.title} — nothing new`);
         continue;
@@ -796,7 +827,9 @@ async function buildClientUpdatePlan(
             status: a.status ?? "not_started",
             completed_at: a.status === "completed" ? new Date().toISOString() : null,
             priority: a.priority ?? "medium",
+            visibility: a.visibility ?? "internal",
             source: "import",
+            checklist: a.checklist,
           };
         });
         const { error } = await supabase.from("actions").insert(rows as Tables["actions"]["Insert"][]);
@@ -973,6 +1006,7 @@ export async function commitClientUpdate(clientId: string, text: string): Promis
     if (!built.ok) throw new Error(built.message);
     await built.plan.apply();
     revalidatePath(`/clients/${clientId}`, "layout");
+    revalidatePath("/actions");
     revalidatePath("/");
     return built.plan.preview;
   });

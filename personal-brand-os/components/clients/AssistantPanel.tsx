@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Textarea, Label } from "@/components/ui/Input";
+import { DictationButton } from "@/components/ui/DictationButton";
 
 const PRESETS = [
   {
@@ -109,15 +110,21 @@ export function AssistantPanel({ clientId }: { clientId: string }) {
             }}
           />
         </div>
-        <div className="flex items-center justify-end gap-2">
-          {isRunning && (
-            <Button type="button" variant="ghost" size="sm" onClick={() => abortRef.current?.abort()}>
-              Stop
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <DictationButton
+            disabled={isRunning}
+            onText={(text) => setQuestion((prev) => (prev.trim() ? `${prev.trim()} ${text}` : text))}
+          />
+          <div className="flex items-center gap-2">
+            {isRunning && (
+              <Button type="button" variant="ghost" size="sm" onClick={() => abortRef.current?.abort()}>
+                Stop
+              </Button>
+            )}
+            <Button type="submit" variant="primary" disabled={isRunning || !question.trim()}>
+              {isRunning ? "Thinking…" : "Ask"}
             </Button>
-          )}
-          <Button type="submit" variant="primary" disabled={isRunning || !question.trim()}>
-            {isRunning ? "Thinking…" : "Ask"}
-          </Button>
+          </div>
         </div>
       </form>
 

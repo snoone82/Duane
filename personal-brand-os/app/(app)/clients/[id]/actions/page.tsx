@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { AddActionButton } from "@/components/clients/AddActionButton";
 import { ActionRow } from "@/components/clients/ActionRow";
@@ -28,9 +29,17 @@ export default async function ClientActionsPage({ params }: { params: Promise<{ 
 
   return (
     <div>
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-ink-soft">{open.length} open, {done.length} done</p>
-        <AddActionButton clientId={id} ownerOptions={ownerOptions} />
+        <div className="flex items-center gap-2">
+          <Link
+            href={`/clients/${id}/actions/import`}
+            className="rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-ink-soft transition-colors hover:bg-surface-muted hover:text-ink"
+          >
+            Import actions
+          </Link>
+          <AddActionButton clientId={id} ownerOptions={ownerOptions} />
+        </div>
       </div>
 
       {ordered.length === 0 ? (

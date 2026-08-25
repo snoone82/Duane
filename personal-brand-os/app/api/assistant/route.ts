@@ -13,10 +13,24 @@ The method behind the data is Visibility → Authority → Trust → Opportunity
 Keep answers practical and scoped to what a brand manager would act on this week. Use plain prose with short headings or lists only when they genuinely help. Currency is GBP.`;
 
 export async function POST(request: Request) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  // Tolerate the common paste mistakes (whitespace, surrounding quotes) but
+  // refuse anything that isn't exactly one key. A malformed value must NEVER
+  // reach the SDK: header-validation errors quote the offending value, and
+  // an error that embeds the key can never be allowed anywhere near the
+  // response stream.
+  const apiKey = (process.env.ANTHROPIC_API_KEY ?? "").trim().replace(/^["']|["']$/g, "");
   if (!apiKey) {
     return Response.json(
       { error: "The assistant isn't configured yet — add an ANTHROPIC_API_KEY to the environment and redeploy." },
+      { status: 503 }
+    );
+  }
+  if (!/^sk-ant-[A-Za-z0-9_-]+$/.test(apiKey)) {
+    return Response.json(
+      {
+        error:
+          "The assistant's API key is set but malformed — the ANTHROPIC_API_KEY environment variable must contain just the key itself (it starts sk-ant-…), with nothing else pasted around it. Fix it in Vercel and redeploy.",
+      },
       { status: 503 }
     );
   }
@@ -74,12 +88,18 @@ export async function POST(request: Request) {
         }
         controller.close();
       } catch (err) {
-        // Log server-side too — streamed errors are otherwise invisible in
-        // Vercel's runtime logs, which made "it shows an error" undiagnosable.
+        // Full detail goes to the server logs ONLY — raw SDK error messages
+        // can quote header values and request internals, so nothing from the
+        // error object is ever echoed into the client-visible stream.
         console.error("assistant model call failed:", err);
-        controller.enqueue(
-          encoder.encode(`\n\n[The assistant hit an error: ${err instanceof Error ? err.message : "unknown error"}]`)
-        );
+        const status = err && typeof err === "object" && "status" in err ? (err as { status?: number }).status : undefined;
+        const friendly =
+          status === 401 || status === 403
+            ? "the API key was rejected — it may need replacing in Vercel"
+            : status === 429
+              ? "the model is rate-limited right now — try again in a minute"
+              : "something went wrong talking to the model — the team can see the details in the server logs";
+        controller.enqueue(encoder.encode(`\n\n[The assistant hit a problem: ${friendly}.]`));
         controller.close();
       }
     },

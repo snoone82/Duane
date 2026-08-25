@@ -76,6 +76,9 @@ export interface ParsedClientImport extends ImportIssues {
     owner_name: string | null;
     status: "not_started" | "in_progress" | "waiting" | "completed" | null;
     priority: "low" | "medium" | "high" | null;
+    visibility: "internal" | "client" | null;
+    /** Subtasks — created with the action, merged by text on updates. */
+    checklist: { text: string; done: boolean }[];
   }[];
   metricSnapshots: { platform: string; snapshot_date: string; followers: number; extras: Record<string, number | null> }[];
   metricTargets: { platform: string; baseline_value: number | null; target_value: number | null; target_date: string | null }[];
@@ -355,6 +358,22 @@ export function parseClientImport(input: string, options?: { requireName?: boole
     const priorityRaw = text(record.priority, `Action "${title}" → priority`, issues).toLowerCase();
     const priority: "low" | "medium" | "high" | null =
       priorityRaw === "low" || priorityRaw === "medium" || priorityRaw === "high" ? priorityRaw : null;
+    const visibilityRaw = text(record.visibility, `Action "${title}" → visibility`, issues).toLowerCase();
+    const visibility: "internal" | "client" | null =
+      visibilityRaw === "internal" || visibilityRaw === "client" ? visibilityRaw : null;
+    // Checklist items arrive as plain strings or {text, done} objects.
+    const checklist = asArray(record.checklist, `Action "${title}" → checklist`, issues).flatMap((item) => {
+      if (typeof item === "string") {
+        const itemText = item.trim();
+        return itemText && itemText !== NEEDS_CONFIRMATION && itemText !== NOT_APPLICABLE ? [{ text: itemText, done: false }] : [];
+      }
+      if (typeof item === "object" && item !== null) {
+        const record2 = item as Record<string, unknown>;
+        const itemText = typeof record2.text === "string" ? record2.text.trim() : "";
+        return itemText ? [{ text: itemText, done: record2.done === true }] : [];
+      }
+      return [];
+    });
     return [
       {
         id,
@@ -364,6 +383,8 @@ export function parseClientImport(input: string, options?: { requireName?: boole
         owner_name: text(record.owner, `Action "${title}" → owner`, issues) || null,
         status,
         priority,
+        visibility,
+        checklist,
       },
     ];
   });

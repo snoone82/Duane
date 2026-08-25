@@ -96,7 +96,9 @@ RULES — follow these exactly:
       "title": "REQUIRED — for updates, must exactly match the existing action title (or supply action_id)",
       "description": "", "due_date": "YYYY-MM-DD or null", "owner": "person's name or null",
       "status": "Not Started | In Progress | Waiting | Completed",
-      "priority": "low | medium | high"
+      "priority": "low | medium | high",
+      "visibility": "internal | client (internal = Aligned Media only; client = also visible in the client portal)",
+      "checklist": ["Subtask one", "Subtask two — plain strings, or {\\"text\\": \\"...\\", \\"done\\": true} to tick an existing item"]
     }
   ],
   "metric_snapshots": [
@@ -115,6 +117,40 @@ RULES — follow these exactly:
 }
 
 Here is the consultation transcript / notes:
+`;
+
+/** The Actions-only importer on each client's Actions tab (Duane's ask):
+ * the same format the update importer understands, but scoped to actions —
+ * take a consultation output or AI-generated action plan and turn it
+ * straight into operational tasks with checklists. */
+export const ACTIONS_IMPORT_TEMPLATE = `You are converting an action plan (from a consultation, strategy session or AI plan) into structured Actions for the Aligned Media Personal Brand OS.
+
+RULES — follow these exactly:
+1. Output ONLY a single JSON object matching the skeleton below. No commentary before or after.
+2. One action per distinct task or phase. Put its subtasks in "checklist" — never as separate actions.
+3. Existing actions are matched by action_id (a list will be provided) or exact title: matched actions are UPDATED (only the fields you supply change; omitted fields keep their current values); unmatched titles create NEW actions. Nothing is ever deleted.
+4. NEVER invent information. Unknown = omit the field. Dates must be YYYY-MM-DD.
+5. "owner" is a person's name (Aligned Media team or the client's team) — omit if unassigned.
+
+{
+  "pbos_import": "client_profile",
+  "version": 1,
+  "actions": [
+    {
+      "action_id": "only when updating a known existing action — omit for new ones",
+      "title": "REQUIRED, e.g. Phase 1 — Complete Engineering Business Academy",
+      "description": "What this covers and why it matters",
+      "due_date": "YYYY-MM-DD or null",
+      "owner": "person's name or null",
+      "status": "Not Started | In Progress | Waiting | Completed",
+      "priority": "low | medium | high",
+      "visibility": "internal | client",
+      "checklist": ["Subtask one", "Subtask two"]
+    }
+  ]
+}
+
+Here is the action plan to convert:
 `;
 
 export const CONTENT_IMPORT_TEMPLATE = `You are converting drafted content into a structured import for the Aligned Media Personal Brand OS content pipeline.
