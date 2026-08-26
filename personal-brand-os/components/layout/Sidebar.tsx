@@ -12,13 +12,13 @@ export function Sidebar({ name, role }: { name: string; role: string }) {
 
   return (
     <aside className="hidden h-dvh w-[--sidebar-width] flex-shrink-0 flex-col border-r border-border bg-surface backdrop-blur-md md:flex">
-      <div className="flex h-[--topbar-height] items-center gap-2 border-b border-border px-4">
+      <div className="flex h-[--topbar-height] items-center gap-3 border-b border-border px-5">
         {/* eslint-disable-next-line @next/next/no-img-element -- static local asset, next/image adds no value here */}
-        <img src="/brand/icon-mark.png" alt="" className="h-8 w-auto flex-shrink-0" />
-        <span className="truncate text-[15px] font-semibold tracking-tight text-ink">Personal Brand OS</span>
+        <img src="/brand/icon-mark.png" alt="" className="h-11 w-auto flex-shrink-0" />
+        <span className="truncate text-base font-semibold tracking-tight text-ink">Personal Brand OS</span>
       </div>
 
-      <nav aria-label="Primary" className="flex-1 space-y-0.5 p-2">
+      <nav aria-label="Primary" className="flex-1 space-y-2 p-4 pt-5">
         {navItems.map((item) => {
           const isActive = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
           return (
@@ -26,9 +26,9 @@ export function Sidebar({ name, role }: { name: string; role: string }) {
               key={item.href}
               href={item.href}
               aria-current={isActive ? "page" : undefined}
-              className={`block rounded-md px-3 py-1.5 text-sm transition-colors duration-150 ${
+              className={`block rounded-md px-4 py-2.5 text-[15px] transition-colors duration-150 ${
                 isActive
-                  ? "bg-accent-soft font-medium text-accent-strong"
+                  ? "bg-accent-soft font-medium text-accent-strong shadow-[0_0_18px_rgba(33,201,224,0.12)]"
                   : "text-ink-soft hover:bg-surface-muted hover:text-ink"
               }`}
             >
@@ -38,7 +38,7 @@ export function Sidebar({ name, role }: { name: string; role: string }) {
         })}
       </nav>
 
-      <div className="border-t border-border p-3">
+      <div className="border-t border-border p-4">
         <div className="mb-2 flex items-center gap-2 px-1">
           <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-accent-soft text-xs font-semibold text-accent-strong">
             {initials(name) || "?"}
