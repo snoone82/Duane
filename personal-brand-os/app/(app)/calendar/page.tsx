@@ -180,38 +180,46 @@ export default async function CalendarPage({
         </div>
       )}
 
-      {view === "list" ? (
-        <div className="space-y-4">
-          {sortedDates.length === 0 && (
-            <p className="rounded-lg border border-border bg-surface px-4 py-6 text-center text-sm text-ink-soft">
-              Nothing scheduled this month{clientFilter ? " for this client" : ""}.
-            </p>
-          )}
-          {sortedDates.map((date) => {
-            const dayItems = byDate.get(date)!;
-            const d = new Date(`${date}T00:00:00`);
-            const isToday = date === todayStr;
-            return (
-              <div key={date} className="rounded-lg border border-border bg-surface">
-                <div className={`border-b border-border px-4 py-2 text-sm font-medium ${isToday ? "text-accent" : "text-ink"}`}>
-                  {d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}
-                  {isToday && " · Today"}
-                </div>
-                <div className="space-y-1 p-3">
-                  {dayItems.map((item, j) => (
-                    <div key={j} className="flex items-center gap-2">
-                      <div className="min-w-0 flex-1">
-                        <ItemChip item={item} />
+      {(() => {
+        const listView = (
+          <div className="space-y-4">
+            {sortedDates.length === 0 && (
+              <p className="rounded-lg border border-border bg-surface px-4 py-6 text-center text-sm text-ink-soft">
+                Nothing scheduled this month{clientFilter ? " for this client" : ""}.
+              </p>
+            )}
+            {sortedDates.map((date) => {
+              const dayItems = byDate.get(date)!;
+              const d = new Date(`${date}T00:00:00`);
+              const isToday = date === todayStr;
+              return (
+                <div key={date} className="rounded-lg border border-border bg-surface">
+                  <div className={`border-b border-border px-4 py-2 text-sm font-medium ${isToday ? "text-accent" : "text-ink"}`}>
+                    {d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}
+                    {isToday && " · Today"}
+                  </div>
+                  <div className="space-y-1 p-3">
+                    {dayItems.map((item, j) => (
+                      <div key={j} className="flex items-center gap-2">
+                        <div className="min-w-0 flex-1">
+                          <ItemChip item={item} />
+                        </div>
+                        <span className="flex-shrink-0 text-xs text-ink-faint">{item.clientName}</span>
                       </div>
-                      <span className="flex-shrink-0 text-xs text-ink-faint">{item.clientName}</span>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
-      ) : (
+              );
+            })}
+          </div>
+        );
+        if (view === "list") return listView;
+        return (
+          <>
+          {/* A 7-column month grid is unreadable on a phone — the agenda
+              list takes over below md, the grid from md up. */}
+          <div className="md:hidden">{listView}</div>
+          <div className="hidden md:block">
         <div className="overflow-hidden rounded-lg border border-border bg-surface">
           <div className="grid grid-cols-7 border-b border-border bg-surface-muted text-center text-xs font-medium text-ink-soft">
             {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
@@ -250,7 +258,10 @@ export default async function CalendarPage({
             })}
           </div>
         </div>
-      )}
+          </div>
+          </>
+        );
+      })()}
     </div>
   );
 }

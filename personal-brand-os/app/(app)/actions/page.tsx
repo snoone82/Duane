@@ -4,6 +4,7 @@ import { getProfilesMap } from "@/lib/data/shared";
 import { getOwnerOptionsByClient } from "@/lib/data/owners";
 import { ActionsToolbar } from "@/components/actions/ActionsToolbar";
 import { ActionRow } from "@/components/clients/ActionRow";
+import { ActionCard } from "@/components/clients/ActionCard";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Table, Thead, Th } from "@/components/ui/Table";
 import type { ActionStatus } from "@/lib/enums";
@@ -41,6 +42,20 @@ export default async function GlobalActionsPage({
       {actions.length === 0 ? (
         <EmptyState title="Nothing matches" description="Try widening the filters — or there's genuinely nothing outstanding." />
       ) : (
+        <>
+        <div className="space-y-2 sm:hidden">
+          {actions.map((action) => (
+            <ActionCard
+              key={action.id}
+              clientId={action.client_id}
+              action={action}
+              clientName={action.clientName}
+              ownerLabel={action.owner_user_id ? profiles.get(action.owner_user_id) : undefined}
+              ownerOptions={ownerOptionsByClient.get(action.client_id) ?? ownerOptionsByClient.get("")}
+            />
+          ))}
+        </div>
+        <div className="hidden sm:block">
         <Table>
           <Thead>
             <tr>
@@ -65,6 +80,8 @@ export default async function GlobalActionsPage({
             ))}
           </tbody>
         </Table>
+        </div>
+        </>
       )}
     </div>
   );

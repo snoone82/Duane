@@ -60,6 +60,33 @@ export default async function ClientsPage({
           description="Try a different search or status filter, or add a new client to get started."
         />
       ) : (
+        <>
+        {/* Phones get tappable cards — a sideways-scrolling table is no way
+            to browse clients on a touchscreen. */}
+        <ul className="space-y-2 sm:hidden">
+          {rows.map((client) => {
+            const meta = clientStatusMeta(client.status);
+            return (
+              <li key={client.id}>
+                <Link
+                  href={`/clients/${client.id}/overview`}
+                  className="block rounded-lg border border-border bg-surface px-4 py-3"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="min-w-0 truncate text-[15px] font-medium text-ink">{client.name}</span>
+                    <StatusPill label={meta.label} color={meta.color} />
+                  </div>
+                  <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-ink-faint">
+                    {client.company && <span>{client.company}</span>}
+                    <span>Last consultation {formatDate(client.lastConsultation)}</span>
+                    <span>{client.openActions} open action{client.openActions === 1 ? "" : "s"}</span>
+                  </div>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+        <div className="hidden sm:block">
         <Table>
           <Thead>
             <tr>
@@ -114,6 +141,8 @@ export default async function ClientsPage({
             })}
           </tbody>
         </Table>
+        </div>
+        </>
       )}
     </div>
   );

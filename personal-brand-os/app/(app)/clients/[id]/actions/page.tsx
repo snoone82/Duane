@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { AddActionButton } from "@/components/clients/AddActionButton";
 import { ActionRow } from "@/components/clients/ActionRow";
+import { ActionCard } from "@/components/clients/ActionCard";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Table, Thead, Th } from "@/components/ui/Table";
 import { getProfilesMap } from "@/lib/data/shared";
@@ -45,6 +46,19 @@ export default async function ClientActionsPage({ params }: { params: Promise<{ 
       {ordered.length === 0 ? (
         <EmptyState title="No actions yet" description="Add the first action to start tracking follow-through for this client." />
       ) : (
+        <>
+        <div className="space-y-2 sm:hidden">
+          {ordered.map((action) => (
+            <ActionCard
+              key={action.id}
+              clientId={id}
+              action={action}
+              ownerLabel={action.owner_user_id ? profiles.get(action.owner_user_id) : undefined}
+              ownerOptions={ownerOptions}
+            />
+          ))}
+        </div>
+        <div className="hidden sm:block">
         <Table>
           <Thead>
             <tr>
@@ -67,6 +81,8 @@ export default async function ClientActionsPage({ params }: { params: Promise<{ 
             ))}
           </tbody>
         </Table>
+        </div>
+        </>
       )}
     </div>
   );
