@@ -9,6 +9,8 @@
  * account's Primary Profile.
  */
 
+import { UserFacingError } from "@/lib/errors";
+
 const API_BASE = "https://api.ayrshare.com/api";
 
 export const AYRSHARE_PLATFORMS = [
@@ -51,7 +53,7 @@ interface AyrRequest {
 
 async function ayr<T = Record<string, unknown>>(path: string, options: AyrRequest = {}): Promise<T> {
   const key = process.env.AYRSHARE_API_KEY?.trim();
-  if (!key) throw new Error("Ayrshare isn't configured — add AYRSHARE_API_KEY in Vercel and redeploy.");
+  if (!key) throw new UserFacingError("Ayrshare isn't configured — add AYRSHARE_API_KEY in Vercel and redeploy.");
 
   const response = await fetch(`${API_BASE}${path}`, {
     method: options.method ?? "GET",
@@ -72,7 +74,9 @@ async function ayr<T = Record<string, unknown>>(path: string, options: AyrReques
       ? (data.errors as { message?: string; msg?: string }[]).map((e) => e.message ?? e.msg).filter(Boolean)
       : [];
     const message = errors.join("; ") || (typeof data.message === "string" ? data.message : "") || `Ayrshare returned ${response.status}`;
-    throw new Error(message);
+    // Also log server-side so Vercel's runtime logs carry the detail.
+    console.error(`Ayrshare ${options.method ?? "GET"} ${path} failed:`, message);
+    throw new UserFacingError(message);
   }
   return data as T;
 }
@@ -84,7 +88,7 @@ export async function createAyrshareProfile(title: string): Promise<{ profileKey
     method: "POST",
     body: { title },
   });
-  if (!data.profileKey) throw new Error("Ayrshare didn't return a profile key.");
+  if (!data.profileKey) throw new UserFacingError("Ayrshare didn't return a profile key.");
   return { profileKey: data.profileKey, refId: data.refId ?? "" };
 }
 
@@ -95,7 +99,7 @@ export async function getAyrshareLinkUrl(profileKey: string): Promise<string> {
   const domain = process.env.AYRSHARE_DOMAIN?.trim();
   const privateKey = process.env.AYRSHARE_PRIVATE_KEY?.replace(/\\n/g, "\n").trim();
   if (!domain || !privateKey) {
-    throw new Error("Account linking needs AYRSHARE_DOMAIN and AYRSHARE_PRIVATE_KEY set in Vercel.");
+    throw new UserFacingError("Account linking needs AYRSHARE_DOMAIN and AYRSHARE_PRIVATE_KEY set in Vercel.");
   }
   const data = await ayr<{ url?: string; token?: string }>("/profiles/generateJWT", {
     method: "POST",
@@ -103,7 +107,7 @@ export async function getAyrshareLinkUrl(profileKey: string): Promise<string> {
   });
   if (data.url) return data.url;
   if (data.token) return `https://profile.ayrshare.com/social-accounts?domain=${domain}&jwt=${data.token}`;
-  throw new Error("Ayrshare didn't return a linking URL.");
+  throw new UserFacingError("Ayrshare didn't return a linking URL.");
 }
 
 /** Which networks are actually linked on a profile right now. */

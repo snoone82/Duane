@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentProfile } from "@/lib/current-user";
 import { runAction, type ActionResult } from "@/lib/action-result";
+import { UserFacingError } from "@/lib/errors";
 import { rollUpMasterStatus } from "@/lib/actions/content";
 import {
   AYRSHARE_PLATFORMS,
@@ -43,7 +44,7 @@ export async function createConnectionProfile(_prev: ActionResult | null, formDa
       profile_key: created.profileKey,
       ref_id: created.refId,
     });
-    if (error) throw new Error(error.message);
+    if (error) throw new UserFacingError(error.message);
     revalidateSocial(clientId);
     return undefined;
   });
@@ -63,7 +64,7 @@ export async function getConnectionLinkUrl(clientId: string, profileId: string):
       .eq("id", profileId)
       .eq("client_id", clientId)
       .single();
-    if (error) throw new Error(error.message);
+    if (error) throw new UserFacingError(error.message);
     return getAyrshareLinkUrl(row.profile_key);
   });
 }
@@ -79,7 +80,7 @@ export async function getConnectionStatus(clientId: string, profileId: string): 
       .eq("id", profileId)
       .eq("client_id", clientId)
       .single();
-    if (error) throw new Error(error.message);
+    if (error) throw new UserFacingError(error.message);
     return getLinkedNetworks(row.profile_key);
   });
 }
@@ -90,7 +91,7 @@ export async function deleteConnectionProfile(clientId: string, profileId: strin
   return runAction(async () => {
     const supabase = await createClient();
     const { error } = await supabase.from("ayrshare_profiles").delete().eq("id", profileId).eq("client_id", clientId);
-    if (error) throw new Error(error.message);
+    if (error) throw new UserFacingError(error.message);
     revalidateSocial(clientId);
     return undefined;
   });
@@ -113,7 +114,7 @@ export async function setSocialPublishing(
       .update({ ayrshare_platform: platformSlug, ayrshare_profile_id: profileId })
       .eq("id", strategyId)
       .eq("client_id", clientId);
-    if (error) throw new Error(error.message);
+    if (error) throw new UserFacingError(error.message);
     revalidateSocial(clientId);
     revalidateContent(clientId);
     return undefined;
@@ -132,18 +133,18 @@ export async function sendOutputToAyrshare(clientId: string, outputId: string): 
       .eq("id", outputId)
       .eq("client_id", clientId)
       .single();
-    if (error) throw new Error(error.message);
+    if (error) throw new UserFacingError(error.message);
 
-    if (output.status === "published") throw new Error("This version is already published.");
-    if (!output.social) throw new Error("Assign a publishing account to this version first.");
+    if (output.status === "published") throw new UserFacingError("This version is already published.");
+    if (!output.social) throw new UserFacingError("Assign a publishing account to this version first.");
     const platform = output.social.ayrshare_platform;
     if (!platform) {
-      throw new Error(`"${output.social.platform}${output.social.account_name ? ` — ${output.social.account_name}` : ""}" has no Ayrshare platform set — set it on the Social tab.`);
+      throw new UserFacingError(`"${output.social.platform}${output.social.account_name ? ` — ${output.social.account_name}` : ""}" has no Ayrshare platform set — set it on the Social tab.`);
     }
     const caption = output.caption.trim();
-    if (!caption) throw new Error("Write the final caption before publishing.");
+    if (!caption) throw new UserFacingError("Write the final caption before publishing.");
     if (MEDIA_REQUIRED_PLATFORMS.includes(platform) && !output.media_url) {
-      throw new Error(`${platform} posts need media — upload it to this version's media slot first.`);
+      throw new UserFacingError(`${platform} posts need media — upload it to this version's media slot first.`);
     }
 
     let profileKey: string | null = null;
@@ -153,7 +154,7 @@ export async function sendOutputToAyrshare(clientId: string, outputId: string): 
         .select("profile_key")
         .eq("id", output.social.ayrshare_profile_id)
         .single();
-      if (profileError) throw new Error(profileError.message);
+      if (profileError) throw new UserFacingError(profileError.message);
       profileKey = profileRow.profile_key;
     }
 
@@ -215,8 +216,8 @@ export async function refreshAyrshareOutput(clientId: string, outputId: string):
       .eq("id", outputId)
       .eq("client_id", clientId)
       .single();
-    if (error) throw new Error(error.message);
-    if (!output.ayrshare_post_id) throw new Error("This version hasn't been sent to Ayrshare.");
+    if (error) throw new UserFacingError(error.message);
+    if (!output.ayrshare_post_id) throw new UserFacingError("This version hasn't been sent to Ayrshare.");
 
     let profileKey: string | null = null;
     if (output.social?.ayrshare_profile_id) {

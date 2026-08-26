@@ -20,6 +20,12 @@ export function isNextRedirectError(error: unknown): boolean {
   );
 }
 
+/** An error whose message is already written for the person using the app —
+ * runAction shows it verbatim instead of masking it behind the generic
+ * "didn't save" line. Use for integration errors (Ayrshare etc.) where the
+ * real reason is the fix. */
+export class UserFacingError extends Error {}
+
 export function friendlySaveError(message: string | undefined | null): string {
   const lower = (message ?? "").toLowerCase();
 

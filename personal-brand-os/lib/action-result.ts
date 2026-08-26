@@ -1,4 +1,4 @@
-import { isNextRedirectError, friendlySaveError } from "@/lib/errors";
+import { isNextRedirectError, friendlySaveError, UserFacingError } from "@/lib/errors";
 
 export type ActionResult<T = undefined> =
   | { ok: true; data: T }
@@ -17,6 +17,7 @@ export async function runAction<T>(fn: () => Promise<T>): Promise<ActionResult<T
     return { ok: true, data };
   } catch (error) {
     if (isNextRedirectError(error)) throw error;
+    if (error instanceof UserFacingError) return { ok: false, message: error.message };
     const message = error instanceof Error ? error.message : String(error);
     return { ok: false, message: friendlySaveError(message) };
   }
