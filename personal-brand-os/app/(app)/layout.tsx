@@ -44,7 +44,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <div className="flex h-dvh flex-col overflow-hidden md:flex-row">
       <MobileHeader name={profile.full_name || profile.email} role={profile.role} />
       <Sidebar name={profile.full_name || profile.email} role={profile.role} />
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <TopBar />
         <main className="min-w-0 flex-1 overflow-y-auto px-4 py-4 md:px-6 md:py-6">{children}</main>
       </div>
