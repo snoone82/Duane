@@ -92,15 +92,38 @@ export async function createAyrshareProfile(title: string): Promise<{ profileKey
   return { profileKey: data.profileKey, refId: data.refId ?? "" };
 }
 
+/** PEM keys get mangled by env-var paste boxes: newlines become spaces,
+ * vanish entirely, or arrive as literal "\n". RS256 signing then fails with
+ * "secretOrPrivateKey must be an asymmetric key". This rebuilds a valid PEM
+ * from whatever shape survived the paste. */
+function normalizePem(raw: string): string {
+  const value = raw.trim().replace(/^["']|["']$/g, "").replace(/\\n/g, "\n");
+  const match = value.match(/-----BEGIN ([A-Z0-9 ]+)-----([\s\S]*?)-----END [A-Z0-9 ]+-----/);
+  if (match) {
+    const label = match[1];
+    const body = (match[2] ?? "").replace(/\s/g, "");
+    const lines = body.match(/.{1,64}/g)?.join("\n") ?? body;
+    return `-----BEGIN ${label}-----\n${lines}\n-----END ${label}-----\n`;
+  }
+  // Header/footer lost entirely but the base64 body survived: wrap it.
+  if (/^[A-Za-z0-9+/=\s]+$/.test(value) && value.replace(/\s/g, "").length > 100) {
+    const body = value.replace(/\s/g, "");
+    const lines = body.match(/.{1,64}/g)?.join("\n") ?? body;
+    return `-----BEGIN PRIVATE KEY-----\n${lines}\n-----END PRIVATE KEY-----\n`;
+  }
+  return value;
+}
+
 /** The branded social-linking page URL for one profile — open it in a new
  * tab and the person connects their LinkedIn/Instagram/etc. The JWT is
  * valid for ~5 minutes, so generate on click, never ahead of time. */
 export async function getAyrshareLinkUrl(profileKey: string): Promise<string> {
   const domain = process.env.AYRSHARE_DOMAIN?.trim();
-  const privateKey = process.env.AYRSHARE_PRIVATE_KEY?.replace(/\\n/g, "\n").trim();
-  if (!domain || !privateKey) {
+  const rawKey = process.env.AYRSHARE_PRIVATE_KEY;
+  if (!domain || !rawKey?.trim()) {
     throw new UserFacingError("Account linking needs AYRSHARE_DOMAIN and AYRSHARE_PRIVATE_KEY set in Vercel.");
   }
+  const privateKey = normalizePem(rawKey);
   const data = await ayr<{ url?: string; token?: string }>("/profiles/generateJWT", {
     method: "POST",
     body: { domain, privateKey, profileKey, logout: true },
