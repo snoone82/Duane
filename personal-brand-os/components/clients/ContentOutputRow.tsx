@@ -16,6 +16,7 @@ import {
   publishContentOutput,
   assignOutputAccount,
 } from "@/lib/actions/content";
+import { sendOutputToAyrshare, refreshAyrshareOutput } from "@/lib/actions/publishing";
 import { outputStatusMeta, type OutputStatus } from "@/lib/status";
 import { OutputMediaSlot } from "@/components/clients/OutputMediaSlot";
 import { formatDateTime } from "@/lib/format";
@@ -29,16 +30,46 @@ export function ContentOutputRow({
   clientId,
   output,
   accounts = [],
+  ayrshareEnabled = false,
 }: {
   clientId: string;
   output: Output;
   accounts?: PublishingAccount[];
+  ayrshareEnabled?: boolean;
 }) {
   const [isBusy, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [showSchedule, setShowSchedule] = useState(false);
   const [showPublish, setShowPublish] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  function handleAyrsharePublish() {
+    const scheduled = output.scheduled_at && new Date(output.scheduled_at).getTime() > Date.now() + 60_000;
+    if (
+      !scheduled &&
+      !window.confirm("Publish this version to the connected social account right now?")
+    ) {
+      return;
+    }
+    setError(null);
+    setNotice(null);
+    startTransition(async () => {
+      const result = await sendOutputToAyrshare(clientId, output.id);
+      if (!result.ok) setError(result.message);
+      else setNotice(result.data ?? "Done.");
+    });
+  }
+
+  function handleAyrshareRefresh() {
+    setError(null);
+    setNotice(null);
+    startTransition(async () => {
+      const result = await refreshAyrshareOutput(clientId, output.id);
+      if (!result.ok) setError(result.message);
+      else setNotice(result.data ?? "Done.");
+    });
+  }
 
   const meta = outputStatusMeta(output.status as OutputStatus);
   const save = (
@@ -120,6 +151,18 @@ export function ContentOutputRow({
               View live post →
             </a>
           )}
+          {ayrshareEnabled && output.status !== "published" && output.social_account_id && (
+            <Button variant="secondary" size="sm" onClick={handleAyrsharePublish} disabled={isBusy}>
+              {output.scheduled_at && new Date(output.scheduled_at).getTime() > Date.now() + 60_000
+                ? "Send to Ayrshare (auto-publishes at the scheduled time)"
+                : "Publish now via Ayrshare"}
+            </Button>
+          )}
+          {ayrshareEnabled && output.ayrshare_post_id && output.status !== "published" && (
+            <Button variant="ghost" size="sm" onClick={handleAyrshareRefresh} disabled={isBusy}>
+              Check status
+            </Button>
+          )}
           <Button variant="ghost" size="sm" onClick={copyPost}>
             {copied ? "Copied ✓" : "Copy post"}
           </Button>
@@ -180,6 +223,10 @@ export function ContentOutputRow({
         </div>
         <AutosaveTextarea id={`out-notes-${output.id}`} label="Notes" initialValue={output.notes} onSave={save("notes")} rows={2} />
 
+        {output.publish_error && !notice && (
+          <p className="text-xs text-danger">Last publish attempt failed: {output.publish_error}</p>
+        )}
+        {notice && <p className="text-xs text-success">{notice}</p>}
         {error && <p className="text-xs text-danger">{error}</p>}
         <div className="flex justify-end">
           <Button variant="danger" size="sm" onClick={handleDelete} disabled={isBusy}>

@@ -7,10 +7,24 @@ import { Button } from "@/components/ui/Button";
 import { Label, Select } from "@/components/ui/Input";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { updateSocialStrategyField, toggleSocialAccountFlag, deleteSocialStrategy } from "@/lib/actions/social";
+import { setSocialPublishing } from "@/lib/actions/publishing";
 import { socialAccountLabel } from "@/lib/format";
+import type { ConnectionProfile } from "@/components/clients/AyrshareConnections";
 import type { Database } from "@/lib/database.types";
 
 type SocialStrategy = Database["public"]["Tables"]["social_strategies"]["Row"];
+
+const AYRSHARE_PLATFORM_OPTIONS = [
+  { value: "", label: "Not publishing via Ayrshare" },
+  { value: "linkedin", label: "LinkedIn" },
+  { value: "instagram", label: "Instagram" },
+  { value: "facebook", label: "Facebook Page" },
+  { value: "twitter", label: "X (Twitter)" },
+  { value: "tiktok", label: "TikTok" },
+  { value: "youtube", label: "YouTube" },
+  { value: "pinterest", label: "Pinterest" },
+  { value: "gmb", label: "Google Business" },
+];
 
 const ACCOUNT_TYPES = [
   { value: "", label: "Type not set" },
@@ -44,9 +58,29 @@ function FlagToggle({
   );
 }
 
-export function SocialStrategyCard({ clientId, strategy }: { clientId: string; strategy: SocialStrategy }) {
+export function SocialStrategyCard({
+  clientId,
+  strategy,
+  ayrshareEnabled = false,
+  connectionProfiles = [],
+}: {
+  clientId: string;
+  strategy: SocialStrategy;
+  ayrshareEnabled?: boolean;
+  connectionProfiles?: ConnectionProfile[];
+}) {
   const [isDeleting, startDelete] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [ayrPlatform, setAyrPlatform] = useState(strategy.ayrshare_platform);
+  const [ayrProfileId, setAyrProfileId] = useState(strategy.ayrshare_profile_id ?? "");
+
+  const savePublishing = (platform: string, profileId: string) => {
+    setAyrPlatform(platform);
+    setAyrProfileId(profileId);
+    setSocialPublishing(clientId, strategy.id, platform, profileId || null).then((result) => {
+      if (!result.ok) setError(result.message);
+    });
+  };
 
   const save = (
     field: "platform" | "account_name" | "owner_brand" | "url" | "account_type" | "account_status" | "objective" | "audience" | "content_types" | "posting_frequency" | "growth_strategy" | "engagement_strategy" | "cta_strategy"
@@ -116,6 +150,43 @@ export function SocialStrategyCard({ clientId, strategy }: { clientId: string; s
           <FlagToggle label="Show on Overview" checked={strategy.show_on_overview} onChange={toggle("show_on_overview")} hint="Listed in the Overview's Social profiles panel" />
           <FlagToggle label="Publishing enabled" checked={strategy.publishing_enabled} onChange={toggle("publishing_enabled")} hint="Offered as a publishing account when approving content" />
         </div>
+
+        {ayrshareEnabled && (
+          <div className="rounded-md border border-border bg-surface-muted/40 px-3 py-2">
+            <p className="mb-2 text-xs font-medium text-ink-soft">Direct publishing (Ayrshare)</p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <Label htmlFor={`soc-ayr-platform-${strategy.id}`}>Network</Label>
+                <Select
+                  id={`soc-ayr-platform-${strategy.id}`}
+                  value={ayrPlatform}
+                  onChange={(e) => savePublishing(e.target.value, ayrProfileId)}
+                >
+                  {AYRSHARE_PLATFORM_OPTIONS.map((p) => (
+                    <option key={p.value} value={p.value}>
+                      {p.label}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor={`soc-ayr-profile-${strategy.id}`}>Connection</Label>
+                <Select
+                  id={`soc-ayr-profile-${strategy.id}`}
+                  value={ayrProfileId}
+                  onChange={(e) => savePublishing(ayrPlatform, e.target.value)}
+                >
+                  <option value="">Primary connection (default)</option>
+                  {connectionProfiles.map((profile) => (
+                    <option key={profile.id} value={profile.id}>
+                      {profile.title}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            </div>
+          </div>
+        )}
 
         <AutosaveTextarea
           id={`soc-objective-${strategy.id}`}

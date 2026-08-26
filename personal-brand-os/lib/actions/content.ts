@@ -381,7 +381,7 @@ export async function deleteContentOutput(clientId: string, outputId: string): P
 /** Recompute the master record's status from its outputs: every output
  * scheduled → master Scheduled; every output published → master Published.
  * (Scheduling LinkedIn never marks Instagram as anything — Duane §5.) */
-async function rollUpMasterStatus(supabase: Awaited<ReturnType<typeof createClient>>, contentId: string) {
+export async function rollUpMasterStatus(supabase: Awaited<ReturnType<typeof createClient>>, contentId: string) {
   const [{ data: outputs }, { data: idea }] = await Promise.all([
     supabase.from("content_outputs").select("status").eq("content_id", contentId),
     supabase.from("content_ideas").select("status,action_id").eq("id", contentId).single(),

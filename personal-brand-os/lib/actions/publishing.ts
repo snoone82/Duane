@@ -1,0 +1,246 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { createClient } from "@/lib/supabase/server";
+import { getCurrentProfile } from "@/lib/current-user";
+import { runAction, type ActionResult } from "@/lib/action-result";
+import { rollUpMasterStatus } from "@/lib/actions/content";
+import {
+  AYRSHARE_PLATFORMS,
+  MEDIA_REQUIRED_PLATFORMS,
+  createAyrshareProfile,
+  getAyrshareLinkUrl,
+  getLinkedNetworks,
+  sendAyrsharePost,
+  getAyrsharePostUrl,
+} from "@/lib/ayrshare";
+
+function revalidateSocial(clientId: string) {
+  revalidatePath(`/clients/${clientId}/social`);
+}
+
+function revalidateContent(clientId: string) {
+  revalidatePath(`/clients/${clientId}/content`);
+  revalidatePath("/calendar");
+}
+
+/** Create an Ayrshare connection profile for one identity (e.g. "Daniel
+ * Andrews", "CEG"). Admin-only — this is publishing infrastructure. */
+export async function createConnectionProfile(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const clientId = String(formData.get("client_id") ?? "");
+  const title = String(formData.get("title") ?? "").trim();
+  if (!title) return { ok: false, message: "Give the connection a name — usually the person or brand it represents." };
+
+  const profile = await getCurrentProfile();
+  if (profile?.role !== "admin") return { ok: false, message: "Only admins can manage publishing connections." };
+
+  return runAction(async () => {
+    const created = await createAyrshareProfile(title);
+    const supabase = await createClient();
+    const { error } = await supabase.from("ayrshare_profiles").insert({
+      client_id: clientId,
+      title,
+      profile_key: created.profileKey,
+      ref_id: created.refId,
+    });
+    if (error) throw new Error(error.message);
+    revalidateSocial(clientId);
+    return undefined;
+  });
+}
+
+/** The branded page where the account owner links their socials. Generated
+ * on demand (the token only lives ~5 minutes) and opened client-side. */
+export async function getConnectionLinkUrl(clientId: string, profileId: string): Promise<ActionResult<string>> {
+  const profile = await getCurrentProfile();
+  if (profile?.role !== "admin") return { ok: false, message: "Only admins can manage publishing connections." };
+
+  return runAction(async () => {
+    const supabase = await createClient();
+    const { data: row, error } = await supabase
+      .from("ayrshare_profiles")
+      .select("profile_key,client_id")
+      .eq("id", profileId)
+      .eq("client_id", clientId)
+      .single();
+    if (error) throw new Error(error.message);
+    return getAyrshareLinkUrl(row.profile_key);
+  });
+}
+
+/** Which networks are actually connected on a profile right now — shown on
+ * the Social tab so "linked" vs "not linked yet" is never a guess. */
+export async function getConnectionStatus(clientId: string, profileId: string): Promise<ActionResult<string[]>> {
+  return runAction(async () => {
+    const supabase = await createClient();
+    const { data: row, error } = await supabase
+      .from("ayrshare_profiles")
+      .select("profile_key")
+      .eq("id", profileId)
+      .eq("client_id", clientId)
+      .single();
+    if (error) throw new Error(error.message);
+    return getLinkedNetworks(row.profile_key);
+  });
+}
+
+export async function deleteConnectionProfile(clientId: string, profileId: string): Promise<ActionResult> {
+  const profile = await getCurrentProfile();
+  if (profile?.role !== "admin") return { ok: false, message: "Only admins can manage publishing connections." };
+  return runAction(async () => {
+    const supabase = await createClient();
+    const { error } = await supabase.from("ayrshare_profiles").delete().eq("id", profileId).eq("client_id", clientId);
+    if (error) throw new Error(error.message);
+    revalidateSocial(clientId);
+    return undefined;
+  });
+}
+
+/** Point a social account row at its Ayrshare platform slug + connection. */
+export async function setSocialPublishing(
+  clientId: string,
+  strategyId: string,
+  platformSlug: string,
+  profileId: string | null
+): Promise<ActionResult> {
+  if (platformSlug && !AYRSHARE_PLATFORMS.includes(platformSlug as (typeof AYRSHARE_PLATFORMS)[number])) {
+    return { ok: false, message: "Unknown Ayrshare platform." };
+  }
+  return runAction(async () => {
+    const supabase = await createClient();
+    const { error } = await supabase
+      .from("social_strategies")
+      .update({ ayrshare_platform: platformSlug, ayrshare_profile_id: profileId })
+      .eq("id", strategyId)
+      .eq("client_id", clientId);
+    if (error) throw new Error(error.message);
+    revalidateSocial(clientId);
+    revalidateContent(clientId);
+    return undefined;
+  });
+}
+
+/** Publish (or hand to Ayrshare's scheduler) one platform version. The
+ * caption + hashtags become the post; media comes from the version's media
+ * slot; the account row decides which network and which connection. */
+export async function sendOutputToAyrshare(clientId: string, outputId: string): Promise<ActionResult<string>> {
+  return runAction(async () => {
+    const supabase = await createClient();
+    const { data: output, error } = await supabase
+      .from("content_outputs")
+      .select("*, social:social_strategies(id,platform,account_name,ayrshare_platform,ayrshare_profile_id)")
+      .eq("id", outputId)
+      .eq("client_id", clientId)
+      .single();
+    if (error) throw new Error(error.message);
+
+    if (output.status === "published") throw new Error("This version is already published.");
+    if (!output.social) throw new Error("Assign a publishing account to this version first.");
+    const platform = output.social.ayrshare_platform;
+    if (!platform) {
+      throw new Error(`"${output.social.platform}${output.social.account_name ? ` — ${output.social.account_name}` : ""}" has no Ayrshare platform set — set it on the Social tab.`);
+    }
+    const caption = output.caption.trim();
+    if (!caption) throw new Error("Write the final caption before publishing.");
+    if (MEDIA_REQUIRED_PLATFORMS.includes(platform) && !output.media_url) {
+      throw new Error(`${platform} posts need media — upload it to this version's media slot first.`);
+    }
+
+    let profileKey: string | null = null;
+    if (output.social.ayrshare_profile_id) {
+      const { data: profileRow, error: profileError } = await supabase
+        .from("ayrshare_profiles")
+        .select("profile_key")
+        .eq("id", output.social.ayrshare_profile_id)
+        .single();
+      if (profileError) throw new Error(profileError.message);
+      profileKey = profileRow.profile_key;
+    }
+
+    const post = [caption, output.hashtags.trim()].filter(Boolean).join("\n\n");
+    const scheduleDate =
+      output.scheduled_at && new Date(output.scheduled_at).getTime() > Date.now() + 60_000
+        ? new Date(output.scheduled_at).toISOString()
+        : undefined;
+
+    let result;
+    try {
+      result = await sendAyrsharePost({
+        post,
+        platform,
+        mediaUrls: output.media_url ? [output.media_url] : undefined,
+        scheduleDate,
+        profileKey,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Publishing failed.";
+      await supabase.from("content_outputs").update({ publish_error: message }).eq("id", outputId);
+      revalidateContent(clientId);
+      throw err;
+    }
+
+    if (result.scheduled) {
+      await supabase
+        .from("content_outputs")
+        .update({ ayrshare_post_id: result.id, publish_error: "", status: "scheduled" })
+        .eq("id", outputId);
+      revalidateContent(clientId);
+      return `Handed to Ayrshare — it will publish automatically at the scheduled time. Use "Check status" afterwards to pull in the live link.`;
+    }
+
+    await supabase
+      .from("content_outputs")
+      .update({
+        ayrshare_post_id: result.id,
+        publish_error: "",
+        status: "published",
+        published_at: new Date().toISOString(),
+        live_url: result.postUrl ?? output.live_url,
+      })
+      .eq("id", outputId);
+    await rollUpMasterStatus(supabase, output.content_id);
+    revalidateContent(clientId);
+    return result.postUrl ? "Published — live link saved to this version." : "Published via Ayrshare.";
+  });
+}
+
+/** For versions Ayrshare is publishing on a schedule: check whether it has
+ * gone out yet, and if so record the live URL and mark it published. */
+export async function refreshAyrshareOutput(clientId: string, outputId: string): Promise<ActionResult<string>> {
+  return runAction(async () => {
+    const supabase = await createClient();
+    const { data: output, error } = await supabase
+      .from("content_outputs")
+      .select("id,content_id,status,live_url,ayrshare_post_id,social:social_strategies(ayrshare_profile_id)")
+      .eq("id", outputId)
+      .eq("client_id", clientId)
+      .single();
+    if (error) throw new Error(error.message);
+    if (!output.ayrshare_post_id) throw new Error("This version hasn't been sent to Ayrshare.");
+
+    let profileKey: string | null = null;
+    if (output.social?.ayrshare_profile_id) {
+      const { data: profileRow } = await supabase
+        .from("ayrshare_profiles")
+        .select("profile_key")
+        .eq("id", output.social.ayrshare_profile_id)
+        .single();
+      profileKey = profileRow?.profile_key ?? null;
+    }
+
+    const status = await getAyrsharePostUrl(output.ayrshare_post_id, profileKey);
+    if (!status.postUrl) return "Still with Ayrshare — not published yet.";
+
+    if (output.status !== "published") {
+      await supabase
+        .from("content_outputs")
+        .update({ status: "published", published_at: new Date().toISOString(), live_url: status.postUrl })
+        .eq("id", outputId);
+      await rollUpMasterStatus(supabase, output.content_id);
+    } else if (!output.live_url) {
+      await supabase.from("content_outputs").update({ live_url: status.postUrl }).eq("id", outputId);
+    }
+    revalidateContent(clientId);
+    return "Published — live link saved to this version.";
+  });
+}

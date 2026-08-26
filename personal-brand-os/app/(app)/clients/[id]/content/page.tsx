@@ -8,6 +8,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { CONTENT_STATUS } from "@/lib/status";
 import { getAllTeamMembers } from "@/lib/data/client";
 import { socialAccountLabel } from "@/lib/format";
+import { isAyrshareConfigured } from "@/lib/ayrshare";
 
 export const metadata = { title: "Content" };
 
@@ -112,6 +113,7 @@ export default async function ContentPage({ params }: { params: Promise<{ id: st
       accounts={publishingAccounts}
       history={historyForIdea(idea.id)}
       defaultOpen={defaultOpen}
+      ayrshareEnabled={isAyrshareConfigured()}
     />
   );
 

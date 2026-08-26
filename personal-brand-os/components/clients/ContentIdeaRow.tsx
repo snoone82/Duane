@@ -43,6 +43,7 @@ export function ContentIdeaRow({
   accounts = [],
   history = [],
   defaultOpen = false,
+  ayrshareEnabled = false,
 }: {
   clientId: string;
   idea: Idea;
@@ -54,6 +55,7 @@ export function ContentIdeaRow({
   accounts?: PublishingAccount[];
   history?: HistoryEntry[];
   defaultOpen?: boolean;
+  ayrshareEnabled?: boolean;
 }) {
   const [isDeleting, startDelete] = useTransition();
   const [isTransitioning, startTransition] = useTransition();
@@ -228,7 +230,7 @@ export function ContentIdeaRow({
           ) : (
             <div className="space-y-2">
               {outputs.map((output) => (
-                <ContentOutputRow key={output.id} clientId={clientId} output={output} accounts={accounts} />
+                <ContentOutputRow key={output.id} clientId={clientId} output={output} accounts={accounts} ayrshareEnabled={ayrshareEnabled} />
               ))}
             </div>
           )}

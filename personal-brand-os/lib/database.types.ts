@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.15"
+    PostgrestVersion: "14.17"
   }
   public: {
     Tables: {
@@ -268,6 +268,41 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "authority_opportunities_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ayrshare_profiles: {
+        Row: {
+          client_id: string
+          created_at: string
+          id: string
+          profile_key: string
+          ref_id: string
+          title: string
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          id?: string
+          profile_key: string
+          ref_id?: string
+          title: string
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          id?: string
+          profile_key?: string
+          ref_id?: string
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ayrshare_profiles_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"
@@ -878,6 +913,7 @@ export type Database = {
       content_outputs: {
         Row: {
           alt_text: string
+          ayrshare_post_id: string
           caption: string
           client_id: string
           content_id: string
@@ -893,6 +929,7 @@ export type Database = {
           media_url: string | null
           notes: string
           platform: string
+          publish_error: string
           published_at: string | null
           reach: number | null
           scheduled_at: string | null
@@ -906,6 +943,7 @@ export type Database = {
         }
         Insert: {
           alt_text?: string
+          ayrshare_post_id?: string
           caption?: string
           client_id: string
           content_id: string
@@ -921,6 +959,7 @@ export type Database = {
           media_url?: string | null
           notes?: string
           platform: string
+          publish_error?: string
           published_at?: string | null
           reach?: number | null
           scheduled_at?: string | null
@@ -934,6 +973,7 @@ export type Database = {
         }
         Update: {
           alt_text?: string
+          ayrshare_post_id?: string
           caption?: string
           client_id?: string
           content_id?: string
@@ -949,6 +989,7 @@ export type Database = {
           media_url?: string | null
           notes?: string
           platform?: string
+          publish_error?: string
           published_at?: string | null
           reach?: number | null
           scheduled_at?: string | null
@@ -1305,6 +1346,8 @@ export type Database = {
           account_status: string
           account_type: string
           audience: string
+          ayrshare_platform: string
+          ayrshare_profile_id: string | null
           client_id: string
           content_types: string
           created_at: string
@@ -1328,6 +1371,8 @@ export type Database = {
           account_status?: string
           account_type?: string
           audience?: string
+          ayrshare_platform?: string
+          ayrshare_profile_id?: string | null
           client_id: string
           content_types?: string
           created_at?: string
@@ -1351,6 +1396,8 @@ export type Database = {
           account_status?: string
           account_type?: string
           audience?: string
+          ayrshare_platform?: string
+          ayrshare_profile_id?: string | null
           client_id?: string
           content_types?: string
           created_at?: string
@@ -1370,6 +1417,13 @@ export type Database = {
           url?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "social_strategies_ayrshare_profile_id_fkey"
+            columns: ["ayrshare_profile_id"]
+            isOneToOne: false
+            referencedRelation: "ayrshare_profiles"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "social_strategies_client_id_fkey"
             columns: ["client_id"]
