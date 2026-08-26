@@ -69,11 +69,12 @@ export default async function DashboardPage() {
     tone: "teal" | "violet" | "danger" | "plain";
     progress?: number | null;
   }[] = [
-    { label: "Active clients", value: String(roster.activeCount), detail: `${roster.totalCount} total`, tone: "teal" },
+    { label: "Active clients", value: String(roster.activeCount), detail: `${roster.totalCount} total`, href: "/clients", tone: "teal" },
     {
       label: "Monthly retainers",
       value: formatCurrency(roster.monthlyRetainerTotal),
       detail: `${roster.clientsWithRetainer} client${roster.clientsWithRetainer === 1 ? "" : "s"}`,
+      href: "/clients",
       tone: "violet",
     },
     {
@@ -94,6 +95,7 @@ export default async function DashboardPage() {
       label: "Open opportunities",
       value: String(openOpportunities.length),
       detail: "across all clients",
+      href: "#opportunities",
       tone: "violet",
     },
   ];
@@ -343,6 +345,7 @@ export default async function DashboardPage() {
           )}
         </Panel>
 
+        <div id="opportunities" className="scroll-mt-6">
         <Panel title="Opportunities" count={openOpportunities.length}>
           {openOpportunities.length === 0 ? (
             <EmptyState title="Nothing in the pipeline" description="No open authority opportunities right now." />
@@ -368,6 +371,7 @@ export default async function DashboardPage() {
             </ul>
           )}
         </Panel>
+        </div>
 
         <Panel title="Client progress" count={clientProgress.length}>
           {clientProgress.length === 0 ? (
