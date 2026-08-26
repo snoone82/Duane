@@ -45,7 +45,7 @@ export default async function PortalLayout({ children }: { children: React.React
       <header className="flex items-center justify-between gap-4 px-6 pb-3 pt-5">
         <div className="flex items-center gap-3">
           {/* eslint-disable-next-line @next/next/no-img-element -- static local asset, next/image adds no value here */}
-          <img src="/brand/logo-lockup.png" alt="Aligned Media" className="h-8 w-auto" />
+          <img src="/brand/logo-lockup.png" alt="Aligned Media" className="h-10 w-auto" />
           <div>
             <p className="text-sm font-semibold text-ink">{context.client.name}</p>
             <p className="text-xs text-ink-faint">

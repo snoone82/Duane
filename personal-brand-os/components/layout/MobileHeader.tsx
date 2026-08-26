@@ -40,7 +40,7 @@ export function MobileHeader({ name, role }: { name: string; role: string }) {
           </svg>
         </button>
         {/* eslint-disable-next-line @next/next/no-img-element -- static local asset, next/image adds no value here */}
-        <img src="/brand/icon-mark.png" alt="" className="h-5 w-auto flex-shrink-0" />
+        <img src="/brand/icon-mark.png" alt="" className="h-7 w-auto flex-shrink-0" />
         <span className="truncate text-sm font-semibold tracking-tight text-ink">Personal Brand OS</span>
       </header>
 

@@ -19,13 +19,15 @@
   --color-border: #223047;
   --color-border-strong: #34476b;
 
-  /* ---- Accent — the Aligned Media teal, used for primary actions and
-     active states only ---- */
-  --color-accent: #19b8ce;
-  --color-accent-strong: #48cfe2;    /* hover: brighter, not darker, on dark ground */
-  --color-accent-soft: #0e2f3d;      /* teal-tinted panel/active bg */
+  /* ---- Accent — the Aligned Media teal, turned up a notch for the Deep
+     Focus refresh (Duane's "brighter" ask): more luminous, with a violet
+     partner used only in ambient glows, never on controls ---- */
+  --color-accent: #21c9e0;
+  --color-accent-strong: #5adcf0;    /* hover: brighter, not darker, on dark ground */
+  --color-accent-soft: #0e3341;      /* teal-tinted panel/active bg */
   --color-accent-ink: #04141c;       /* text on top of accent */
-  --color-focus-ring: #19b8ce;
+  --color-focus-ring: #21c9e0;
+  --color-glow-violet: #8b5cf6;      /* ambient aurora only */
 
   /* ---- Feedback ---- */
   --color-info: #6fb6ff;

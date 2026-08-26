@@ -14,8 +14,8 @@ export function Sidebar({ name, role }: { name: string; role: string }) {
     <aside className="hidden h-dvh w-[--sidebar-width] flex-shrink-0 flex-col border-r border-border bg-surface md:flex">
       <div className="flex h-[--topbar-height] items-center gap-2 border-b border-border px-4">
         {/* eslint-disable-next-line @next/next/no-img-element -- static local asset, next/image adds no value here */}
-        <img src="/brand/icon-mark.png" alt="" className="h-6 w-auto flex-shrink-0" />
-        <span className="truncate text-sm font-semibold tracking-tight text-ink">Personal Brand OS</span>
+        <img src="/brand/icon-mark.png" alt="" className="h-8 w-auto flex-shrink-0" />
+        <span className="truncate text-[15px] font-semibold tracking-tight text-ink">Personal Brand OS</span>
       </div>
 
       <nav aria-label="Primary" className="flex-1 space-y-0.5 p-2">

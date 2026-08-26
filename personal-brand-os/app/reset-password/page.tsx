@@ -42,11 +42,22 @@ export default function ResetPasswordPage() {
   }
 
   return (
-    <div className="flex min-h-dvh items-center justify-center px-4">
-      <div className="w-full max-w-sm rounded-lg border border-border bg-surface p-6 shadow-sm">
+    <div className="relative flex min-h-dvh items-center justify-center overflow-hidden px-4">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            "radial-gradient(680px 400px at 50% 8%, rgba(33, 201, 224, 0.15), transparent 65%), radial-gradient(760px 480px at 88% 95%, rgba(139, 92, 246, 0.12), transparent 60%)",
+        }}
+      />
+      <div
+        className="relative w-full max-w-sm rounded-xl border bg-surface/80 p-6 backdrop-blur"
+        style={{ borderColor: "rgba(33, 201, 224, 0.25)", boxShadow: "0 0 50px rgba(33, 201, 224, 0.1), 0 14px 34px rgba(0, 0, 0, 0.5)" }}
+      >
         {/* eslint-disable-next-line @next/next/no-img-element -- static local asset */}
-        <img src="/brand/logo-lockup.png" alt="Aligned Media" className="mb-4 h-10 w-auto" />
-        <h1 className="mb-1 text-lg font-semibold text-ink">Reset your password</h1>
+        <img src="/brand/logo-lockup.png" alt="Aligned Media" className="mb-5 h-12 w-auto" />
+        <h1 className="mb-1 text-lg font-light text-ink">Reset your password</h1>
 
         {sent ? (
           <div className="mt-4">

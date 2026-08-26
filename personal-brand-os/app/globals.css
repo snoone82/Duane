@@ -51,13 +51,14 @@ html {
 }
 
 body {
-  /* The navy ground carries two flourishes: a faint teal aurora at the
-     top, and the A/M mark as a huge ghosted watermark behind everything —
-     opacity is baked into the asset (~4.5%), so it needs no stacking
-     tricks. Fixed so nothing repaints on scroll. */
+  /* Deep Focus: the navy ground carries a luminous teal-and-violet aurora
+     (brighter than the original whisper — Duane's refresh ask) and the A/M
+     mark as a huge ghosted watermark behind everything — opacity is baked
+     into the asset (~4.5%). Fixed so nothing repaints on scroll. */
   background:
-    radial-gradient(1100px 520px at 75% -12%, rgba(25, 184, 206, 0.09), transparent 65%),
-    radial-gradient(800px 420px at 5% -8%, rgba(72, 96, 226, 0.07), transparent 60%),
+    radial-gradient(1100px 540px at 75% -12%, rgba(33, 201, 224, 0.16), transparent 65%),
+    radial-gradient(820px 440px at 3% -8%, rgba(139, 92, 246, 0.13), transparent 60%),
+    radial-gradient(1000px 560px at 92% 112%, rgba(139, 92, 246, 0.09), transparent 60%),
     url("/brand/watermark.png") center / min(1400px, 105%) no-repeat,
     var(--color-bg);
   background-attachment: fixed;
@@ -88,5 +89,5 @@ table {
 }
 
 ::selection {
-  background: rgba(25, 184, 206, 0.3);
+  background: rgba(33, 201, 224, 0.3);
 }
