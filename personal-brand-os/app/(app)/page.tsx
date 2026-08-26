@@ -14,6 +14,7 @@ import {
 import { getSalesOverview } from "@/lib/data/sales";
 import { getCurrentProfile } from "@/lib/current-user";
 import { Panel } from "@/components/dashboard/Panel";
+import { ProgressRing, Donut, HBars } from "@/components/dashboard/Charts";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { formatRelativeToToday, formatCurrency, formatDateTime, auditVerb } from "@/lib/format";
 import { authorityStatusMeta } from "@/lib/status";
@@ -81,7 +82,6 @@ export default async function DashboardPage() {
       detail: sales.monthlyTarget !== null ? `of ${formatCurrency(sales.monthlyTarget)} target` : "Set a target →",
       href: "/sales",
       tone: "teal",
-      progress: salesProgress,
     },
     {
       label: "Actions overdue",
@@ -105,6 +105,34 @@ export default async function DashboardPage() {
     plain: "linear-gradient(90deg, #38537a, transparent)",
   };
 
+  // Pipeline mix donut — five stages, colour-vision-validated slot order.
+  const pipelineSegments = [
+    { label: "In production", value: pipeline.awaitingProduction, color: "#3987e5" },
+    { label: "Awaiting approval", value: pipeline.awaitingApproval, color: "#d95926" },
+    { label: "Changes requested", value: pipeline.changesRequested, color: "#199e70" },
+    { label: "Ready to schedule", value: pipeline.readyToSchedule, color: "#c98500" },
+    { label: "Scheduled (7 days)", value: pipeline.scheduledNext7Days, color: "#d55181" },
+  ];
+  const pipelineTotal = pipelineSegments.reduce((sum, s) => sum + s.value, 0);
+
+  // Workload bars — open due actions grouped by client, busiest first.
+  const workloadByClient = new Map<string, { label: string; total: number; overdue: number; clientId: string }>();
+  for (const action of actionsDue) {
+    const row = workloadByClient.get(action.clientId) ?? { label: action.clientName, total: 0, overdue: 0, clientId: action.clientId };
+    row.total += 1;
+    if (action.isOverdue) row.overdue += 1;
+    workloadByClient.set(action.clientId, row);
+  }
+  const workload = [...workloadByClient.values()]
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 5)
+    .map((row) => ({
+      label: row.label,
+      value: row.total,
+      detail: row.overdue > 0 ? `(${row.overdue} overdue)` : undefined,
+      detailDanger: row.overdue > 0,
+    }));
+
   return (
     <div className="mx-auto max-w-5xl">
       <div className="mb-7 flex flex-wrap items-end justify-between gap-3">
@@ -113,7 +141,7 @@ export default async function DashboardPage() {
             {greeting}
             {firstName ? (
               <>
-                , <span className="bg-gradient-to-r from-accent to-[--color-glow-violet] bg-clip-text font-normal text-transparent">{firstName}</span>
+                , <span className="bg-gradient-to-r from-accent to-[#8b5cf6] bg-clip-text font-normal text-transparent">{firstName}</span>
               </>
             ) : null}
             .
@@ -155,6 +183,41 @@ export default async function DashboardPage() {
             </div>
           );
         })}
+      </div>
+
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="rounded-lg border border-border bg-surface p-4 shadow-md backdrop-blur-sm">
+          <p className="mb-4 text-xs font-medium uppercase tracking-[0.14em] text-ink-soft">Sales target</p>
+          {sales.monthlyTarget !== null && sales.monthlyTarget > 0 ? (
+            <ProgressRing
+              percent={salesProgress ?? 0}
+              centre={`${salesProgress ?? 0}%`}
+              caption={`${formatCurrency(sales.actualThisMonth)} of ${formatCurrency(sales.monthlyTarget)} this month`}
+            />
+          ) : (
+            <div className="flex h-40 items-center justify-center">
+              <Link href="/sales" className="text-sm text-accent underline-offset-2 hover:underline">
+                Set a monthly target →
+              </Link>
+            </div>
+          )}
+        </div>
+        <div className="rounded-lg border border-border bg-surface p-4 shadow-md backdrop-blur-sm">
+          <p className="mb-4 text-xs font-medium uppercase tracking-[0.14em] text-ink-soft">Pipeline mix</p>
+          {pipelineTotal > 0 ? (
+            <Donut segments={pipelineSegments} centreLabel="in play" />
+          ) : (
+            <p className="flex h-40 items-center justify-center text-sm text-ink-faint">Nothing in the pipeline yet.</p>
+          )}
+        </div>
+        <div className="rounded-lg border border-border bg-surface p-4 shadow-md backdrop-blur-sm sm:col-span-2 lg:col-span-1">
+          <p className="mb-4 text-xs font-medium uppercase tracking-[0.14em] text-ink-soft">Actions due by client</p>
+          {workload.length > 0 ? (
+            <HBars items={workload} />
+          ) : (
+            <p className="flex h-40 items-center justify-center text-sm text-ink-faint">Nothing due right now.</p>
+          )}
+        </div>
       </div>
 
       <div className="mb-6 rounded-lg border border-border bg-surface p-4 shadow-md backdrop-blur-sm">

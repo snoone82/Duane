@@ -31,7 +31,7 @@ export default async function LoginPage() {
         {/* eslint-disable-next-line @next/next/no-img-element -- static local asset, next/image adds no value here */}
         <img src="/brand/logo-lockup.png" alt="Aligned Media" className="mb-8 h-16 w-auto md:h-20" />
         <h1 className="mb-2 text-center text-3xl font-light tracking-tight text-ink">
-          Personal Brand <span className="bg-gradient-to-r from-accent to-[--color-glow-violet] bg-clip-text font-normal text-transparent">OS</span>
+          Personal Brand <span className="bg-gradient-to-r from-accent to-[#8b5cf6] bg-clip-text font-normal text-transparent">OS</span>
         </h1>
         <p className="mb-8 text-center text-sm font-light text-ink-soft">
           Clarity. Alignment. Action. — sign in to your workspace.
