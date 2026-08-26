@@ -42,6 +42,12 @@
   --radius-full: var(--radius-full);
 }
 
+/* Deep Focus type: Outfit reads best a step lighter — every `font-semibold`
+   heading in the app drops from 600 to 500 through this one override. */
+@theme {
+  --font-weight-semibold: 500;
+}
+
 * {
   box-sizing: border-box;
 }

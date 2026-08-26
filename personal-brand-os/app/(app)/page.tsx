@@ -42,46 +42,124 @@ export default async function DashboardPage() {
   const overdueCount = actionsDue.filter((a) => a.isOverdue).length;
   const totalIdeas = contentGroups.reduce((sum, g) => sum + g.ideas.length, 0);
 
+  // Greeting in the workspace's own timezone, not the server's.
+  const londonHour = Number(
+    new Intl.DateTimeFormat("en-GB", { hour: "numeric", hour12: false, timeZone: "Europe/London" }).format(new Date())
+  );
+  const greeting = londonHour < 12 ? "Good morning" : londonHour < 18 ? "Good afternoon" : "Good evening";
+  const firstName = (currentProfile?.full_name || "").split(" ")[0] || null;
+  const today = new Intl.DateTimeFormat("en-GB", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    timeZone: "Europe/London",
+  }).format(new Date());
+
+  const salesProgress =
+    sales.monthlyTarget !== null && sales.monthlyTarget > 0
+      ? Math.min(100, Math.round((sales.actualThisMonth / sales.monthlyTarget) * 100))
+      : null;
+
+  const stats: {
+    label: string;
+    value: string;
+    detail: string;
+    href?: string;
+    tone: "teal" | "violet" | "danger" | "plain";
+    progress?: number | null;
+  }[] = [
+    { label: "Active clients", value: String(roster.activeCount), detail: `${roster.totalCount} total`, tone: "teal" },
+    {
+      label: "Monthly retainers",
+      value: formatCurrency(roster.monthlyRetainerTotal),
+      detail: `${roster.clientsWithRetainer} client${roster.clientsWithRetainer === 1 ? "" : "s"}`,
+      tone: "violet",
+    },
+    {
+      label: "Sales this month",
+      value: formatCurrency(sales.actualThisMonth),
+      detail: sales.monthlyTarget !== null ? `of ${formatCurrency(sales.monthlyTarget)} target` : "Set a target →",
+      href: "/sales",
+      tone: "teal",
+      progress: salesProgress,
+    },
+    {
+      label: "Actions overdue",
+      value: String(overdueCount),
+      detail: `${actionsDue.length} due in total`,
+      href: "/actions",
+      tone: overdueCount > 0 ? "danger" : "plain",
+    },
+    {
+      label: "Open opportunities",
+      value: String(openOpportunities.length),
+      detail: "across all clients",
+      tone: "violet",
+    },
+  ];
+
+  const toneBar: Record<string, string> = {
+    teal: "linear-gradient(90deg, #21c9e0, transparent)",
+    violet: "linear-gradient(90deg, #8b5cf6, transparent)",
+    danger: "linear-gradient(90deg, #ff7a70, transparent)",
+    plain: "linear-gradient(90deg, #38537a, transparent)",
+  };
+
   return (
     <div className="mx-auto max-w-5xl">
-      <h1 className="mb-1 text-xl font-semibold text-ink">Dashboard</h1>
-      <p className="mb-6 text-sm text-ink-soft">
-        What needs attention this morning — and where things stand.
-      </p>
-
-      <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-        <div className="rounded-lg border border-border bg-surface p-3">
-          <p className="text-xs text-ink-faint">Active clients</p>
-          <p className="text-xl font-semibold text-ink">{roster.activeCount}</p>
-          <p className="text-xs text-ink-faint">{roster.totalCount} total</p>
+      <div className="mb-7 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-3xl font-light tracking-tight text-ink">
+            {greeting}
+            {firstName ? (
+              <>
+                , <span className="bg-gradient-to-r from-accent to-[--color-glow-violet] bg-clip-text font-normal text-transparent">{firstName}</span>
+              </>
+            ) : null}
+            .
+          </h1>
+          <p className="mt-1 text-sm font-light text-ink-soft">Here&rsquo;s where every client stands right now.</p>
         </div>
-        <div className="rounded-lg border border-border bg-surface p-3">
-          <p className="text-xs text-ink-faint">Monthly retainer total</p>
-          <p className="text-xl font-semibold text-ink">{formatCurrency(roster.monthlyRetainerTotal)}</p>
-          <p className="text-xs text-ink-faint">{roster.clientsWithRetainer} client{roster.clientsWithRetainer === 1 ? "" : "s"}</p>
-        </div>
-        <Link href="/sales" className="rounded-lg border border-border bg-surface p-3 transition-colors hover:border-accent/50">
-          <p className="text-xs text-ink-faint">Monthly sales target</p>
-          <p className="text-xl font-semibold text-ink">
-            {sales.monthlyTarget !== null ? formatCurrency(sales.monthlyTarget) : "Set target →"}
-          </p>
-          <p className="text-xs text-ink-faint">{formatCurrency(sales.actualThisMonth)} recorded this month</p>
-        </Link>
-        <div className="rounded-lg border border-border bg-surface p-3">
-          <p className="text-xs text-ink-faint">Actions overdue</p>
-          <p className="text-xl font-semibold text-ink">{overdueCount}</p>
-          <p className="text-xs text-ink-faint">{actionsDue.length} total due</p>
-        </div>
-        <div className="rounded-lg border border-border bg-surface p-3">
-          <p className="text-xs text-ink-faint">Open opportunities</p>
-          <p className="text-xl font-semibold text-ink">{openOpportunities.length}</p>
-          <p className="text-xs text-ink-faint">across all clients</p>
-        </div>
+        <p className="text-sm font-light text-ink-faint">{today}</p>
       </div>
 
-      <div className="mb-6 rounded-lg border border-border bg-surface p-3">
-        <div className="mb-2 flex items-center justify-between">
-          <p className="text-xs font-semibold uppercase tracking-wide text-ink-faint">Content pipeline · all clients</p>
+      <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+        {stats.map((stat) => {
+          const inner = (
+            <>
+              <div className="mb-3 h-px w-full" style={{ background: toneBar[stat.tone] }} />
+              <p className="text-xs uppercase tracking-[0.12em] text-ink-faint">{stat.label}</p>
+              <p className={`mt-1 text-2xl font-light tabular-nums ${stat.tone === "danger" ? "text-danger" : "text-ink"}`}>
+                {stat.value}
+              </p>
+              <p className="mt-0.5 text-xs text-ink-faint">{stat.detail}</p>
+              {stat.progress !== null && stat.progress !== undefined && (
+                <div className="mt-2 h-1 overflow-hidden rounded-full bg-surface-muted">
+                  <div
+                    className="h-full rounded-full"
+                    style={{ width: `${stat.progress}%`, background: "linear-gradient(90deg, #21c9e0, #8b5cf6)" }}
+                  />
+                </div>
+              )}
+            </>
+          );
+          const cardClass =
+            "rounded-lg border border-border bg-surface p-4 shadow-md backdrop-blur-sm transition-colors duration-150";
+          return stat.href ? (
+            <Link key={stat.label} href={stat.href} className={`${cardClass} hover:border-accent/60`}>
+              {inner}
+            </Link>
+          ) : (
+            <div key={stat.label} className={cardClass}>
+              {inner}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="mb-6 rounded-lg border border-border bg-surface p-4 shadow-md backdrop-blur-sm">
+        <div className="mb-3 flex items-center justify-between">
+          <p className="text-xs font-medium uppercase tracking-[0.14em] text-ink-soft">Content pipeline · all clients</p>
           <Link href="/calendar" className="text-xs text-accent underline-offset-2 hover:underline">
             Open calendar →
           </Link>
@@ -96,9 +174,9 @@ export default async function DashboardPage() {
             { label: "Published (7 days)", value: pipeline.publishedLast7Days },
             { label: "Overdue / missed", value: pipeline.overdueScheduled, danger: pipeline.overdueScheduled > 0 },
           ].map((stat) => (
-            <div key={stat.label}>
-              <p className={`text-lg font-semibold ${stat.danger ? "text-danger" : "text-ink"}`}>{stat.value}</p>
-              <p className="text-xs text-ink-faint">{stat.label}</p>
+            <div key={stat.label} className="rounded-md py-1.5">
+              <p className={`text-2xl font-light tabular-nums ${stat.danger ? "text-danger" : "text-ink"}`}>{stat.value}</p>
+              <p className="mt-0.5 text-xs text-ink-faint">{stat.label}</p>
             </div>
           ))}
         </div>

@@ -11,7 +11,7 @@ export function Sidebar({ name, role }: { name: string; role: string }) {
   const navItems = navItemsForRole(role);
 
   return (
-    <aside className="hidden h-dvh w-[--sidebar-width] flex-shrink-0 flex-col border-r border-border bg-surface md:flex">
+    <aside className="hidden h-dvh w-[--sidebar-width] flex-shrink-0 flex-col border-r border-border bg-surface backdrop-blur-md md:flex">
       <div className="flex h-[--topbar-height] items-center gap-2 border-b border-border px-4">
         {/* eslint-disable-next-line @next/next/no-img-element -- static local asset, next/image adds no value here */}
         <img src="/brand/icon-mark.png" alt="" className="h-8 w-auto flex-shrink-0" />

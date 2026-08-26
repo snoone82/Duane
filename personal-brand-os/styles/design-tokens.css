@@ -9,15 +9,16 @@
  */
 
 :root {
-  /* ---- Ground ---- */
-  --color-bg: #0b1220;               /* app background (deep navy) */
-  --color-surface: #121b2e;          /* cards, tables, inputs */
-  --color-surface-muted: #182238;    /* subtle section backgrounds, hovers */
-  --color-ink: #e8edf6;              /* primary text */
-  --color-ink-soft: #a7b1c2;         /* secondary text */
-  --color-ink-faint: #6b7689;        /* placeholder / disabled / metadata */
-  --color-border: #223047;
-  --color-border-strong: #34476b;
+  /* ---- Ground — Deep Focus: surfaces carry a whisper of translucency so
+     the aurora glows through cards, and borders lean teal ---- */
+  --color-bg: #060b17;               /* app background (near-black navy, matching the website direction) */
+  --color-surface: rgba(19, 28, 47, 0.92);   /* cards, tables, inputs — glass over the aurora */
+  --color-surface-muted: rgba(26, 37, 60, 0.9); /* subtle section backgrounds, hovers */
+  --color-ink: #eef2f9;              /* primary text */
+  --color-ink-soft: #a9b3c6;         /* secondary text */
+  --color-ink-faint: #6e7a8f;        /* placeholder / disabled / metadata */
+  --color-border: #24384f;           /* teal-leaning hairlines */
+  --color-border-strong: #38537a;
 
   /* ---- Accent — the Aligned Media teal, turned up a notch for the Deep
      Focus refresh (Duane's "brighter" ask): more luminous, with a violet
@@ -54,8 +55,9 @@
   --tag-pink-bg: #3a1830;     --tag-pink-text: #ff8cc6;
   --tag-red-bg: #3b1715;      --tag-red-text: #ff7a70;
 
-  /* ---- Type — one sans-serif family, no display face ---- */
-  --font-sans: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  /* ---- Type — Outfit, the light geometric face from the approved Deep
+     Focus website direction; loaded via next/font in app/layout.tsx ---- */
+  --font-sans: var(--font-app), -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 
   --text-xs: 0.75rem;
   --text-sm: 0.8125rem;
@@ -84,17 +86,17 @@
   --space-20: 5rem;
   --space-24: 6rem;
 
-  /* ---- Radius ---- */
+  /* ---- Radius — a touch softer for the glass cards ---- */
   --radius-sm: 0.25rem;
-  --radius-md: 0.375rem;
-  --radius-lg: 0.625rem;
-  --radius-xl: 0.875rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
   --radius-full: 999px;
 
-  /* ---- Shadow — depth on a dark ground comes from darker darks ---- */
+  /* ---- Shadow — depth from darker darks, plus a breath of teal glow ---- */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
-  --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.45);
-  --shadow-lg: 0 14px 34px rgba(0, 0, 0, 0.55);
+  --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.45), 0 0 24px rgba(33, 201, 224, 0.05);
+  --shadow-lg: 0 14px 34px rgba(0, 0, 0, 0.55), 0 0 40px rgba(33, 201, 224, 0.07);
 
   /* ---- Motion — nothing longer than 200ms anywhere ---- */
   --duration-fast: 100ms;

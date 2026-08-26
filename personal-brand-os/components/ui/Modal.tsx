@@ -43,7 +43,7 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"
-        className="w-full max-w-lg rounded-lg border border-border bg-surface shadow-lg"
+        className="w-full max-w-lg rounded-lg border border-border bg-surface shadow-lg backdrop-blur-md"
       >
         <div className="flex items-center justify-between border-b border-border px-5 py-3.5">
           <h2 id="modal-title" className="text-sm font-semibold text-ink">
