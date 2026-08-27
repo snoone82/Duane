@@ -29,17 +29,18 @@ const TYPE_FILTERS: { key: string; label: string }[] = [
   { key: "meetings", label: "Meetings" },
 ];
 
+// Same tag palette the admin calendar uses — one visual language.
 const chipColor: Record<TagColor, string> = {
-  slate: "bg-surface-muted text-ink-soft",
-  blue: "bg-info-bg text-info",
-  cyan: "bg-info-bg text-info",
-  teal: "bg-success-bg text-success",
-  green: "bg-success-bg text-success",
-  amber: "bg-warning-bg text-warning",
-  orange: "bg-warning-bg text-warning",
-  purple: "bg-accent-soft text-accent-strong",
-  pink: "bg-accent-soft text-accent-strong",
-  red: "bg-danger-bg text-danger",
+  slate: "bg-[--tag-slate-bg] text-[--tag-slate-text]",
+  blue: "bg-[--tag-blue-bg] text-[--tag-blue-text]",
+  cyan: "bg-[--tag-cyan-bg] text-[--tag-cyan-text]",
+  teal: "bg-[--tag-teal-bg] text-[--tag-teal-text]",
+  green: "bg-[--tag-green-bg] text-[--tag-green-text]",
+  amber: "bg-[--tag-amber-bg] text-[--tag-amber-text]",
+  orange: "bg-[--tag-orange-bg] text-[--tag-orange-text]",
+  purple: "bg-[--tag-purple-bg] text-[--tag-purple-text]",
+  pink: "bg-[--tag-pink-bg] text-[--tag-pink-text]",
+  red: "bg-[--tag-red-bg] text-[--tag-red-text]",
 };
 
 /** Duane's client calendar: one combined view of content, actions and

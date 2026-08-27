@@ -10,7 +10,7 @@ export function PortalNav({ tabs }: { tabs: { href: string; label: string }[] })
   const pathname = usePathname();
 
   return (
-    <nav aria-label="Portal sections" className="flex gap-1 overflow-x-auto border-b border-border px-4 md:px-6">
+    <nav aria-label="Portal sections" className="flex gap-1 overflow-x-auto border-b border-border bg-surface/50 px-4 backdrop-blur-md md:px-6">
       {tabs.map((tab) => {
         const isActive = pathname === tab.href;
         return (

@@ -29,6 +29,7 @@ export type Database = {
           owner_user_id: string | null
           portal_notes: string
           priority: string
+          sales_opportunity_id: string | null
           source: string
           status: Database["public"]["Enums"]["action_status"]
           title: string
@@ -49,6 +50,7 @@ export type Database = {
           owner_user_id?: string | null
           portal_notes?: string
           priority?: string
+          sales_opportunity_id?: string | null
           source?: string
           status?: Database["public"]["Enums"]["action_status"]
           title: string
@@ -69,6 +71,7 @@ export type Database = {
           owner_user_id?: string | null
           portal_notes?: string
           priority?: string
+          sales_opportunity_id?: string | null
           source?: string
           status?: Database["public"]["Enums"]["action_status"]
           title?: string
@@ -109,6 +112,13 @@ export type Database = {
             columns: ["owner_user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "actions_sales_opportunity_id_fkey"
+            columns: ["sales_opportunity_id"]
+            isOneToOne: false
+            referencedRelation: "sales_opportunities"
             referencedColumns: ["id"]
           },
         ]
@@ -1245,6 +1255,81 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      sales_opportunities: {
+        Row: {
+          client_id: string
+          closed_at: string | null
+          contact_name: string
+          created_at: string
+          estimated_value: number | null
+          expected_close: string | null
+          id: string
+          notes: string
+          owner_name: string
+          owner_user_id: string | null
+          probability: number
+          source: string
+          stage: string
+          stage_history: Json
+          title: string
+          updated_at: string
+          value_type: string
+        }
+        Insert: {
+          client_id: string
+          closed_at?: string | null
+          contact_name?: string
+          created_at?: string
+          estimated_value?: number | null
+          expected_close?: string | null
+          id?: string
+          notes?: string
+          owner_name?: string
+          owner_user_id?: string | null
+          probability?: number
+          source?: string
+          stage?: string
+          stage_history?: Json
+          title: string
+          updated_at?: string
+          value_type?: string
+        }
+        Update: {
+          client_id?: string
+          closed_at?: string | null
+          contact_name?: string
+          created_at?: string
+          estimated_value?: number | null
+          expected_close?: string | null
+          id?: string
+          notes?: string
+          owner_name?: string
+          owner_user_id?: string | null
+          probability?: number
+          source?: string
+          stage?: string
+          stage_history?: Json
+          title?: string
+          updated_at?: string
+          value_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sales_opportunities_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sales_opportunities_owner_user_id_fkey"
+            columns: ["owner_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       sales_strategy: {
         Row: {

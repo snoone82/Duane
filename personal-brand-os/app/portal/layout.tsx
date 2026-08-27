@@ -42,7 +42,7 @@ export default async function PortalLayout({ children }: { children: React.React
 
   return (
     <div className="flex min-h-dvh flex-col">
-      <header className="flex items-center justify-between gap-4 px-6 pb-3 pt-5">
+      <header className="flex items-center justify-between gap-4 border-b border-border/50 bg-surface/60 px-4 pb-3 pt-5 backdrop-blur-md md:px-6">
         <div className="flex items-center gap-3">
           {/* eslint-disable-next-line @next/next/no-img-element -- static local asset, next/image adds no value here */}
           <img src="/brand/logo-lockup.png" alt="Aligned Media" className="h-10 w-auto" />
@@ -70,7 +70,7 @@ export default async function PortalLayout({ children }: { children: React.React
           ...(context.can("view_meetings") ? [{ href: "/portal/meetings", label: "Meetings" }] : []),
         ]}
       />
-      <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-6 md:px-6">{children}</main>
+      <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-6 md:px-6">{children}</main>
     </div>
   );
 }

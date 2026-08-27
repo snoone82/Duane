@@ -86,6 +86,32 @@ export const ACTION_VISIBILITY: { value: ActionVisibility; label: string; color:
   { value: "client", label: "Client visible", color: "teal" },
 ];
 
+/** Duane's sales pipeline stages, in journey order. Won/lost are terminal. */
+export type SalesStage =
+  | "prospect"
+  | "contacted"
+  | "conversation"
+  | "qualified"
+  | "consultation"
+  | "proposal"
+  | "decision"
+  | "won"
+  | "lost";
+
+export const SALES_STAGES: { value: SalesStage; label: string; color: TagColor }[] = [
+  { value: "prospect", label: "Prospect", color: "slate" },
+  { value: "contacted", label: "Contacted", color: "blue" },
+  { value: "conversation", label: "Conversation", color: "cyan" },
+  { value: "qualified", label: "Qualified", color: "teal" },
+  { value: "consultation", label: "Consultation", color: "purple" },
+  { value: "proposal", label: "Proposal", color: "orange" },
+  { value: "decision", label: "Decision", color: "amber" },
+  { value: "won", label: "Won", color: "green" },
+  { value: "lost", label: "Lost", color: "red" },
+];
+
+export const salesStageMeta = (value: string) => lookup(SALES_STAGES, value as SalesStage);
+
 /** Where an Action originated — set automatically, shown read-only. */
 export const ACTION_SOURCE_LABELS: Record<string, string> = {
   manual: "Manual",

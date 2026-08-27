@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getPortalContext } from "@/lib/data/portal";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { MediaThumb } from "@/components/portal/MediaThumb";
+import { Donut } from "@/components/dashboard/Charts";
 import { contentStatusMeta, actionStatusMeta } from "@/lib/status";
 import { signoffStatusMeta } from "@/lib/signoff-snapshot";
 import { formatDate, formatRelativeToToday, formatDateTime, socialAccountLabel } from "@/lib/format";
@@ -10,11 +11,24 @@ import { thumbUrl } from "@/lib/media";
 
 export const metadata = { title: "Dashboard" };
 
-function Card({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
+function Card({
+  title,
+  action,
+  tone = "teal",
+  children,
+}: {
+  title: string;
+  action?: React.ReactNode;
+  tone?: "teal" | "violet";
+  children: React.ReactNode;
+}) {
+  const toneBar =
+    tone === "violet" ? "linear-gradient(90deg, #8b5cf6, transparent)" : "linear-gradient(90deg, #21c9e0, transparent)";
   return (
-    <section className="rounded-lg border border-border bg-surface p-4">
+    <section className="rounded-lg border border-border bg-surface p-4 shadow-md backdrop-blur-sm">
+      <div className="mb-3 h-px w-full" style={{ background: toneBar }} />
       <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold text-ink">{title}</h2>
+        <h2 className="text-xs font-medium uppercase tracking-[0.14em] text-ink-soft">{title}</h2>
         {action}
       </div>
       {children}
@@ -91,6 +105,7 @@ export default async function PortalDashboardPage() {
     { label: "Published", count: bucket(["published"]) },
   ];
   const awaitingApproval = bucket(["ready_for_approval"]);
+  const pipelineTotal = pipeline.reduce((sum, stage) => sum + stage.count, 0);
 
   // --- Strategy status ---
   const latestPack = (signoffs ?? [])[0];
@@ -225,17 +240,21 @@ export default async function PortalDashboardPage() {
           )}
         </Card>
 
-        <Card title="Content pipeline" action={can("view_content") ? <CardLink href="/portal/content">Content →</CardLink> : undefined}>
-          <ul className="space-y-1.5">
-            {pipeline.map((stage) => (
-              <li key={stage.label} className="flex items-center justify-between text-sm">
-                <span className={stage.label === "Awaiting your approval" && stage.count > 0 ? "font-medium text-ink" : "text-ink-soft"}>
-                  {stage.label}
-                </span>
-                <span className="tabular-nums text-ink">{stage.count}</span>
-              </li>
-            ))}
-          </ul>
+        <Card title="Content pipeline" tone="violet" action={can("view_content") ? <CardLink href="/portal/content">Content →</CardLink> : undefined}>
+          {pipelineTotal > 0 ? (
+            <Donut
+              centreLabel="in play"
+              segments={[
+                { label: "Ideas", value: pipeline[0]?.count ?? 0, color: "#3987e5" },
+                { label: "In production", value: pipeline[1]?.count ?? 0, color: "#d95926" },
+                { label: "Awaiting your approval", value: pipeline[2]?.count ?? 0, color: "#199e70" },
+                { label: "Scheduled", value: pipeline[3]?.count ?? 0, color: "#c98500" },
+                { label: "Published", value: pipeline[4]?.count ?? 0, color: "#d55181" },
+              ]}
+            />
+          ) : (
+            <p className="text-sm text-ink-faint">Nothing in the pipeline yet.</p>
+          )}
         </Card>
 
         <Card title="Strategy status" action={can("view_strategy") ? <CardLink href="/portal/signoff">Sign-off →</CardLink> : undefined}>
