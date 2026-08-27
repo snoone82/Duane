@@ -5,6 +5,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { PortalContentApproval } from "@/components/portal/PortalContentApproval";
 import { MediaPreview } from "@/components/clients/OutputMediaSlot";
 import { MediaThumb } from "@/components/portal/MediaThumb";
+import { AddIdeaButton, EditableIdea } from "@/components/portal/ClientIdeaComposer";
 import { contentStatusMeta, outputStatusMeta, type OutputStatus } from "@/lib/status";
 import { formatDate, formatDateTime, socialAccountLabel } from "@/lib/format";
 import { thumbUrl } from "@/lib/media";
@@ -42,7 +43,12 @@ export default async function PortalContentPage() {
   const all = ideas ?? [];
   const awaitingApproval = all.filter((i) => i.status === "ready_for_approval");
   const published = all.filter((i) => i.status === "published").slice(0, 15);
-  const upcoming = all.filter((i) => i.status !== "published" && i.status !== "ready_for_approval");
+  // The client's own submissions, still at idea stage — editable by them.
+  const myDrafts = all.filter((i) => i.status === "idea" && i.created_by === context.userId);
+  const myDraftIds = new Set(myDrafts.map((i) => i.id));
+  const upcoming = all.filter(
+    (i) => i.status !== "published" && i.status !== "ready_for_approval" && !myDraftIds.has(i.id)
+  );
 
   const outputLine = (contentId: string) =>
     (outputsByContent.get(contentId) ?? []).map((o) => socialAccountLabel(o.platform, o.social?.account_name)).join(" · ");
@@ -97,10 +103,26 @@ export default async function PortalContentPage() {
 
   return (
     <div className="space-y-5">
-      <p className="text-sm text-ink-soft">Your content pipeline — what&rsquo;s planned, in production and recently published.</p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-ink-soft">Your content pipeline — what&rsquo;s planned, in production and recently published.</p>
+        <AddIdeaButton />
+      </div>
+
+      {myDrafts.length > 0 && (
+        <section>
+          <h2 className="mb-2 text-xs font-medium uppercase tracking-[0.14em] text-ink-soft">
+            Your ideas · {myDrafts.length}
+          </h2>
+          <div className="space-y-2">
+            {myDrafts.map((idea) => (
+              <EditableIdea key={idea.id} idea={{ id: idea.id, title: idea.title, body: idea.body, created_at: idea.created_at }} />
+            ))}
+          </div>
+        </section>
+      )}
 
       {all.length === 0 ? (
-        <EmptyState title="No content yet" description="Planned and published content will appear here as the pipeline fills up." />
+        <EmptyState title="No content yet" description="Planned and published content will appear here as the pipeline fills up. Got a thought? Add a content idea above." />
       ) : (
         <>
           {awaitingApproval.length > 0 && (

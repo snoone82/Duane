@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentProfile } from "@/lib/current-user";
 import { getPortalContext } from "@/lib/data/portal";
-import { PortalNav } from "@/components/portal/PortalNav";
+import { PortalSidebar, PortalMobileHeader, type PortalNavItem } from "@/components/portal/PortalSidebar";
 import { signOut } from "@/lib/actions/auth";
 import { Button } from "@/components/ui/Button";
 
@@ -40,37 +40,29 @@ export default async function PortalLayout({ children }: { children: React.React
     );
   }
 
+  // Same navigation shell as the admin workspace — sidebar on desktop,
+  // hamburger drawer on phones — with the client's own sections.
+  const navItems: PortalNavItem[] = [
+    { href: "/portal", label: "Dashboard" },
+    ...(context.can("view_strategy") ? [{ href: "/portal/strategy", label: "Strategy" }] : []),
+    ...(context.can("view_strategy") ? [{ href: "/portal/signoff", label: "Sign-off" }] : []),
+    { href: "/portal/priorities", label: "Actions" },
+    ...(context.can("view_content") ? [{ href: "/portal/content", label: "Content" }] : []),
+    { href: "/portal/calendar", label: "Calendar" },
+    ...(context.can("view_progress") ? [{ href: "/portal/progress", label: "Progress" }] : []),
+    ...(context.can("view_meetings") ? [{ href: "/portal/meetings", label: "Meetings" }] : []),
+  ];
+  const personName = context.member?.name ?? context.client.name;
+
   return (
-    <div className="flex min-h-dvh flex-col">
-      <header className="flex items-center justify-between gap-4 border-b border-border/50 bg-surface/60 px-4 pb-3 pt-5 backdrop-blur-md md:px-6">
-        <div className="flex items-center gap-3">
-          {/* eslint-disable-next-line @next/next/no-img-element -- static local asset, next/image adds no value here */}
-          <img src="/brand/logo-lockup.png" alt="Aligned Media" className="h-10 w-auto" />
-          <div>
-            <p className="text-sm font-semibold text-ink">{context.client.name}</p>
-            <p className="text-xs text-ink-faint">
-              {context.member ? `Signed in as ${context.member.name}` : "Your personal brand, at a glance"}
-            </p>
-          </div>
-        </div>
-        <form action={signOut}>
-          <Button type="submit" variant="ghost" size="sm">
-            Sign out
-          </Button>
-        </form>
-      </header>
-      <PortalNav
-        tabs={[
-          { href: "/portal", label: "Dashboard" },
-          ...(context.can("view_strategy") ? [{ href: "/portal/strategy", label: "Strategy" }] : []),
-          ...(context.can("view_strategy") ? [{ href: "/portal/signoff", label: "Sign-off" }] : []),
-          { href: "/portal/priorities", label: "Actions" },
-          ...(context.can("view_content") ? [{ href: "/portal/content", label: "Content" }] : []),
-          { href: "/portal/calendar", label: "Calendar" },
-          ...(context.can("view_meetings") ? [{ href: "/portal/meetings", label: "Meetings" }] : []),
-        ]}
-      />
-      <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-6 md:px-6">{children}</main>
+    <div className="flex h-dvh flex-col overflow-hidden md:flex-row">
+      <PortalMobileHeader items={navItems} clientName={context.client.name} personName={personName} />
+      <PortalSidebar items={navItems} clientName={context.client.name} personName={personName} />
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <main className="min-w-0 flex-1 overflow-y-auto px-4 py-5 md:px-8 md:py-7">
+          <div className="mx-auto w-full max-w-4xl">{children}</div>
+        </main>
+      </div>
     </div>
   );
 }

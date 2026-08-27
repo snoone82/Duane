@@ -179,11 +179,37 @@ export default async function PortalDashboardPage() {
     .sort((a, b) => b.when.localeCompare(a.when))
     .slice(0, 7);
 
+  // Same greeting treatment as the admin dashboard, in the workspace's own
+  // timezone rather than the server's.
+  const londonHour = Number(
+    new Intl.DateTimeFormat("en-GB", { hour: "numeric", hour12: false, timeZone: "Europe/London" }).format(new Date())
+  );
+  const greeting = londonHour < 12 ? "Good morning" : londonHour < 18 ? "Good afternoon" : "Good evening";
+  const firstName = (context.member?.name ?? client.name).split(" ")[0] || null;
+  const todayLabel = new Intl.DateTimeFormat("en-GB", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    timeZone: "Europe/London",
+  }).format(new Date());
+
   return (
     <div className="space-y-4">
-      <p className="text-sm text-ink-soft">
-        {client.name} — here&rsquo;s where your personal brand stands right now.
-      </p>
+      <div className="mb-7 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-3xl font-light tracking-tight text-ink">
+            {greeting}
+            {firstName ? (
+              <>
+                , <span className="bg-gradient-to-r from-accent to-[#8b5cf6] bg-clip-text font-normal text-transparent">{firstName}</span>
+              </>
+            ) : null}
+            .
+          </h1>
+          <p className="mt-1 text-sm font-light text-ink-soft">Here&rsquo;s where your personal brand stands right now.</p>
+        </div>
+        <p className="text-sm font-light text-ink-faint">{todayLabel}</p>
+      </div>
 
       {attention.length > 0 && (
         <section className="rounded-lg border border-accent/40 bg-accent/5 p-4">

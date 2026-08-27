@@ -100,6 +100,59 @@ export async function setPortalUser(clientId: string, userId: string | null): Pr
   });
 }
 
+/** Clients submit their own content ideas from the portal (Duane batch 9).
+ * RLS pins the idea to their own client at status 'idea' and stamps them as
+ * creator; the team picks it up from the normal pipeline afterwards. */
+export async function portalCreateContentIdea(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const title = String(formData.get("title") ?? "").trim();
+  const body = String(formData.get("body") ?? "").trim();
+  if (!title) return { ok: false, message: "Give the idea a title." };
+
+  return runAction(async () => {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) throw new Error("Not signed in.");
+
+    // The client's own record, via the same RLS-scoped lookup the portal uses.
+    const { data: client } = await supabase.from("clients").select("id").limit(1).maybeSingle();
+    if (!client) throw new Error("Your account isn't linked to a client profile yet.");
+
+    const { error } = await supabase.from("content_ideas").insert({
+      client_id: client.id,
+      title,
+      body,
+      status: "idea",
+      created_by: user.id,
+    });
+    if (error) throw new Error(error.message);
+    revalidatePath("/portal/content");
+    revalidatePath("/portal");
+    return undefined;
+  });
+}
+
+/** Edit an idea the client submitted, while it's still just an idea. */
+export async function portalUpdateContentIdea(ideaId: string, field: "title" | "body", value: string): Promise<ActionResult> {
+  if (field === "title" && !value.trim()) return { ok: false, message: "The title can't be empty." };
+
+  return runAction(async () => {
+    const supabase = await createClient();
+    const patch = field === "title" ? { title: value.trim() } : { body: value };
+    const { data: updated, error } = await supabase
+      .from("content_ideas")
+      .update(patch)
+      .eq("id", ideaId)
+      .select("id")
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!updated) throw new Error("This idea is now with the team — it can't be edited here any more.");
+    revalidatePath("/portal/content");
+    return undefined;
+  });
+}
+
 /** Portal-side final-content approval (Duane's workflow §2). RLS + the
  * enforce_content_approval_transition trigger restrict this to the linked
  * client, only on ready_for_approval items, and only these fields — the

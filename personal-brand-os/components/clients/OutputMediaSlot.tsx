@@ -4,6 +4,7 @@ import { useRef, useState, useTransition } from "react";
 import { Button } from "@/components/ui/Button";
 import { attachOutputMedia, removeOutputMedia } from "@/lib/actions/content";
 import { createClient } from "@/lib/supabase/client";
+import { checkUploadSize } from "@/lib/uploads";
 
 export function mediaKindFromUrl(url: string): "image" | "video" | "other" {
   const clean = url.split("?")[0]?.toLowerCase() ?? "";
@@ -51,8 +52,9 @@ export function OutputMediaSlot({
 
   function handleFile(file: File | undefined) {
     if (!file) return;
-    if (file.size > 200 * 1024 * 1024) {
-      setError("Keep media under 200 MB.");
+    const sizeError = checkUploadSize(file);
+    if (sizeError) {
+      setError(sizeError);
       return;
     }
     if (kind === "thumbnail" && !file.type.startsWith("image/")) {

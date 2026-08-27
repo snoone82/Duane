@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { Label, Select } from "@/components/ui/Input";
 import { Notice } from "@/components/ui/Notice";
 import { FILE_CATEGORIES } from "@/lib/files";
+import { checkUploadSize } from "@/lib/uploads";
 import type { FileCategory } from "@/lib/enums";
 
 export function UploadFileButton({ clientId }: { clientId: string }) {
@@ -24,8 +25,9 @@ export function UploadFileButton({ clientId }: { clientId: string }) {
       setError("Choose a file first.");
       return;
     }
-    if (file.size > 500 * 1024 * 1024) {
-      setError("Keep files under 500 MB.");
+    const sizeError = checkUploadSize(file);
+    if (sizeError) {
+      setError(sizeError);
       return;
     }
     setError(null);
