@@ -24,7 +24,7 @@ const MEMBER_STATUSES = ["invited", "active", "disabled"];
 /** Supabase's own auth errors, said plainly. The rate limit is the one that
  * bites in real use: the built-in email service allows only a couple of
  * messages an hour, which looks like a broken save unless we name it. */
-export function authErrorMessage(message: string): string {
+function authErrorMessage(message: string): string {
   const lower = message.toLowerCase();
   if (lower.includes("rate limit") || lower.includes("too many requests")) {
     return "Supabase's built-in email service is rate-limited (roughly two emails an hour) and has refused this one. The account itself is fine — wait a few minutes and use “Resend set-up email”, or set up custom SMTP to remove the limit entirely.";
