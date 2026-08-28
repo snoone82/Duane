@@ -9,6 +9,7 @@ import {
   type ImportSectionSummary,
 } from "@/lib/import/client-profile";
 import { parseContentImport } from "@/lib/import/content";
+import { buildAccountResolver } from "@/lib/social-match";
 import type { Database } from "@/lib/database.types";
 
 // ---------------------------------------------------------------------------
@@ -1042,7 +1043,10 @@ export async function previewContentImport(clientId: string, text: string): Prom
     const pillarNames = new Set((pillars ?? []).map((p) => p.name.toLowerCase()));
     const audienceNames = new Set((audiences ?? []).map((a) => a.name.toLowerCase()));
     const strategyPlatforms = new Set((socials ?? []).map((s) => s.platform.toLowerCase()));
-    const accountNames = new Set((socials ?? []).map((s) => s.account_name.toLowerCase()).filter(Boolean));
+    // Accepts the full label the template asks for ("LinkedIn — Daniel
+    // Andrews"), a bare account name, or a bare name plus the output's own
+    // platform — normalised for case, spacing and dash variants.
+    const resolveAccount = buildAccountResolver(socials ?? []);
     const existingTitles = new Set((existing ?? []).map((c) => c.title.toLowerCase()));
 
     const ideas = parsed.ideas.map((idea) => {
@@ -1054,7 +1058,7 @@ export async function previewContentImport(clientId: string, text: string): Prom
         flags.push(`Audience "${idea.audience}" isn't in this client's audiences — it will be left unassigned, not created.`);
       }
       for (const output of idea.outputs) {
-        if (output.account && !accountNames.has(output.account.toLowerCase())) {
+        if (output.account && !resolveAccount(output.account, output.platform)) {
           flags.push(`Account "${output.account}" isn't on this client's Social tab — the version will be created without an account link.`);
         }
         if (!output.account && strategyPlatforms.size > 0 && !strategyPlatforms.has(output.platform.toLowerCase())) {
@@ -1096,9 +1100,7 @@ export async function commitContentImport(
     const pillarIds = new Map((pillars ?? []).map((p) => [p.name.toLowerCase(), p.id]));
     const audienceIds = new Map((audiences ?? []).map((a) => [a.name.toLowerCase(), a.id]));
     const existingTitles = new Set((existing ?? []).map((c) => c.title.toLowerCase()));
-    const accountsByName = new Map(
-      (socials ?? []).filter((s) => s.account_name).map((s) => [s.account_name.toLowerCase(), s])
-    );
+    const resolveAccount = buildAccountResolver(socials ?? []);
 
     let created = 0;
     const skippedDuplicates: string[] = [];
@@ -1132,7 +1134,7 @@ export async function commitContentImport(
           idea.outputs.map((output, i) => {
             // Match the named publishing account from the Social tab; the
             // matched account also wins on the platform label.
-            const account = output.account ? accountsByName.get(output.account.toLowerCase()) : undefined;
+            const account = resolveAccount(output.account, output.platform);
             return {
               content_id: row.id,
               client_id: clientId,
