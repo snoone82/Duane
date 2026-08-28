@@ -27,10 +27,32 @@ type Idea = Database["public"]["Tables"]["content_ideas"]["Row"];
 type Output = Database["public"]["Tables"]["content_outputs"]["Row"];
 type Pillar = Database["public"]["Tables"]["brand_pillars"]["Row"];
 type Audience = Database["public"]["Tables"]["audiences"]["Row"];
-export type TeamMember = { id: string; name: string };
+export type TeamMember = { id: string; name: string; group?: string };
 export type PublishingAccount = { id: string; label: string };
 export type HistoryEntry = { at: string; by: string; summary: string };
 
+/** Approver choices grouped by side of the table — Aligned Media above,
+ * this client's own approvers below (Duane's client-approver workflow). */
+function ApproverOptions({ team }: { team: TeamMember[] }) {
+  const groups = new Map<string, TeamMember[]>();
+  for (const member of team) {
+    const key = member.group ?? "Aligned Media";
+    groups.set(key, [...(groups.get(key) ?? []), member]);
+  }
+  return (
+    <>
+      {[...groups.entries()].map(([group, members]) => (
+        <optgroup key={group} label={group}>
+          {members.map((member) => (
+            <option key={member.id} value={member.id}>
+              {member.name}
+            </option>
+          ))}
+        </optgroup>
+      ))}
+    </>
+  );
+}
 
 export function ContentIdeaRow({
   clientId,
@@ -200,11 +222,7 @@ export function ContentIdeaRow({
               onChange={(event) => save("approver_user_id")(event.target.value)}
             >
               <option value="">No approver set</option>
-              {team.map((member) => (
-                <option key={member.id} value={member.id}>
-                  {member.name}
-                </option>
-              ))}
+              <ApproverOptions team={team} />
             </Select>
           </div>
           <AutosaveInput id={`idea-proddue-${idea.id}`} label="Production due" type="date" initialValue={idea.production_due_date ?? ""} onSave={save("production_due_date")} />
@@ -316,11 +334,7 @@ function ApproveProductionModal({
             <Label htmlFor="ap-owner">Owner</Label>
             <Select id="ap-owner" name="owner_user_id" defaultValue="">
               <option value="">Someone else (name below)</option>
-              {team.map((member) => (
-                <option key={member.id} value={member.id}>
-                  {member.name}
-                </option>
-              ))}
+              <ApproverOptions team={team} />
             </Select>
           </div>
           <div>
@@ -362,11 +376,7 @@ function ApproveProductionModal({
           <Label htmlFor="ap-approver">Approver</Label>
           <Select id="ap-approver" name="approver_user_id" defaultValue="">
             <option value="">No approver set</option>
-            {team.map((member) => (
-              <option key={member.id} value={member.id}>
-                {member.name}
-              </option>
-            ))}
+            <ApproverOptions team={team} />
           </Select>
         </div>
         <p className="text-xs text-ink-faint">

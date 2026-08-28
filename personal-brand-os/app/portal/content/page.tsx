@@ -136,7 +136,12 @@ export default async function PortalContentPage() {
               <div className="space-y-3">
                 {awaitingApproval.map((idea) => (
                   <div key={idea.id} id={`idea-${idea.id}`} className="scroll-mt-4 rounded-lg border border-border bg-surface px-4 py-3">
-                    <p className="text-sm font-medium text-ink">{idea.title}</p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-medium text-ink">{idea.title}</p>
+                      {idea.approver_user_id === context.userId && (
+                        <span className="rounded-full bg-accent-soft px-2 py-0.5 text-xs font-medium text-accent-strong">For you to approve</span>
+                      )}
+                    </div>
                     {idea.hook && <p className="mt-1 text-xs italic text-ink-soft">&ldquo;{idea.hook}&rdquo;</p>}
                     {(outputsByContent.get(idea.id) ?? []).map((output) => (
                       <div key={output.id} className="mt-2 rounded-md bg-surface-muted/50 p-3">

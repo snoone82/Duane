@@ -6,7 +6,7 @@ import { PillarCard } from "@/components/clients/PillarCard";
 import { ContentIdeaRow } from "@/components/clients/ContentIdeaRow";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { CONTENT_STATUS } from "@/lib/status";
-import { getAllTeamMembers } from "@/lib/data/client";
+import { getApproverOptions } from "@/lib/data/approvers";
 import { socialAccountLabel } from "@/lib/format";
 import { isAyrshareConfigured } from "@/lib/ayrshare";
 
@@ -21,7 +21,7 @@ export default async function ContentPage({ params }: { params: Promise<{ id: st
     supabase.from("content_ideas").select("*").eq("client_id", id).order("created_at", { ascending: false }),
     supabase.from("audiences").select("*").eq("client_id", id).order("sort_order", { ascending: true }),
     supabase.from("content_outputs").select("*").eq("client_id", id).order("sort_order", { ascending: true }).order("created_at", { ascending: true }),
-    getAllTeamMembers(supabase),
+    getApproverOptions(supabase, id),
     supabase
       .from("audit_log")
       .select("record_id,changed_at,changed_by,summary")
@@ -62,7 +62,7 @@ export default async function ContentPage({ params }: { params: Promise<{ id: st
     if (idea.pillar_id) ideaCountByPillar.set(idea.pillar_id, (ideaCountByPillar.get(idea.pillar_id) ?? 0) + 1);
   }
 
-  const teamOptions = team.map((m) => ({ id: m.id, name: m.name }));
+  const teamOptions = team;
   const teamNames = new Map(team.map((m) => [m.id, m.name]));
 
   // Per-record history from the audit log (RLS: team-visible for content
