@@ -62,7 +62,7 @@ export async function createPortalLogin(clientId: string, emailRaw: string): Pro
     if (linkError) throw new UserFacingError(`The login was created but couldn't be linked: ${linkError.message}`);
 
     // Password-setup email, using the existing reset flow.
-    const origin = (await headers()).get("origin") ?? "https://personal-brand-os-beta.vercel.app";
+    const origin = (await headers()).get("origin") ?? process.env.NEXT_PUBLIC_APP_URL ?? "https://personal-brand-os-beta.vercel.app";
     const { error: resetError } = await bare.auth.resetPasswordForEmail(email, {
       redirectTo: `${origin}/reset-password/confirm`,
     });

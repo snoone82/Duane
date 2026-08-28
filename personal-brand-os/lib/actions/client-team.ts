@@ -164,7 +164,7 @@ export async function resendMemberInvite(clientId: string, memberId: string): Pr
     const bare = createBareClient(env.NEXT_PUBLIC_SUPABASE_URL, env.NEXT_PUBLIC_SUPABASE_ANON_KEY, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
-    const origin = (await headers()).get("origin") ?? "https://personal-brand-os-beta.vercel.app";
+    const origin = (await headers()).get("origin") ?? process.env.NEXT_PUBLIC_APP_URL ?? "https://personal-brand-os-beta.vercel.app";
     const { error: sendError } = await bare.auth.resetPasswordForEmail(email, {
       redirectTo: `${origin}/reset-password/confirm`,
     });
@@ -235,7 +235,7 @@ export async function createClientMemberLogin(clientId: string, memberId: string
     if (linkError) throw new UserFacingError(`The login exists but couldn't be linked: ${linkError.message}`);
 
     if (!alreadyExists) {
-      const origin = (await headers()).get("origin") ?? "https://personal-brand-os-beta.vercel.app";
+      const origin = (await headers()).get("origin") ?? process.env.NEXT_PUBLIC_APP_URL ?? "https://personal-brand-os-beta.vercel.app";
       const { error: resetError } = await bare.auth.resetPasswordForEmail(email, {
         redirectTo: `${origin}/reset-password/confirm`,
       });
