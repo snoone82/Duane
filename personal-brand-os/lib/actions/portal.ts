@@ -6,6 +6,7 @@ import { createClient as createBareClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentProfile } from "@/lib/current-user";
 import { runAction, type ActionResult } from "@/lib/action-result";
+import { UserFacingError } from "@/lib/errors";
 import { env } from "@/lib/env";
 
 /** Create a portal login for a client entirely from inside the app — no
@@ -33,16 +34,16 @@ export async function createPortalLogin(clientId: string, emailRaw: string): Pro
       password: `${crypto.randomUUID()}${crypto.randomUUID()}`, // never used — they set their own via the email
     });
     if (signUpError) {
-      throw new Error(
+      throw new UserFacingError(
         signUpError.message.toLowerCase().includes("signup")
           ? "Sign-ups are disabled in Supabase Auth settings — enable email sign-ups, or create the account from the Supabase dashboard."
           : signUpError.message
       );
     }
     const newUser = signUpData.user;
-    if (!newUser) throw new Error("The account wasn't created — try again.");
+    if (!newUser) throw new UserFacingError("The account wasn't created — try again.");
     if (!newUser.identities || newUser.identities.length === 0) {
-      throw new Error("An account with that email already exists — set its role to Client on the Team & access page, then link it here.");
+      throw new UserFacingError("An account with that email already exists — set its role to Client on the Team & access page, then link it here.");
     }
 
     // The handle_new_user trigger creates the profile row with the default
@@ -55,10 +56,10 @@ export async function createPortalLogin(clientId: string, emailRaw: string): Pro
       const { data } = await supabase.from("profiles").update({ role: "client" }).eq("id", newUser.id).select("id");
       flipped = (data?.length ?? 0) > 0;
     }
-    if (!flipped) throw new Error("The login was created but its role couldn't be set — set it to Client on the Team & access page.");
+    if (!flipped) throw new UserFacingError("The login was created but its role couldn't be set — set it to Client on the Team & access page.");
 
     const { error: linkError } = await supabase.from("clients").update({ portal_user_id: newUser.id }).eq("id", clientId);
-    if (linkError) throw new Error(`The login was created but couldn't be linked: ${linkError.message}`);
+    if (linkError) throw new UserFacingError(`The login was created but couldn't be linked: ${linkError.message}`);
 
     // Password-setup email, using the existing reset flow.
     const origin = (await headers()).get("origin") ?? "https://personal-brand-os-beta.vercel.app";
@@ -66,7 +67,7 @@ export async function createPortalLogin(clientId: string, emailRaw: string): Pro
       redirectTo: `${origin}/reset-password/confirm`,
     });
     if (resetError) {
-      throw new Error(
+      throw new UserFacingError(
         `Portal access is set up, but the password email didn't send (${resetError.message}). Ask them to use "Forgot password?" on the sign-in page instead.`
       );
     }
@@ -90,11 +91,11 @@ export async function setPortalUser(clientId: string, userId: string | null): Pr
 
     if (userId) {
       const { data: candidate } = await supabase.from("profiles").select("role").eq("id", userId).maybeSingle();
-      if (candidate?.role !== "client") throw new Error("Portal access is only for client-role accounts.");
+      if (candidate?.role !== "client") throw new UserFacingError("Portal access is only for client-role accounts.");
     }
 
     const { error } = await supabase.from("clients").update({ portal_user_id: userId }).eq("id", clientId);
-    if (error) throw new Error(error.message);
+    if (error) throw new UserFacingError(error.message);
     revalidatePath(`/clients/${clientId}/overview`);
     return undefined;
   });
@@ -113,11 +114,11 @@ export async function portalCreateContentIdea(_prev: ActionResult | null, formDa
     const {
       data: { user },
     } = await supabase.auth.getUser();
-    if (!user) throw new Error("Not signed in.");
+    if (!user) throw new UserFacingError("Not signed in.");
 
     // The client's own record, via the same RLS-scoped lookup the portal uses.
     const { data: client } = await supabase.from("clients").select("id").limit(1).maybeSingle();
-    if (!client) throw new Error("Your account isn't linked to a client profile yet.");
+    if (!client) throw new UserFacingError("Your account isn't linked to a client profile yet.");
 
     const { error } = await supabase.from("content_ideas").insert({
       client_id: client.id,
@@ -126,7 +127,7 @@ export async function portalCreateContentIdea(_prev: ActionResult | null, formDa
       status: "idea",
       created_by: user.id,
     });
-    if (error) throw new Error(error.message);
+    if (error) throw new UserFacingError(error.message);
     revalidatePath("/portal/content");
     revalidatePath("/portal");
     return undefined;
@@ -146,8 +147,8 @@ export async function portalUpdateContentIdea(ideaId: string, field: "title" | "
       .eq("id", ideaId)
       .select("id")
       .maybeSingle();
-    if (error) throw new Error(error.message);
-    if (!updated) throw new Error("This idea is now with the team — it can't be edited here any more.");
+    if (error) throw new UserFacingError(error.message);
+    if (!updated) throw new UserFacingError("This idea is now with the team — it can't be edited here any more.");
     revalidatePath("/portal/content");
     return undefined;
   });
@@ -177,8 +178,8 @@ export async function portalRespondContent(
       .eq("id", ideaId)
       .select("id")
       .maybeSingle();
-    if (error) throw new Error(error.message);
-    if (!updated) throw new Error("This item is no longer awaiting your approval.");
+    if (error) throw new UserFacingError(error.message);
+    if (!updated) throw new UserFacingError("This item is no longer awaiting your approval.");
     // Reopening the linked production Action happens in the
     // reopen_action_on_changes_requested trigger — portal users have no
     // UPDATE rights on actions, so it can't be done here.

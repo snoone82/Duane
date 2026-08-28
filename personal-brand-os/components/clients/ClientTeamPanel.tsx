@@ -9,6 +9,7 @@ import {
   toggleClientMemberAssignable,
   deleteClientMember,
   createClientMemberLogin,
+  resendMemberInvite,
 } from "@/lib/actions/client-team";
 import { CLIENT_PERMISSIONS, DEFAULT_MEMBER_PERMISSIONS, readPermissions } from "@/lib/client-team-permissions";
 import { Modal } from "@/components/ui/Modal";
@@ -246,9 +247,19 @@ function MemberCard({ clientId, member, isAdmin }: { clientId: string; member: M
               </Button>
             )}
             {member.user_id && (
-              <p className="text-xs text-ink-faint">
-                Portal login linked — they sign in at the normal sign-in page and see only this client.
-              </p>
+              <>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={isBusy}
+                  onClick={() => run(() => resendMemberInvite(clientId, member.id).then((r) => ({ ok: r.ok, message: r.ok ? undefined : r.message })), "Set-up email sent — it may take a minute to arrive.")}
+                >
+                  {isBusy ? "Sending…" : "Resend set-up email"}
+                </Button>
+                <p className="text-xs text-ink-faint">
+                  Portal login linked — they sign in at the normal sign-in page and see only this client.
+                </p>
+              </>
             )}
             <button type="button" onClick={handleDelete} disabled={isBusy} className="ml-auto text-xs text-ink-faint hover:text-danger">
               Remove from team
