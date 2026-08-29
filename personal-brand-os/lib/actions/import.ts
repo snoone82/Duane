@@ -10,6 +10,7 @@ import {
 } from "@/lib/import/client-profile";
 import { parseContentImport } from "@/lib/import/content";
 import { buildAccountResolver } from "@/lib/social-match";
+import { buildRecordMatcher, type SectionMode } from "@/lib/import/record-match";
 import type { Database } from "@/lib/database.types";
 
 // ---------------------------------------------------------------------------
@@ -362,20 +363,44 @@ export async function commitClientImport(text: string): Promise<ActionResult<{ c
 
 export interface UpdateSection {
   label: string;
+  /** Repeatable sections say how they were treated; singletons are null. */
+  mode: SectionMode | null;
   /** "Field: old → new" style lines. */
   updates: string[];
   /** New records that will be created. */
   creates: string[];
   /** Records skipped (duplicates / already present). */
   skips: string[];
+  /** REPLACE mode only: existing records the import doesn't mention. */
+  removes: string[];
+  /** Problems that stop the import: ambiguous names, ids that aren't this
+   * client's. Nothing is written while any of these stand. */
+  blockers: string[];
 }
 
 export interface ClientUpdatePreview {
   clientName: string;
   nameMismatch: string | null;
   sections: UpdateSection[];
+  /** Duane's headline: "7 updated · 0 created · 0 removed". */
+  totals: { updated: number; created: number; removed: number };
+  /** True when confirming would delete something — the UI makes the user
+   * tick a box, and commit refuses without it. */
+  hasRemovals: boolean;
+  /** Aggregated section blockers; a non-empty list prevents committing. */
+  blockers: string[];
   needsConfirmation: string[];
   warnings: string[];
+}
+
+function emptySection(label: string, mode: SectionMode | null = null): UpdateSection {
+  return { label, mode, updates: [], creates: [], skips: [], removes: [], blockers: [] };
+}
+
+function sectionHasContent(section: UpdateSection): boolean {
+  return (
+    section.updates.length + section.creates.length + section.skips.length + section.removes.length + section.blockers.length > 0
+  );
 }
 
 const clip = (value: string, length = 60) => (value.length > length ? `${value.slice(0, length)}…` : value) || "(blank)";
@@ -413,16 +438,17 @@ async function buildClientUpdatePlan(
     { data: milestones },
     { data: profilesList },
     { data: membersList },
+    { data: outputsList },
   ] = await Promise.all([
     supabase.from("clients").select("*").eq("id", clientId).maybeSingle(),
     supabase.from("brand_vision").select("*").eq("client_id", clientId).maybeSingle(),
     supabase.from("positioning").select("*").eq("client_id", clientId).maybeSingle(),
     supabase.from("sales_strategy").select("*").eq("client_id", clientId).maybeSingle(),
-    supabase.from("audiences").select("id,name").eq("client_id", clientId),
-    supabase.from("social_strategies").select("id,platform,account_name").eq("client_id", clientId),
-    supabase.from("brand_pillars").select("id,name").eq("client_id", clientId),
-    supabase.from("content_ideas").select("id,title").eq("client_id", clientId),
-    supabase.from("authority_opportunities").select("id,type,host").eq("client_id", clientId),
+    supabase.from("audiences").select("*").eq("client_id", clientId),
+    supabase.from("social_strategies").select("*").eq("client_id", clientId),
+    supabase.from("brand_pillars").select("*").eq("client_id", clientId),
+    supabase.from("content_ideas").select("id,title,pillar_id,audience_id").eq("client_id", clientId),
+    supabase.from("authority_opportunities").select("*").eq("client_id", clientId),
     supabase.from("consultations").select("id,meeting_date,meeting_type").eq("client_id", clientId),
     supabase
       .from("actions")
@@ -433,6 +459,7 @@ async function buildClientUpdatePlan(
     supabase.from("milestones").select("id,title,milestone_date").eq("client_id", clientId),
     supabase.from("profiles").select("id,full_name,email,role").in("role", ["admin", "member", "contractor"]),
     supabase.from("client_members").select("name,user_id").eq("client_id", clientId),
+    supabase.from("content_outputs").select("id,social_account_id").eq("client_id", clientId),
   ]);
   if (!client) return { ok: false, message: "Client not found (or you don't have access to it)." };
 
@@ -459,7 +486,7 @@ async function buildClientUpdatePlan(
       updates.push(`${key.replace(/_/g, " ")}: ${clip(String(existing ?? ""))} → ${clip(String(raw))}`);
     }
     if (updates.length === 0) return;
-    sections.push({ label, updates, creates: [], skips: [] });
+    sections.push({ ...emptySection(label), updates });
     work.push(async () => {
       const { error } = await run(patch);
       if (error) throw fail(label, error.message);
@@ -480,45 +507,143 @@ async function buildClientUpdatePlan(
     supabase.from("sales_strategy").update(patch as Tables["sales_strategy"]["Update"]).eq("client_id", clientId)
   );
 
-  // --- Repeatable records: match on a natural key; update matches, create
-  // the rest, never delete. ---
-  const repeatable = <P>(
-    label: string,
-    items: P[],
-    matchExisting: (item: P) => { id: string } | undefined,
-    itemLabel: (item: P) => string,
-    fields: (item: P) => Record<string, string>,
-    insert: (toCreate: P[]) => Promise<void>,
-    update: (id: string, patch: Record<string, string>, item: P) => Promise<void>
-  ) => {
-    if (items.length === 0) return;
-    const section: UpdateSection = { label, updates: [], creates: [], skips: [] };
+  // --- Repeatable records (Duane's duplicate-pillar fix) ------------------
+  //
+  // An update to an existing client behaves like a database update, not
+  // another import layered on top. Every repeatable record is matched
+  // id-first, then by exact name, then by normalised name (so "Pillar 1 —
+  // AI Opportunity → Commercial Decision" and "AI Opportunity -> Commercial
+  // Decision" are recognised as the same pillar rather than appended).
+  //
+  //   upsert  (default) — match and update, create only genuinely new ones
+  //   replace           — the imported list is definitive; unlisted records
+  //                       are removed, but only after explicit confirmation
+  //   append            — always create, for when the records really are new
+  //
+  // Ambiguity is never resolved by guessing: if a name could be two existing
+  // records, or an id isn't this client's, the section reports a blocker and
+  // the whole import refuses to run until it's resolved.
+  interface RepeatableOptions<P> {
+    label: string;
+    mode: SectionMode;
+    items: P[];
+    /** Existing rows, reduced to {id, name} for matching. */
+    existing: { id: string; name: string }[];
+    /** The name this imported record should be matched on. */
+    matchName: (item: P) => string;
+    itemId: (item: P) => string | null;
+    itemLabel: (item: P) => string;
+    fields: (item: P) => Record<string, string>;
+    /** Last-resort match when neither id nor name resolves (social's
+     * "one account on this platform" rule). */
+    fallbackMatch?: (item: P) => { id: string } | undefined;
+    /** Extra warning text shown next to a record queued for removal. */
+    removalNote?: (row: { id: string; name: string }) => string | null;
+    /** Current column values by record id, so a field that already says
+     * exactly this isn't counted as an update. Without it, re-importing an
+     * unchanged profile reports every record as changed. */
+    current?: Map<string, Record<string, unknown>>;
+    insert: (toCreate: P[]) => Promise<void>;
+    update: (id: string, patch: Record<string, string>, item: P) => Promise<void>;
+    remove?: (ids: string[]) => Promise<void>;
+  }
+
+  const repeatable = <P>(options: RepeatableOptions<P>) => {
+    const { label, mode, items, existing, matchName, itemId, itemLabel, fields } = options;
+    // REPLACE with an empty list is a real instruction ("this client has no
+    // pillars"), so an empty section still runs when the mode says so.
+    if (items.length === 0 && mode !== "replace") return;
+
+    const section = emptySection(label, mode);
+    const matcher = buildRecordMatcher(existing);
     const toCreate: P[] = [];
+    const touched = new Set<string>();
+
     for (const item of items) {
-      const existing = matchExisting(item);
-      if (!existing) {
+      const id = itemId(item);
+      const outcome = mode === "append" && !id ? ({ kind: "none" } as const) : matcher.match({ id, name: matchName(item) });
+
+      if (outcome.kind === "unknown-id") {
+        section.blockers.push(
+          `${itemLabel(item)} — id "${outcome.id}" doesn't belong to this client. Remove the id to create it as new, or use the right one.`
+        );
+        continue;
+      }
+      if (outcome.kind === "ambiguous") {
+        section.blockers.push(
+          `${itemLabel(item)} — could be ${outcome.candidates.length} existing records (${outcome.candidates
+            .map((c) => `"${c.name}"`)
+            .join(", ")}). Add the record's id to say which one you mean.`
+        );
+        continue;
+      }
+
+      const existingRow = outcome.kind === "none" ? options.fallbackMatch?.(item) : outcome.record;
+      if (!existingRow) {
         toCreate.push(item);
         section.creates.push(itemLabel(item));
         continue;
       }
+      touched.add(existingRow.id);
+
+      const currentRow = options.current?.get(existingRow.id);
       const patch: Record<string, string> = {};
       for (const [key, value] of Object.entries(fields(item))) {
-        if (value.trim()) patch[key] = value;
+        if (!value.trim()) continue; // blanks never overwrite
+        if (currentRow && String(currentRow[key] ?? "") === value) continue; // already says this
+        patch[key] = value;
       }
       if (Object.keys(patch).length === 0) {
         section.skips.push(`${itemLabel(item)} — nothing new`);
         continue;
       }
-      section.updates.push(`${itemLabel(item)} (${Object.keys(patch).map((k) => k.replace(/_/g, " ")).join(", ")})`);
-      work.push(() => update(existing.id, patch, item));
+      // Say when a match was only found after normalising, so a rename that
+      // updates rather than duplicates is visible rather than surprising.
+      const matchedOn =
+        outcome.kind === "normalised"
+          ? ` — matched existing "${outcome.record.name}"`
+          : outcome.kind === "id"
+            ? ` — matched by id`
+            : "";
+      section.updates.push(
+        `${itemLabel(item)}${matchedOn} (${Object.keys(patch)
+          .map((k) => k.replace(/_/g, " "))
+          .join(", ")})`
+      );
+      const targetId = existingRow.id;
+      work.push(() => options.update(targetId, patch, item));
     }
-    if (toCreate.length > 0) work.push(() => insert(toCreate));
-    if (section.updates.length + section.creates.length + section.skips.length > 0) sections.push(section);
+
+    if (mode === "replace" && options.remove && section.blockers.length === 0) {
+      const obsolete = existing.filter((row) => !touched.has(row.id));
+      if (obsolete.length > 0) {
+        for (const row of obsolete) {
+          const note = options.removalNote?.(row);
+          section.removes.push(`${row.name}${note ? ` — ${note}` : ""}`);
+        }
+        const ids = obsolete.map((row) => row.id);
+        work.push(() => options.remove!(ids));
+      }
+    }
+
+    if (toCreate.length > 0 && section.blockers.length === 0) work.push(() => options.insert(toCreate));
+    if (sectionHasContent(section)) sections.push(section);
   };
 
+  /** UPSERT is the default for an update import — Duane's core ask. */
+  const modeFor = (section: keyof typeof parsed.sectionModes): SectionMode => parsed.sectionModes[section] ?? "upsert";
+
   const lower = (value: string) => value.trim().toLowerCase();
-  const audienceByName = new Map((audiences ?? []).map((a) => [lower(a.name), a]));
-  const pillarByName = new Map((pillars ?? []).map((p) => [lower(p.name), p]));
+  // A content idea names its pillar/audience in prose, so it hits the same
+  // "Pillar 1 — X" vs "X" mismatch. Resolve it the forgiving way rather than
+  // silently filing the idea with no pillar.
+  const pillarLookup = buildRecordMatcher((pillars ?? []).map((p) => ({ id: p.id, name: p.name })));
+  const audienceLookup = buildRecordMatcher((audiences ?? []).map((a) => ({ id: a.id, name: a.name })));
+  const resolveLink = (matcher: ReturnType<typeof buildRecordMatcher>, name: string | null): string | null => {
+    if (!name) return null;
+    const outcome = matcher.match({ name });
+    return outcome.kind === "exact" || outcome.kind === "normalised" || outcome.kind === "id" ? outcome.record.id : null;
+  };
 
   // Multi-account social (migration 0017): the natural key is platform +
   // account name. A row with no account name still matches by platform alone
@@ -536,64 +661,112 @@ async function buildClientUpdatePlan(
     return undefined;
   };
 
-  repeatable(
-    "Audiences",
-    parsed.audiences,
-    (a) => audienceByName.get(lower(a.name)),
-    (a) => a.name,
-    (a) => a.fields,
-    async (create) => {
+  // Removing a pillar/audience/account doesn't delete content — the foreign
+  // keys are ON DELETE SET NULL — but the link is lost, so say so up front.
+  const ideasPerPillar = new Map<string, number>();
+  const ideasPerAudience = new Map<string, number>();
+  for (const idea of ideas ?? []) {
+    if (idea.pillar_id) ideasPerPillar.set(idea.pillar_id, (ideasPerPillar.get(idea.pillar_id) ?? 0) + 1);
+    if (idea.audience_id) ideasPerAudience.set(idea.audience_id, (ideasPerAudience.get(idea.audience_id) ?? 0) + 1);
+  }
+  const outputsPerAccount = new Map<string, number>();
+  for (const output of outputsList ?? []) {
+    if (output.social_account_id)
+      outputsPerAccount.set(output.social_account_id, (outputsPerAccount.get(output.social_account_id) ?? 0) + 1);
+  }
+  const linkNote = (count: number, noun: string) =>
+    count > 0 ? `${count} ${noun}${count === 1 ? "" : "s"} will keep their content but lose this link` : null;
+
+  repeatable({
+    label: "Audiences",
+    mode: modeFor("audiences"),
+    items: parsed.audiences,
+    existing: (audiences ?? []).map((a) => ({ id: a.id, name: a.name })),
+    matchName: (a) => a.name,
+    itemId: (a) => a.id,
+    itemLabel: (a) => a.name,
+    fields: (a) => a.fields,
+    removalNote: (row) => linkNote(ideasPerAudience.get(row.id) ?? 0, "content idea"),
+    current: new Map((audiences ?? []).map((a) => [a.id, a as Record<string, unknown>])),
+    insert: async (create) => {
       const { error } = await supabase
         .from("audiences")
         .insert(create.map((a, i) => ({ client_id: clientId, ...a.fields, name: a.name, sort_order: (audiences?.length ?? 0) + i })));
       if (error) throw fail("Audiences", error.message);
     },
-    async (id, patch) => {
+    update: async (id, patch) => {
       const { error } = await supabase.from("audiences").update(patch as Tables["audiences"]["Update"]).eq("id", id);
       if (error) throw fail("Audiences", error.message);
-    }
-  );
+    },
+    remove: async (ids) => {
+      const { error } = await supabase.from("audiences").delete().in("id", ids);
+      if (error) throw fail("Audiences", error.message);
+    },
+  });
 
-  repeatable(
-    "Social strategies",
-    parsed.socials,
-    matchSocial,
-    (s) => (s.fields.account_name ? `${s.platform} — ${s.fields.account_name}` : s.platform),
-    (s) => s.fields,
-    async (create) => {
+  repeatable({
+    label: "Social strategies",
+    mode: modeFor("social_strategies"),
+    items: parsed.socials,
+    // The account's identity is platform + account name together.
+    existing: (socials ?? []).map((s) => ({
+      id: s.id,
+      name: s.account_name ? `${s.platform} — ${s.account_name}` : s.platform,
+    })),
+    matchName: (s) => (s.fields.account_name ? `${s.platform} — ${s.fields.account_name}` : s.platform),
+    itemId: (s) => s.id,
+    itemLabel: (s) => (s.fields.account_name ? `${s.platform} — ${s.fields.account_name}` : s.platform),
+    fields: (s) => s.fields,
+    fallbackMatch: matchSocial,
+    removalNote: (row) => linkNote(outputsPerAccount.get(row.id) ?? 0, "published/planned post"),
+    current: new Map((socials ?? []).map((s) => [s.id, s as Record<string, unknown>])),
+    insert: async (create) => {
       const { error } = await supabase
         .from("social_strategies")
         .insert(create.map((s, i) => ({ client_id: clientId, ...s.fields, platform: s.platform, sort_order: (socials?.length ?? 0) + i })));
       if (error) throw fail("Social strategies", error.message);
     },
-    async (id, patch) => {
+    update: async (id, patch) => {
       const { error } = await supabase.from("social_strategies").update(patch as Tables["social_strategies"]["Update"]).eq("id", id);
       if (error) throw fail("Social strategies", error.message);
-    }
-  );
+    },
+    remove: async (ids) => {
+      const { error } = await supabase.from("social_strategies").delete().in("id", ids);
+      if (error) throw fail("Social strategies", error.message);
+    },
+  });
 
-  repeatable(
-    "Content pillars",
-    parsed.pillars,
-    (p) => pillarByName.get(lower(p.name)),
-    (p) => p.name,
-    (p) => p.fields,
-    async (create) => {
+  repeatable({
+    label: "Content pillars",
+    mode: modeFor("content_pillars"),
+    items: parsed.pillars,
+    existing: (pillars ?? []).map((p) => ({ id: p.id, name: p.name })),
+    matchName: (p) => p.name,
+    itemId: (p) => p.id,
+    itemLabel: (p) => p.name,
+    fields: (p) => p.fields,
+    removalNote: (row) => linkNote(ideasPerPillar.get(row.id) ?? 0, "content idea"),
+    current: new Map((pillars ?? []).map((p) => [p.id, p as Record<string, unknown>])),
+    insert: async (create) => {
       const { error } = await supabase
         .from("brand_pillars")
         .insert(create.map((p, i) => ({ client_id: clientId, ...p.fields, name: p.name, sort_order: (pillars?.length ?? 0) + i })));
       if (error) throw fail("Content pillars", error.message);
     },
-    async (id, patch) => {
+    update: async (id, patch) => {
       const { error } = await supabase.from("brand_pillars").update(patch as Tables["brand_pillars"]["Update"]).eq("id", id);
       if (error) throw fail("Content pillars", error.message);
-    }
-  );
+    },
+    remove: async (ids) => {
+      const { error } = await supabase.from("brand_pillars").delete().in("id", ids);
+      if (error) throw fail("Content pillars", error.message);
+    },
+  });
 
   // --- Create-only records: existing matches are duplicates to skip. ---
   const ideaTitles = new Set((ideas ?? []).map((i) => lower(i.title)));
   if (parsed.contentIdeas.length > 0) {
-    const section: UpdateSection = { label: "Content ideas", updates: [], creates: [], skips: [] };
+    const section = emptySection("Content ideas");
     const fresh = parsed.contentIdeas.filter((idea) => {
       if (ideaTitles.has(lower(idea.title))) {
         section.skips.push(`${idea.title} — already in the pipeline (use Import content to work on content)`);
@@ -614,8 +787,8 @@ async function buildClientUpdatePlan(
               body: idea.body,
               notes: idea.notes,
               priority: idea.priority,
-              pillar_id: idea.pillar ? (pillarByName.get(lower(idea.pillar))?.id ?? null) : null,
-              audience_id: idea.audience ? (audienceByName.get(lower(idea.audience))?.id ?? null) : null,
+              pillar_id: resolveLink(pillarLookup, idea.pillar),
+              audience_id: resolveLink(audienceLookup, idea.audience),
               created_by: userId,
             })
             .select("id")
@@ -633,43 +806,65 @@ async function buildClientUpdatePlan(
     sections.push(section);
   }
 
-  const authorityKey = (type: string, host: string | null) => `${lower(type)}|${lower(host ?? "")}`;
-  const authorityKeys = new Set((authority ?? []).map((a) => authorityKey(a.type, a.host)));
-  if (parsed.authority.length > 0) {
-    const section: UpdateSection = { label: "Authority & opportunities", updates: [], creates: [], skips: [] };
-    const fresh = parsed.authority.filter((a) => {
-      const label = `${a.type}${a.host ? ` · ${a.host}` : ""}`;
-      if (authorityKeys.has(authorityKey(a.type, a.host))) {
-        section.skips.push(`${label} — already tracked`);
-        return false;
-      }
-      section.creates.push(label);
-      return true;
-    });
-    if (fresh.length > 0) {
-      work.push(async () => {
-        const { error } = await supabase.from("authority_opportunities").insert(
-          fresh.map((a) => ({
-            client_id: clientId,
-            type: a.type,
-            host: a.host,
-            status: a.status as "identified",
-            opportunity_date: a.opportunity_date,
-            audience_size: a.audience_size,
-            contact_name: a.contact_name,
-            contact_email: a.contact_email,
-            notes: a.notes,
-          }))
-        );
-        if (error) throw fail("Authority & opportunities", error.message);
-      });
-    }
-    sections.push(section);
-  }
+  // Opportunities move through a pipeline (identified → pitched → booked…),
+  // so a re-import must be able to advance one rather than track it twice.
+  const authorityLabel = (type: string, host: string | null) => `${type}${host ? ` · ${host}` : ""}`;
+  repeatable({
+    label: "Authority & opportunities",
+    mode: modeFor("authority_opportunities"),
+    items: parsed.authority,
+    existing: (authority ?? []).map((a) => ({ id: a.id, name: authorityLabel(a.type, a.host) })),
+    matchName: (a) => authorityLabel(a.type, a.host),
+    itemId: (a) => a.id,
+    itemLabel: (a) => authorityLabel(a.type, a.host),
+    current: new Map((authority ?? []).map((a) => [a.id, a as Record<string, unknown>])),
+    fields: (a) => {
+      // Only what the file actually supplied — blanks never overwrite.
+      const out: Record<string, string> = { status: a.status };
+      if (a.host) out.host = a.host;
+      if (a.opportunity_date) out.opportunity_date = a.opportunity_date;
+      if (a.audience_size !== null) out.audience_size = String(a.audience_size);
+      if (a.contact_name) out.contact_name = a.contact_name;
+      if (a.contact_email) out.contact_email = a.contact_email;
+      if (a.notes.trim()) out.notes = a.notes;
+      return out;
+    },
+    insert: async (create) => {
+      const { error } = await supabase.from("authority_opportunities").insert(
+        create.map((a) => ({
+          client_id: clientId,
+          type: a.type,
+          host: a.host,
+          status: a.status as "identified",
+          opportunity_date: a.opportunity_date,
+          audience_size: a.audience_size,
+          contact_name: a.contact_name,
+          contact_email: a.contact_email,
+          notes: a.notes,
+        }))
+      );
+      if (error) throw fail("Authority & opportunities", error.message);
+    },
+    update: async (id, patch) => {
+      const next = {
+        ...patch,
+        ...(patch.audience_size ? { audience_size: Number(patch.audience_size) } : {}),
+      };
+      const { error } = await supabase
+        .from("authority_opportunities")
+        .update(next as Tables["authority_opportunities"]["Update"])
+        .eq("id", id);
+      if (error) throw fail("Authority & opportunities", error.message);
+    },
+    remove: async (ids) => {
+      const { error } = await supabase.from("authority_opportunities").delete().in("id", ids);
+      if (error) throw fail("Authority & opportunities", error.message);
+    },
+  });
 
   const consultationKeys = new Set((consultations ?? []).map((c) => `${c.meeting_date}|${lower(c.meeting_type ?? "")}`));
   if (parsed.consultations.length > 0) {
-    const section: UpdateSection = { label: "Meetings & consultations", updates: [], creates: [], skips: [] };
+    const section = emptySection("Meetings & consultations");
     const fresh = parsed.consultations.filter((c, i) => {
       const meetingDate = c.meeting_date ?? new Date().toISOString().slice(0, 10);
       const label = `${meetingDate}${c.fields.meeting_type ? ` · ${c.fields.meeting_type}` : ""}`;
@@ -730,7 +925,7 @@ async function buildClientUpdatePlan(
 
   const importActions = parsed.actions.filter((a) => lower(a.title) !== lower(CONFIRM_TITLE));
   if (importActions.length > 0) {
-    const section: UpdateSection = { label: "Actions", updates: [], creates: [], skips: [] };
+    const section = emptySection("Actions");
     const toCreate: typeof importActions = [];
     for (const a of importActions) {
       const existing = (a.id ? actionById.get(a.id) : undefined) ?? findActionByTitle(a.title);
@@ -845,7 +1040,7 @@ async function buildClientUpdatePlan(
   // supplies get their checklist items ticked automatically; when everything
   // is confirmed the parent Action completes itself. ---
   const confirmOpen = (actions ?? []).find((a) => lower(a.title) === lower(CONFIRM_TITLE) && a.status !== "completed");
-  const followUp: UpdateSection = { label: "Follow-up", updates: [], creates: [], skips: [] };
+  const followUp = emptySection("Follow-up");
   if (confirmOpen) {
     const current = Array.isArray(confirmOpen.checklist)
       ? (confirmOpen.checklist as { text: string; done: boolean }[]).map((c) => ({ text: String(c.text ?? ""), done: c.done === true }))
@@ -900,7 +1095,7 @@ async function buildClientUpdatePlan(
 
   const snapshotKeys = new Set((snapshots ?? []).map((s) => `${lower(s.platform)}|${s.snapshot_date}`));
   if (parsed.metricSnapshots.length > 0) {
-    const section: UpdateSection = { label: "Metric snapshots", updates: [], creates: [], skips: [] };
+    const section = emptySection("Metric snapshots");
     const fresh = parsed.metricSnapshots.filter((m) => {
       const label = `${m.platform} · ${m.snapshot_date}`;
       if (snapshotKeys.has(`${lower(m.platform)}|${m.snapshot_date}`)) {
@@ -923,7 +1118,7 @@ async function buildClientUpdatePlan(
 
   const targetByPlatform = new Map((targets ?? []).map((t) => [lower(t.platform), t]));
   if (parsed.metricTargets.length > 0) {
-    const section: UpdateSection = { label: "Metric targets", updates: [], creates: [], skips: [] };
+    const section = emptySection("Metric targets");
     for (const target of parsed.metricTargets) {
       const existing = targetByPlatform.get(lower(target.platform));
       if (existing) {
@@ -950,7 +1145,7 @@ async function buildClientUpdatePlan(
 
   const milestoneKeys = new Set((milestones ?? []).map((m) => `${lower(m.title)}|${m.milestone_date}`));
   if (parsed.milestones.length > 0) {
-    const section: UpdateSection = { label: "Timeline milestones", updates: [], creates: [], skips: [] };
+    const section = emptySection("Timeline milestones");
     const fresh = parsed.milestones.filter((m) => {
       if (milestoneKeys.has(`${lower(m.title)}|${m.milestone_date}`)) {
         section.skips.push(`${m.title} — already on the timeline`);
@@ -968,6 +1163,16 @@ async function buildClientUpdatePlan(
     sections.push(section);
   }
 
+  const totals = sections.reduce(
+    (acc, section) => ({
+      updated: acc.updated + section.updates.length,
+      created: acc.created + section.creates.length,
+      removed: acc.removed + section.removes.length,
+    }),
+    { updated: 0, created: 0, removed: 0 }
+  );
+  const blockers = sections.flatMap((section) => section.blockers.map((line) => `${section.label}: ${line}`));
+
   return {
     ok: true,
     plan: {
@@ -978,10 +1183,18 @@ async function buildClientUpdatePlan(
             ? `The import says "${parsed.overview.name}" but this client is "${client.name}" — make sure you're importing into the right profile. The import always applies to THIS client.`
             : null,
         sections,
+        totals,
+        hasRemovals: totals.removed > 0,
+        blockers,
         needsConfirmation: parsed.needsConfirmation,
         warnings: parsed.warnings,
       },
       apply: async () => {
+        // Nothing is written while an ambiguity stands — a half-applied
+        // import is exactly the mess this rebuild exists to prevent.
+        if (blockers.length > 0) {
+          throw new Error("Resolve the flagged records first — nothing has been changed.");
+        }
         for (const job of work) await job();
       },
     },
@@ -997,7 +1210,14 @@ export async function previewClientUpdate(clientId: string, text: string): Promi
   });
 }
 
-export async function commitClientUpdate(clientId: string, text: string): Promise<ActionResult<ClientUpdatePreview>> {
+/** `confirmRemovals` is the second pair of eyes on a REPLACE import: the
+ * preview lists exactly what would go, and the button only works once that
+ * box is ticked. Deletion is never a side-effect of pasting JSON. */
+export async function commitClientUpdate(
+  clientId: string,
+  text: string,
+  confirmRemovals = false
+): Promise<ActionResult<ClientUpdatePreview>> {
   return runAction(async () => {
     const supabase = await createClient();
     const {
@@ -1005,6 +1225,11 @@ export async function commitClientUpdate(clientId: string, text: string): Promis
     } = await supabase.auth.getUser();
     const built = await buildClientUpdatePlan(supabase, clientId, text, user?.id ?? null);
     if (!built.ok) throw new Error(built.message);
+    if (built.plan.preview.hasRemovals && !confirmRemovals) {
+      throw new Error(
+        `This import would remove ${built.plan.preview.totals.removed} existing record(s). Tick the removal box to confirm — nothing has been changed.`
+      );
+    }
     await built.plan.apply();
     revalidatePath(`/clients/${clientId}`, "layout");
     revalidatePath("/actions");

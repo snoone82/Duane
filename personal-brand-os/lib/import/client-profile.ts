@@ -11,6 +11,8 @@
  *   "NOT_APPLICABLE"            — genuinely n/a; store blank, no flag
  */
 
+import { isSectionMode, type SectionMode } from "@/lib/import/record-match";
+
 export const NEEDS_CONFIRMATION = "NEEDS_CLIENT_CONFIRMATION";
 export const NOT_APPLICABLE = "NOT_APPLICABLE";
 
@@ -25,7 +27,21 @@ export interface ImportIssues {
   resolvedLabels: string[];
 }
 
+/** Repeatable sections an update import can address as a whole. */
+export type RepeatableSection = "audiences" | "social_strategies" | "content_pillars" | "authority_opportunities";
+
+export const REPEATABLE_SECTIONS: RepeatableSection[] = [
+  "audiences",
+  "social_strategies",
+  "content_pillars",
+  "authority_opportunities",
+];
+
 export interface ParsedClientImport extends ImportIssues {
+  /** Per-section import behaviour, defaulting to UPSERT (Duane's ask: an
+   * update should behave like a database update, not another layer of
+   * appends). Only present for sections the file actually included. */
+  sectionModes: Partial<Record<RepeatableSection, SectionMode>>;
   overview: {
     name: string;
     email: string | null;
@@ -43,9 +59,9 @@ export interface ParsedClientImport extends ImportIssues {
   vision: Record<string, string>;
   positioning: Record<string, string>;
   sales: Record<string, string>;
-  audiences: { name: string; fields: Record<string, string> }[];
-  socials: { platform: string; fields: Record<string, string> }[];
-  pillars: { name: string; fields: Record<string, string> }[];
+  audiences: { id: string | null; name: string; fields: Record<string, string> }[];
+  socials: { id: string | null; platform: string; fields: Record<string, string> }[];
+  pillars: { id: string | null; name: string; fields: Record<string, string> }[];
   contentIdeas: {
     title: string;
     pillar: string | null;
@@ -57,6 +73,7 @@ export interface ParsedClientImport extends ImportIssues {
     platforms: string[];
   }[];
   authority: {
+    id: string | null;
     type: string;
     host: string | null;
     status: string;
@@ -115,6 +132,10 @@ const AUTHORITY_STATUSES = ["identified", "pitched", "in_conversation", "booked"
 const SNAPSHOT_EXTRAS = ["follower_growth", "impressions", "reach", "engagement", "profile_visits", "video_views", "comments", "shares", "saves"];
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Ways the AI may echo a record's PBOS id back to us. Read for matching,
+ * never written as a column. */
+const ID_KEYS = ["id", "record_id", "pbos_id"];
 
 /** Everything the parser needs to turn one AI-provided value into a clean
  * string, flagging the two sentinels along the way. */
@@ -175,9 +196,42 @@ function fieldMap(raw: unknown, allowed: string[], sectionLabel: string, issues:
     if (key in record) out[key] = text(record[key], `${sectionLabel} → ${key}`, issues);
   }
   for (const key of Object.keys(record)) {
+    // Identity keys are read separately and must never reach a column patch.
+    if (ID_KEYS.includes(key)) continue;
     if (!allowed.includes(key)) issues.warnings.push(`${sectionLabel}: unrecognised field "${key}" ignored.`);
   }
   return out;
+}
+
+/**
+ * A repeatable section arrives either as a plain list (the original format,
+ * always UPSERT) or as {"mode": "...", "items": [...]} when the AI is told
+ * the list is definitive. Both shapes are supported so older templates keep
+ * working untouched.
+ */
+function asSection(
+  raw: unknown,
+  label: string,
+  issues: ImportIssues
+): { items: unknown[]; mode: SectionMode | null; present: boolean } {
+  if (raw === null || raw === undefined) return { items: [], mode: null, present: false };
+  if (Array.isArray(raw)) return { items: raw, mode: null, present: true };
+  if (typeof raw === "object") {
+    const record = raw as Record<string, unknown>;
+    const modeRaw = typeof record.mode === "string" ? record.mode.trim().toLowerCase() : null;
+    let mode: SectionMode | null = null;
+    if (modeRaw) {
+      if (isSectionMode(modeRaw)) mode = modeRaw;
+      else issues.warnings.push(`${label}: unknown mode "${modeRaw}" — treated as an update (upsert).`);
+    }
+    if (!Array.isArray(record.items)) {
+      issues.warnings.push(`${label}: expected an "items" list alongside "mode" — section skipped.`);
+      return { items: [], mode, present: true };
+    }
+    return { items: record.items, mode, present: true };
+  }
+  issues.warnings.push(`${label}: expected a list — section skipped.`);
+  return { items: [], mode: null, present: false };
 }
 
 function asArray(raw: unknown, label: string, issues: ImportIssues): unknown[] {
@@ -243,34 +297,70 @@ export function parseClientImport(input: string, options?: { requireName?: boole
     website_url: nullable(text(overviewRaw.website_url, "Overview → website", issues)),
   };
 
-  const audiences = asArray(doc.audiences, "Audiences", issues).flatMap((raw, i) => {
+  const sectionModes: Partial<Record<RepeatableSection, SectionMode>> = {};
+
+  /** The record's PBOS id, when the AI was given one to echo back. Never
+   * invented — a blank id just means "match me by name instead". */
+  const recordId = (record: Record<string, unknown>): string | null => {
+    const raw = record.id ?? record.record_id ?? record.pbos_id;
+    if (typeof raw !== "string") return null;
+    const value = raw.trim();
+    if (!value || value === NEEDS_CONFIRMATION || value === NOT_APPLICABLE) return null;
+    return value;
+  };
+
+  const audienceSection = asSection(doc.audiences, "Audiences", issues);
+  if (audienceSection.mode) sectionModes.audiences = audienceSection.mode;
+  const audiences = audienceSection.items.flatMap((raw, i) => {
     const record = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
     const audienceName = text(record.name, `Audience ${i + 1} → name`, issues);
     if (!audienceName) {
       issues.warnings.push(`Audience ${i + 1} has no name — skipped.`);
       return [];
     }
-    return [{ name: audienceName, fields: fieldMap(record, ["name", ...AUDIENCE_FIELDS], `Audience "${audienceName}"`, issues) }];
+    return [
+      {
+        id: recordId(record),
+        name: audienceName,
+        fields: fieldMap(record, ["name", ...AUDIENCE_FIELDS], `Audience "${audienceName}"`, issues),
+      },
+    ];
   });
 
-  const socials = asArray(doc.social_strategies, "Social strategies", issues).flatMap((raw, i) => {
+  const socialSection = asSection(doc.social_strategies, "Social strategies", issues);
+  if (socialSection.mode) sectionModes.social_strategies = socialSection.mode;
+  const socials = socialSection.items.flatMap((raw, i) => {
     const record = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
     const platform = text(record.platform, `Social strategy ${i + 1} → platform`, issues);
     if (!platform) {
       issues.warnings.push(`Social strategy ${i + 1} has no platform — skipped.`);
       return [];
     }
-    return [{ platform, fields: fieldMap(record, ["platform", ...SOCIAL_FIELDS], `Social "${platform}"`, issues) }];
+    return [
+      {
+        id: recordId(record),
+        platform,
+        fields: fieldMap(record, ["platform", ...SOCIAL_FIELDS], `Social "${platform}"`, issues),
+      },
+    ];
   });
 
-  const pillars = asArray(doc.content_pillars, "Content pillars", issues).flatMap((raw, i) => {
+  const pillarSection = asSection(doc.content_pillars, "Content pillars", issues);
+  if (pillarSection.mode) sectionModes.content_pillars = pillarSection.mode;
+  const pillars = pillarSection.items.flatMap((raw, i) => {
     const record = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
     const pillarName = text(record.name, `Pillar ${i + 1} → name`, issues);
     if (!pillarName) {
       issues.warnings.push(`Content pillar ${i + 1} has no name — skipped.`);
       return [];
     }
-    return [{ name: pillarName, fields: fieldMap(record, ["name", ...PILLAR_FIELDS], `Pillar "${pillarName}"`, issues) }];
+    return [
+      {
+        id: recordId(record),
+        name: pillarName,
+        fields: fieldMap(record, ["name", ...PILLAR_FIELDS], `Pillar "${pillarName}"`, issues),
+      },
+    ];
   });
 
   const contentIdeas = asArray(doc.content_ideas, "Content ideas", issues).flatMap((raw, i) => {
@@ -299,7 +389,9 @@ export function parseClientImport(input: string, options?: { requireName?: boole
     ];
   });
 
-  const authority = asArray(doc.authority_opportunities, "Authority & opportunities", issues).flatMap((raw, i) => {
+  const authoritySection = asSection(doc.authority_opportunities, "Authority & opportunities", issues);
+  if (authoritySection.mode) sectionModes.authority_opportunities = authoritySection.mode;
+  const authority = authoritySection.items.flatMap((raw, i) => {
     const record = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
     const type = text(record.type, `Opportunity ${i + 1} → type`, issues);
     if (!type) {
@@ -313,6 +405,7 @@ export function parseClientImport(input: string, options?: { requireName?: boole
     }
     return [
       {
+        id: recordId(record),
         type,
         host: text(record.host, `Opportunity "${type}" → host`, issues) || null,
         status,
@@ -466,6 +559,7 @@ export function parseClientImport(input: string, options?: { requireName?: boole
       metricSnapshots,
       metricTargets,
       milestones,
+      sectionModes,
       ...issues,
     },
   };

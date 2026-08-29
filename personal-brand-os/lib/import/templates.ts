@@ -12,7 +12,9 @@ RULES — follow these exactly:
 5. Dates must be YYYY-MM-DD. Numbers must be plain numbers (no currency symbols or commas).
 6. content_ideas.pillar and content_ideas.audience must exactly match a name from content_pillars / audiences in this same document — never introduce new ones there.
 7. Write in UK English, in the client's own words where possible.
-8. For UPDATE imports into an existing client: include ONLY the sections and fields that changed. An omitted field always keeps its current value — never restate a field just to include it, and never use blank values to try to clear something. Existing actions are matched by action_id (preferred, when provided to you) or by their exact title; supplying just {"title": "...", "status": "Completed"} is enough to change only the status. Nothing is ever deleted by an import.
+8. For UPDATE imports into an existing client: include ONLY the sections and fields that changed. An omitted field always keeps its current value — never restate a field just to include it, and never use blank values to try to clear something. Omitted sections are left completely untouched.
+9. For UPDATE imports, repeatable records (content pillars, audiences, social strategies, authority opportunities, actions) are matched to what already exists — an update never appends a second copy. If the record's PBOS id was given to you, include it as "id" (actions use "action_id"); that is always the safest match. Without an id, PBOS matches on the name, ignoring numbering, arrow style and punctuation, so "Pillar 1 — AI Opportunity → Commercial Decision" is recognised as the existing "AI Opportunity -> Commercial Decision". Never invent an id.
+10. A repeatable section may be wrapped as {"mode": "...", "items": [...]} when the default isn't right: "replace" means the list you supply is definitive (anything missing is offered for deletion), "append" means every record is genuinely new. Plain lists mean "update what matches, add what's new" — the default, and correct almost always.
 
 {
   "pbos_import": "client_profile",
