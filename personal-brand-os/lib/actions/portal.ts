@@ -6,6 +6,7 @@ import { createClient as createBareClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentProfile } from "@/lib/current-user";
 import { runAction, type ActionResult } from "@/lib/action-result";
+import { previewBlock } from "@/lib/preview";
 import { UserFacingError } from "@/lib/errors";
 import { env } from "@/lib/env";
 
@@ -105,6 +106,8 @@ export async function setPortalUser(clientId: string, userId: string | null): Pr
  * RLS pins the idea to their own client at status 'idea' and stamps them as
  * creator; the team picks it up from the normal pipeline afterwards. */
 export async function portalCreateContentIdea(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const previewRefusal = await previewBlock();
+  if (previewRefusal) return previewRefusal;
   const title = String(formData.get("title") ?? "").trim();
   const body = String(formData.get("body") ?? "").trim();
   if (!title) return { ok: false, message: "Give the idea a title." };
@@ -136,6 +139,8 @@ export async function portalCreateContentIdea(_prev: ActionResult | null, formDa
 
 /** Edit an idea the client submitted, while it's still just an idea. */
 export async function portalUpdateContentIdea(ideaId: string, field: "title" | "body", value: string): Promise<ActionResult> {
+  const previewRefusal = await previewBlock();
+  if (previewRefusal) return previewRefusal;
   if (field === "title" && !value.trim()) return { ok: false, message: "The title can't be empty." };
 
   return runAction(async () => {
@@ -163,6 +168,8 @@ export async function portalRespondContent(
   decision: "approve" | "request_changes",
   comments: string
 ): Promise<ActionResult> {
+  const previewRefusal = await previewBlock();
+  if (previewRefusal) return previewRefusal;
   if (decision === "request_changes" && !comments.trim()) {
     return { ok: false, message: "Say what needs to change so the team can act on it." };
   }

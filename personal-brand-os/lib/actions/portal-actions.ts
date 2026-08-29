@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { runAction, type ActionResult } from "@/lib/action-result";
+import { previewBlock } from "@/lib/preview";
 import { ACTION_STATUS } from "@/lib/status";
 import type { ActionStatus } from "@/lib/enums";
 
@@ -19,6 +20,8 @@ function revalidatePortal() {
 }
 
 export async function portalUpdateActionStatus(actionId: string, status: ActionStatus): Promise<ActionResult> {
+  const previewRefusal = await previewBlock();
+  if (previewRefusal) return previewRefusal;
   if (!ACTION_STATUS.some((s) => s.value === status)) return { ok: false, message: "Invalid status." };
   return runAction(async () => {
     const supabase = await createClient();
@@ -36,6 +39,8 @@ export async function portalUpdateActionStatus(actionId: string, status: ActionS
 }
 
 export async function portalToggleChecklistItem(actionId: string, index: number, done: boolean): Promise<ActionResult> {
+  const previewRefusal = await previewBlock();
+  if (previewRefusal) return previewRefusal;
   return runAction(async () => {
     const supabase = await createClient();
     const { data: action, error: readError } = await supabase
@@ -63,6 +68,8 @@ export async function portalToggleChecklistItem(actionId: string, index: number,
 }
 
 export async function portalSaveActionNote(actionId: string, note: string): Promise<ActionResult> {
+  const previewRefusal = await previewBlock();
+  if (previewRefusal) return previewRefusal;
   return runAction(async () => {
     const supabase = await createClient();
     const { data: updated, error } = await supabase

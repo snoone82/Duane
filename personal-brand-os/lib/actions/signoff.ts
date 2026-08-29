@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentProfile } from "@/lib/current-user";
 import { runAction, type ActionResult } from "@/lib/action-result";
+import { previewBlock } from "@/lib/preview";
 import { buildStrategySnapshot } from "@/lib/data/signoff";
 import type { Json } from "@/lib/database.types";
 
@@ -71,6 +72,8 @@ export async function respondToSignoff(
   response: "approved" | "changes_requested",
   comments: string
 ): Promise<ActionResult> {
+  const previewRefusal = await previewBlock();
+  if (previewRefusal) return previewRefusal;
   if (response === "changes_requested" && !comments.trim()) {
     return { ok: false, message: "Tell the team what you'd like changed." };
   }

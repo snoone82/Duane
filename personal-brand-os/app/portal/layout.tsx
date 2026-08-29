@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentProfile } from "@/lib/current-user";
 import { getPortalContext } from "@/lib/data/portal";
 import { PortalSidebar, PortalMobileHeader, type PortalNavItem } from "@/components/portal/PortalSidebar";
+import { PreviewBanner } from "@/components/portal/PreviewBanner";
 import { signOut } from "@/lib/actions/auth";
 import { Button } from "@/components/ui/Button";
 
@@ -51,17 +52,21 @@ export default async function PortalLayout({ children }: { children: React.React
     { href: "/portal/calendar", label: "Calendar" },
     ...(context.can("view_progress") ? [{ href: "/portal/progress", label: "Progress" }] : []),
     ...(context.can("view_meetings") ? [{ href: "/portal/meetings", label: "Meetings" }] : []),
+    ...(context.can("connect_social") ? [{ href: "/portal/accounts", label: "Social accounts" }] : []),
   ];
   const personName = context.member?.name ?? context.client.name;
 
   return (
-    <div className="flex h-dvh flex-col overflow-hidden md:flex-row">
+    <div className="flex h-dvh flex-col overflow-hidden">
+      {context.preview && <PreviewBanner name={context.preview.name} />}
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden md:flex-row">
       <PortalMobileHeader items={navItems} clientName={context.client.name} personName={personName} />
       <PortalSidebar items={navItems} clientName={context.client.name} personName={personName} />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <main className="min-w-0 flex-1 overflow-y-auto px-4 py-5 md:px-8 md:py-7">
           <div className="mx-auto w-full max-w-4xl">{children}</div>
         </main>
+      </div>
       </div>
     </div>
   );

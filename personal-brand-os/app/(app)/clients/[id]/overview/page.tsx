@@ -7,6 +7,7 @@ import { getCurrentProfile } from "@/lib/current-user";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { TeamAssignments } from "@/components/clients/TeamAssignments";
 import { ClientTeamPanel } from "@/components/clients/ClientTeamPanel";
+import { ViewAsUser, type PreviewablePerson } from "@/components/clients/ViewAsUser";
 import { PortalAccessControl } from "@/components/clients/PortalAccessControl";
 import { NorthStarCard } from "@/components/clients/NorthStarCard";
 import { ClientDangerZone } from "@/components/clients/ClientDangerZone";
@@ -41,6 +42,19 @@ export default async function OverviewPage({ params }: { params: Promise<{ id: s
       .order("sort_order"),
     supabase.from("client_members").select("*").eq("client_id", id).order("created_at"),
   ]);
+
+  // Everyone on this client who actually has a portal login — the people an
+  // admin can preview the portal as (Duane read-only View as User).
+  const previewPeople: PreviewablePerson[] = [
+    ...(client.portal_user_id ? [{ userId: client.portal_user_id, name: client.name, role: "Client (principal)" }] : []),
+    ...(clientTeam ?? [])
+      .filter((member) => member.user_id && member.status === "active")
+      .map((member) => ({
+        userId: member.user_id!,
+        name: member.name,
+        role: member.member_role || member.organisation || "Client team",
+      })),
+  ];
 
   return (
     <div className="max-w-5xl space-y-6">
@@ -168,6 +182,16 @@ export default async function OverviewPage({ params }: { params: Promise<{ id: s
           </p>
           <ClientTeamPanel clientId={id} members={clientTeam ?? []} isAdmin={isAdmin} />
         </section>
+
+        {isAdmin && (
+          <section className="rounded-lg border border-border bg-surface p-4">
+            <h2 className="mb-1 text-sm font-semibold text-ink">See what they see</h2>
+            <p className="mb-3 text-xs text-ink-faint">
+              Open this client&rsquo;s portal exactly as one of their people sees it, for testing and support.
+            </p>
+            <ViewAsUser people={previewPeople} />
+          </section>
+        )}
 
         {isAdmin && (
           <section className="rounded-lg border border-border bg-surface p-4">
