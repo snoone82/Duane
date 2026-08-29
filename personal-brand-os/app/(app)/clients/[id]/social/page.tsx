@@ -13,7 +13,7 @@ export default async function SocialStrategyPage({ params }: { params: Promise<{
   const supabase = await createClient();
   const ayrshareEnabled = isAyrshareConfigured();
 
-  const [{ data: strategies }, { data: connections }, currentProfile] = await Promise.all([
+  const [{ data: strategies }, { data: connections }, { data: audiences }, currentProfile] = await Promise.all([
     supabase
       .from("social_strategies")
       .select("*")
@@ -23,6 +23,7 @@ export default async function SocialStrategyPage({ params }: { params: Promise<{
     ayrshareEnabled
       ? supabase.from("ayrshare_profiles").select("id,title").eq("client_id", id).order("created_at")
       : Promise.resolve({ data: [] as { id: string; title: string }[] }),
+    supabase.from("audiences").select("id,name").eq("client_id", id).order("sort_order"),
     getCurrentProfile(),
   ]);
 
@@ -53,6 +54,7 @@ export default async function SocialStrategyPage({ params }: { params: Promise<{
               strategy={strategy}
               ayrshareEnabled={ayrshareEnabled}
               connectionProfiles={connectionProfiles}
+              audiences={audiences ?? []}
             />
           ))}
         </div>

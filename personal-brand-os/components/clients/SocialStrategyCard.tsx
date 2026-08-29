@@ -9,6 +9,8 @@ import { StatusPill } from "@/components/ui/StatusPill";
 import { updateSocialStrategyField, toggleSocialAccountFlag, deleteSocialStrategy } from "@/lib/actions/social";
 import { setSocialPublishing } from "@/lib/actions/publishing";
 import { socialAccountLabel } from "@/lib/format";
+import { PlatformStrategyPanel, type AudienceOption } from "@/components/clients/PlatformStrategyPanel";
+import { cadenceLabel, crossPostRuleMeta, platformRoleLabel } from "@/lib/platform-strategy";
 import type { ConnectionProfile } from "@/components/clients/AyrshareConnections";
 import type { Database } from "@/lib/database.types";
 
@@ -63,11 +65,13 @@ export function SocialStrategyCard({
   strategy,
   ayrshareEnabled = false,
   connectionProfiles = [],
+  audiences = [],
 }: {
   clientId: string;
   strategy: SocialStrategy;
   ayrshareEnabled?: boolean;
   connectionProfiles?: ConnectionProfile[];
+  audiences?: AudienceOption[];
 }) {
   const [isDeleting, startDelete] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -109,6 +113,11 @@ export function SocialStrategyCard({
             {socialAccountLabel(strategy.platform, strategy.account_name)}
           </span>
           {strategy.is_primary && <StatusPill label="Primary" color="teal" />}
+          {strategy.platform_role && <StatusPill label={platformRoleLabel(strategy.platform_role)} color="slate" />}
+          {strategy.cadence_target > 0 && <span className="text-xs text-ink-faint">{cadenceLabel(strategy)}</span>}
+          {strategy.cross_post_rule !== "adapt" && (
+            <span className="text-xs text-ink-faint">· {crossPostRuleMeta(strategy.cross_post_rule).short}</span>
+          )}
         </span>
         <span className="flex flex-shrink-0 items-center gap-2">
           {strategy.account_status !== "active" && (
@@ -187,6 +196,8 @@ export function SocialStrategyCard({
             </div>
           </div>
         )}
+
+        <PlatformStrategyPanel clientId={clientId} strategy={strategy} audiences={audiences} />
 
         <AutosaveTextarea
           id={`soc-objective-${strategy.id}`}

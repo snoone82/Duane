@@ -9,6 +9,7 @@ import { CONTENT_STATUS } from "@/lib/status";
 import { getApproverOptions } from "@/lib/data/approvers";
 import { socialAccountLabel } from "@/lib/format";
 import { isAyrshareConfigured } from "@/lib/ayrshare";
+import { CadenceStrip } from "@/components/clients/CadenceStrip";
 
 export const metadata = { title: "Content" };
 
@@ -31,20 +32,21 @@ export default async function ContentPage({ params }: { params: Promise<{ id: st
       .limit(300),
     supabase
       .from("social_strategies")
-      .select("id,platform,account_name,account_status,publishing_enabled")
+      .select("*")
       .eq("client_id", id)
-      .eq("publishing_enabled", true)
-      .neq("account_status", "inactive")
       .order("is_primary", { ascending: false })
       .order("sort_order"),
   ]);
 
   // Publishing accounts (Duane's multi-account structure): content selects
   // the actual account — "LinkedIn — Daniel Andrews" — not just a platform.
-  const publishingAccounts = (socialAccounts ?? []).map((account) => ({
-    id: account.id,
-    label: socialAccountLabel(account.platform, account.account_name),
-  }));
+  const allAccounts = socialAccounts ?? [];
+  const publishingAccounts = allAccounts
+    .filter((account) => account.publishing_enabled && account.account_status !== "inactive")
+    .map((account) => ({
+      id: account.id,
+      label: socialAccountLabel(account.platform, account.account_name),
+    }));
 
   const pillarList = pillars ?? [];
   const ideaList = ideas ?? [];
@@ -95,6 +97,24 @@ export default async function ContentPage({ params }: { params: Promise<{ id: st
   );
   const queueIds = new Set(queue.map((i) => i.id));
 
+  // Planned-vs-target cadence (Duane's acceptance criterion 7). A version
+  // counts towards this month when it's scheduled or published in it, or
+  // when its master idea is targeted at it and it isn't dated yet.
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10);
+  const inThisMonth = (date: string | null) => Boolean(date) && date! >= monthStart && date! <= monthEnd;
+  const ideaTargetDate = new Map(ideaList.map((idea) => [idea.id, idea.target_publish_date]));
+
+  const plannedByAccount = new Map<string, number>();
+  for (const output of outputList) {
+    if (!output.social_account_id) continue;
+    const dated = output.scheduled_at?.slice(0, 10) ?? output.published_at?.slice(0, 10) ?? null;
+    const counts = dated ? inThisMonth(dated) : inThisMonth(ideaTargetDate.get(output.content_id) ?? null);
+    if (counts) plannedByAccount.set(output.social_account_id, (plannedByAccount.get(output.social_account_id) ?? 0) + 1);
+  }
+  const monthLabel = now.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+
   const groups = CONTENT_STATUS.map((status) => ({
     status,
     ideas: ideaList.filter((idea) => idea.status === status.value && !queueIds.has(idea.id)),
@@ -119,6 +139,8 @@ export default async function ContentPage({ params }: { params: Promise<{ id: st
 
   return (
     <div className="max-w-4xl space-y-8">
+      <CadenceStrip clientId={id} accounts={allAccounts} planned={plannedByAccount} monthLabel={monthLabel} />
+
       <section>
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-ink">Pillars</h2>

@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.17"
+    PostgrestVersion: "14.5"
   }
   public: {
     Tables: {
@@ -1472,24 +1472,38 @@ export type Database = {
           account_name: string
           account_status: string
           account_type: string
+          ai_instructions: string
           audience: string
           ayrshare_platform: string
           ayrshare_profile_id: string | null
+          cadence_period: string
+          cadence_target: number
           client_id: string
+          commercial_ratio: string
+          content_length: string
           content_types: string
           created_at: string
+          cross_post_rule: string
           cta_strategy: string
           engagement_strategy: string
           growth_strategy: string
+          hook_guidance: string
           id: string
           is_primary: boolean
           objective: string
           owner_brand: string
           platform: string
+          platform_exclusions: string
+          platform_role: string
           posting_frequency: string
+          preferred_formats: string
+          primary_audience_id: string | null
           publishing_enabled: boolean
+          repurposing_rules: string
+          secondary_audience_id: string | null
           show_on_overview: boolean
           sort_order: number
+          tone_voice: string
           updated_at: string
           url: string
         }
@@ -1497,24 +1511,38 @@ export type Database = {
           account_name?: string
           account_status?: string
           account_type?: string
+          ai_instructions?: string
           audience?: string
           ayrshare_platform?: string
           ayrshare_profile_id?: string | null
+          cadence_period?: string
+          cadence_target?: number
           client_id: string
+          commercial_ratio?: string
+          content_length?: string
           content_types?: string
           created_at?: string
+          cross_post_rule?: string
           cta_strategy?: string
           engagement_strategy?: string
           growth_strategy?: string
+          hook_guidance?: string
           id?: string
           is_primary?: boolean
           objective?: string
           owner_brand?: string
           platform: string
+          platform_exclusions?: string
+          platform_role?: string
           posting_frequency?: string
+          preferred_formats?: string
+          primary_audience_id?: string | null
           publishing_enabled?: boolean
+          repurposing_rules?: string
+          secondary_audience_id?: string | null
           show_on_overview?: boolean
           sort_order?: number
+          tone_voice?: string
           updated_at?: string
           url?: string
         }
@@ -1522,24 +1550,38 @@ export type Database = {
           account_name?: string
           account_status?: string
           account_type?: string
+          ai_instructions?: string
           audience?: string
           ayrshare_platform?: string
           ayrshare_profile_id?: string | null
+          cadence_period?: string
+          cadence_target?: number
           client_id?: string
+          commercial_ratio?: string
+          content_length?: string
           content_types?: string
           created_at?: string
+          cross_post_rule?: string
           cta_strategy?: string
           engagement_strategy?: string
           growth_strategy?: string
+          hook_guidance?: string
           id?: string
           is_primary?: boolean
           objective?: string
           owner_brand?: string
           platform?: string
+          platform_exclusions?: string
+          platform_role?: string
           posting_frequency?: string
+          preferred_formats?: string
+          primary_audience_id?: string | null
           publishing_enabled?: boolean
+          repurposing_rules?: string
+          secondary_audience_id?: string | null
           show_on_overview?: boolean
           sort_order?: number
+          tone_voice?: string
           updated_at?: string
           url?: string
         }
@@ -1556,6 +1598,20 @@ export type Database = {
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "social_strategies_primary_audience_id_fkey"
+            columns: ["primary_audience_id"]
+            isOneToOne: false
+            referencedRelation: "audiences"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "social_strategies_secondary_audience_id_fkey"
+            columns: ["secondary_audience_id"]
+            isOneToOne: false
+            referencedRelation: "audiences"
             referencedColumns: ["id"]
           },
         ]

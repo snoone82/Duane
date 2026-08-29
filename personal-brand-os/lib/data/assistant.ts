@@ -1,5 +1,6 @@
 import type { SupabaseServerClient } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/format";
+import { buildPlatformPrompt, cadenceLabel } from "@/lib/platform-strategy";
 
 type Client = SupabaseServerClient;
 
@@ -130,16 +131,30 @@ export async function buildClientContext(supabase: Client, clientId: string): Pr
   }
 
   if (socials?.length) {
+    // The Platform Strategy Profile, in full — this is what stops the
+    // assistant treating every platform as interchangeable. Each account's
+    // own instruction block is rendered verbatim (Duane's brief, §7).
     parts.push(
       section(
-        "Per-platform social strategy",
+        "Platform strategy — how each account is used, not just where it is",
         socials
-          .map(
-            (s) =>
-              `- ${s.platform}${s.account_name ? ` — ${s.account_name}` : ""}${s.owner_brand ? ` (${s.owner_brand})` : ""}: objective ${s.objective || "unset"}; content types ${s.content_types || "unset"}; cadence ${s.posting_frequency || "unset"}${s.cta_strategy ? `; CTA ${s.cta_strategy}` : ""}`
-          )
+          .map((s) => {
+            const heading = `${s.platform}${s.account_name ? ` — ${s.account_name}` : ""}${s.owner_brand ? ` (${s.owner_brand})` : ""}${
+              s.account_status !== "active" ? ` [${s.account_status}]` : ""
+            }`;
+            const body = buildPlatformPrompt(s)
+              .split("\n")
+              .slice(1) // the prompt repeats the platform name; the heading has it
+              .map((line) => `    ${line}`)
+              .join("\n");
+            const cadence = `    Target cadence: ${cadenceLabel(s)}${s.posting_frequency ? ` (written guidance: ${s.posting_frequency})` : ""}`;
+            return [`- ${heading}`, cadence, body].filter(Boolean).join("\n");
+          })
           .join("\n")
       )
+    );
+    parts.push(
+      "When proposing or writing content, treat these platform strategies as binding: a single idea should not be repeated across every account, and each platform's version must follow that platform's own role, tone, format, length and cross-posting rule."
     );
   }
 

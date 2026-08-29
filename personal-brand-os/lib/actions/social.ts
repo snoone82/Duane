@@ -20,6 +20,19 @@ const FIELDS = [
   "growth_strategy",
   "engagement_strategy",
   "cta_strategy",
+  // Platform Strategy Profile (migration 0023) — how this platform is used,
+  // not just where it is.
+  "platform_role",
+  "tone_voice",
+  "preferred_formats",
+  "content_length",
+  "hook_guidance",
+  "commercial_ratio",
+  "platform_exclusions",
+  "repurposing_rules",
+  "cross_post_rule",
+  "cadence_period",
+  "ai_instructions",
 ] as const;
 type Field = (typeof FIELDS)[number];
 
@@ -81,6 +94,50 @@ export async function toggleSocialAccountFlag(
   return runAction(async () => {
     const supabase = await createClient();
     const patch: Database["public"]["Tables"]["social_strategies"]["Update"] = { [flag]: value };
+    const { error } = await supabase.from("social_strategies").update(patch).eq("id", strategyId);
+    if (error) throw new Error(error.message);
+    revalidateSocial(clientId);
+    return undefined;
+  });
+}
+
+/** Cadence is a number, not prose — it's what makes planned-vs-target
+ * possible. 0 means "no target set", which is not the same as zero posts. */
+export async function setSocialCadence(
+  clientId: string,
+  strategyId: string,
+  target: number,
+  period: string
+): Promise<ActionResult> {
+  if (!Number.isFinite(target) || target < 0) return { ok: false, message: "Cadence must be zero or more." };
+  if (period !== "week" && period !== "month") return { ok: false, message: "Cadence period must be per week or per month." };
+
+  return runAction(async () => {
+    const supabase = await createClient();
+    const { error } = await supabase
+      .from("social_strategies")
+      .update({ cadence_target: Math.round(target), cadence_period: period })
+      .eq("id", strategyId);
+    if (error) throw new Error(error.message);
+    revalidateSocial(clientId);
+    revalidatePath(`/clients/${clientId}/content`);
+    return undefined;
+  });
+}
+
+/** Point an account at one of the client's real audiences, rather than
+ * describing it again in prose. */
+export async function setSocialAudienceLink(
+  clientId: string,
+  strategyId: string,
+  slot: "primary" | "secondary",
+  audienceId: string | null
+): Promise<ActionResult> {
+  if (slot !== "primary" && slot !== "secondary") return { ok: false, message: "Unknown audience slot." };
+  return runAction(async () => {
+    const supabase = await createClient();
+    const column = slot === "primary" ? "primary_audience_id" : "secondary_audience_id";
+    const patch: Database["public"]["Tables"]["social_strategies"]["Update"] = { [column]: audienceId };
     const { error } = await supabase.from("social_strategies").update(patch).eq("id", strategyId);
     if (error) throw new Error(error.message);
     revalidateSocial(clientId);

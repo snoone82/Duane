@@ -11,6 +11,7 @@ import {
 import { parseContentImport } from "@/lib/import/content";
 import { buildAccountResolver } from "@/lib/social-match";
 import { buildRecordMatcher, type SectionMode } from "@/lib/import/record-match";
+import { assessPlatformFit, type MixDecision } from "@/lib/platform-strategy";
 import type { Database } from "@/lib/database.types";
 
 // ---------------------------------------------------------------------------
@@ -1242,11 +1243,59 @@ export async function commitClientUpdate(
 // Content Import (§2)
 // ---------------------------------------------------------------------------
 
+/** One proposed platform version, with the strategy's verdict on it. */
+export interface PlatformMixItem {
+  /** Stable across preview and commit — the same text is re-parsed. */
+  key: string;
+  label: string;
+  decision: MixDecision;
+  reason: string;
+}
+
 export interface ContentImportPreview {
-  ideas: { title: string; platforms: string[]; flags: string[]; duplicate: boolean }[];
+  ideas: { title: string; mix: PlatformMixItem[]; flags: string[]; duplicate: boolean }[];
   needsConfirmation: string[];
   warnings: string[];
+  /** Headline for the preview: how the strategy changed the raw import. */
+  mixTotals: { included: number; review: number; excluded: number };
 }
+
+/**
+ * Duane's core behavioural change: a master idea is not every platform.
+ * The file still says where the AI thinks an idea belongs; each account's
+ * Platform Strategy Profile then decides whether that's actually right.
+ *
+ * Phase 1 filters and flags — it never invents a platform the file didn't
+ * ask for. Scoring which platforms an idea *should* reach is Phase 2, held
+ * back deliberately until we've watched those calls made by hand.
+ */
+function buildPlatformMix(
+  ideaIndex: number,
+  outputs: { platform: string; account: string | null; format: string }[],
+  resolveAccount: ReturnType<typeof buildAccountResolver<PlatformStrategyRow>>,
+  hasAnyStrategy: boolean
+): PlatformMixItem[] {
+  return outputs.map((output, outputIndex) => {
+    const account = resolveAccount(output.account, output.platform);
+    const verdict = assessPlatformFit(account ?? null);
+    const name = account
+      ? account.account_name
+        ? `${account.platform} — ${account.account_name}`
+        : account.platform
+      : output.platform;
+    return {
+      key: `${ideaIndex}:${outputIndex}`,
+      label: `${name}${output.format ? ` · ${output.format}` : ""}`,
+      decision: verdict.decision,
+      reason:
+        !account && !hasAnyStrategy
+          ? "No social accounts set up for this client yet — created as-is."
+          : verdict.reason,
+    };
+  });
+}
+
+type PlatformStrategyRow = Database["public"]["Tables"]["social_strategies"]["Row"];
 
 /** Validates against the client's APPROVED strategy: pillar/audience names
  * must already exist (unknowns are flagged, never created), platforms are
@@ -1262,19 +1311,24 @@ export async function previewContentImport(clientId: string, text: string): Prom
     const [{ data: pillars }, { data: audiences }, { data: socials }, { data: existing }] = await Promise.all([
       supabase.from("brand_pillars").select("name").eq("client_id", clientId),
       supabase.from("audiences").select("name").eq("client_id", clientId),
-      supabase.from("social_strategies").select("platform,account_name").eq("client_id", clientId),
+      // Full rows: the platform mix reads cross_post_rule, account_status and
+      // publishing_enabled, not just the account's name.
+      supabase.from("social_strategies").select("*").eq("client_id", clientId),
       supabase.from("content_ideas").select("title").eq("client_id", clientId),
     ]);
     const pillarNames = new Set((pillars ?? []).map((p) => p.name.toLowerCase()));
     const audienceNames = new Set((audiences ?? []).map((a) => a.name.toLowerCase()));
     const strategyPlatforms = new Set((socials ?? []).map((s) => s.platform.toLowerCase()));
+    const hasAnyStrategy = (socials ?? []).length > 0;
     // Accepts the full label the template asks for ("LinkedIn — Daniel
     // Andrews"), a bare account name, or a bare name plus the output's own
     // platform — normalised for case, spacing and dash variants.
     const resolveAccount = buildAccountResolver(socials ?? []);
     const existingTitles = new Set((existing ?? []).map((c) => c.title.toLowerCase()));
 
-    const ideas = parsed.ideas.map((idea) => {
+    const mixTotals = { included: 0, review: 0, excluded: 0 };
+
+    const ideas = parsed.ideas.map((idea, ideaIndex) => {
       const flags: string[] = [];
       if (idea.pillar && !pillarNames.has(idea.pillar.toLowerCase())) {
         flags.push(`Pillar "${idea.pillar}" isn't in this client's approved pillars — it will be left unassigned, not created.`);
@@ -1290,25 +1344,40 @@ export async function previewContentImport(clientId: string, text: string): Prom
           flags.push(`Platform "${output.platform}" isn't in this client's social strategy — check it's intentional.`);
         }
       }
+      const mix = buildPlatformMix(ideaIndex, idea.outputs, resolveAccount, hasAnyStrategy);
+      for (const item of mix) {
+        if (item.decision === "include") mixTotals.included += 1;
+        else if (item.decision === "review") mixTotals.review += 1;
+        else mixTotals.excluded += 1;
+      }
+
       return {
         title: idea.title,
-        platforms: idea.outputs.map((o) => `${o.platform}${o.format ? ` (${o.format})` : ""}`),
+        mix,
         flags,
         duplicate: existingTitles.has(idea.title.toLowerCase()),
       };
     });
 
-    return { ideas, needsConfirmation: parsed.needsConfirmation, warnings: parsed.warnings };
+    return { ideas, needsConfirmation: parsed.needsConfirmation, warnings: parsed.warnings, mixTotals };
   });
 }
 
+/**
+ * `approvedReviewKeys` are the "propose, don't assume" versions the user
+ * explicitly ticked in the preview — selective-repurposing platforms and
+ * accounts that aren't fully live. Anything the strategy excluded is never
+ * created, ticked or not.
+ */
 export async function commitContentImport(
   clientId: string,
-  text: string
-): Promise<ActionResult<{ created: number; skippedDuplicates: string[] }>> {
+  text: string,
+  approvedReviewKeys: string[] = []
+): Promise<ActionResult<{ created: number; skippedDuplicates: string[]; outputsCreated: number; outputsSkipped: number }>> {
   const result = parseContentImport(text);
   if (!result.ok) return { ok: false, message: result.error };
   const parsed = result.parsed;
+  const approved = new Set(approvedReviewKeys);
 
   return runAction(async () => {
     const supabase = await createClient();
@@ -1320,21 +1389,33 @@ export async function commitContentImport(
       supabase.from("brand_pillars").select("id,name").eq("client_id", clientId),
       supabase.from("audiences").select("id,name").eq("client_id", clientId),
       supabase.from("content_ideas").select("title").eq("client_id", clientId),
-      supabase.from("social_strategies").select("id,platform,account_name").eq("client_id", clientId),
+      supabase.from("social_strategies").select("*").eq("client_id", clientId),
     ]);
     const pillarIds = new Map((pillars ?? []).map((p) => [p.name.toLowerCase(), p.id]));
     const audienceIds = new Map((audiences ?? []).map((a) => [a.name.toLowerCase(), a.id]));
     const existingTitles = new Set((existing ?? []).map((c) => c.title.toLowerCase()));
     const resolveAccount = buildAccountResolver(socials ?? []);
 
+    const hasAnyStrategy = (socials ?? []).length > 0;
     let created = 0;
+    let outputsCreated = 0;
+    let outputsSkipped = 0;
     const skippedDuplicates: string[] = [];
 
-    for (const idea of parsed.ideas) {
+    for (const [ideaIndex, idea] of parsed.ideas.entries()) {
       if (existingTitles.has(idea.title.toLowerCase())) {
         skippedDuplicates.push(idea.title);
         continue;
       }
+      // The platform strategy decides which versions exist. Excluded ones are
+      // never created; "review" ones only when explicitly ticked.
+      const mix = buildPlatformMix(ideaIndex, idea.outputs, resolveAccount, hasAnyStrategy);
+      const keep = idea.outputs.filter((_, outputIndex) => {
+        const item = mix[outputIndex]!;
+        const take = item.decision === "include" || (item.decision === "review" && approved.has(item.key));
+        if (!take) outputsSkipped += 1;
+        return take;
+      });
       const { data: row, error } = await supabase
         .from("content_ideas")
         .insert({
@@ -1354,9 +1435,9 @@ export async function commitContentImport(
         .single();
       if (error) throw new Error(`"${idea.title}": ${error.message}`);
 
-      if (idea.outputs.length > 0) {
+      if (keep.length > 0) {
         const { error: outputError } = await supabase.from("content_outputs").insert(
-          idea.outputs.map((output, i) => {
+          keep.map((output, i) => {
             // Match the named publishing account from the Social tab; the
             // matched account also wins on the platform label.
             const account = resolveAccount(output.account, output.platform);
@@ -1382,12 +1463,13 @@ export async function commitContentImport(
           await supabase.from("content_ideas").delete().eq("id", row.id);
           throw new Error(`"${idea.title}" platform versions: ${outputError.message}`);
         }
+        outputsCreated += keep.length;
       }
       created += 1;
     }
 
     revalidatePath(`/clients/${clientId}/content`);
     revalidatePath("/");
-    return { created, skippedDuplicates };
+    return { created, skippedDuplicates, outputsCreated, outputsSkipped };
   });
 }
