@@ -194,3 +194,51 @@ RULES — follow these exactly:
 
 Here is the content to convert:
 `;
+
+/** Platform Strategy import (Duane, 1 Sep 2026): consultation notes → one
+ * JSON covering every account → the Social tab's strategy fields. */
+export const PLATFORM_STRATEGY_TEMPLATE = `You are converting a social/platform strategy consultation into a structured import for the Aligned Media Personal Brand OS.
+
+RULES — follow these exactly:
+1. Output ONLY a single JSON object matching the skeleton below. No commentary before or after.
+2. Include one entry per social account discussed. Put EVERY platform in the same file — they are all imported in one operation.
+3. NEVER invent information. If something was not discussed, omit the field entirely. Omitted fields keep whatever is already on file; they are never blanked.
+4. Use the account_id and exact account names supplied below so each entry lands on the right existing account. PBOS updates existing accounts and never creates new ones.
+5. "cross_posting_rule" must be one of: allow (the same idea can run here as-is), adapt (can run here but the copy must be rewritten), selective (only when it genuinely fits), never (don't send shared ideas here).
+6. "role_in_strategy" should name one role: authority, discovery, community, conversion, commentary, long-form education, or secondary distribution. A short phrase is fine.
+7. "target_cadence" is a number and a period: {"value": 3, "period": "week"} or {"value": 2, "period": "month"}.
+8. primary_audience and secondary_audience must exactly match one of the client's existing audience names listed below. If the right audience isn't listed, omit the field.
+9. Write in UK English, in the client's own words where possible.
+
+{
+  "pbos_import": "social_platform_strategy",
+  "version": 1,
+  "accounts": [
+    {
+      "account_id": "the id given below, when you have it",
+      "platform": "LinkedIn",
+      "account_name": "the exact account name given below",
+      "role_in_strategy": "",
+      "target_cadence": { "value": 3, "period": "week" },
+      "primary_audience": "",
+      "secondary_audience": "",
+      "cross_posting_rule": "adapt",
+      "tone_voice": "",
+      "preferred_formats": "",
+      "typical_length": "",
+      "commercial_balance": "",
+      "how_to_open": "",
+      "dont_post_here": "",
+      "repurposing_rules": "",
+      "ai_generation_instructions": "",
+      "objective": "",
+      "audience_here": "",
+      "content_types": "",
+      "cta": "",
+      "growth_strategy": "",
+      "engagement_strategy": ""
+    }
+  ]
+}
+
+Here are the consultation notes to convert:`;

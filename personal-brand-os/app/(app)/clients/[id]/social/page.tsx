@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentProfile } from "@/lib/current-user";
+import Link from "next/link";
 import { AddSocialStrategyButton } from "@/components/clients/AddSocialStrategyButton";
 import { SocialStrategyCard } from "@/components/clients/SocialStrategyCard";
 import { AyrshareConnections } from "@/components/clients/AyrshareConnections";
@@ -33,7 +34,15 @@ export default async function SocialStrategyPage({ params }: { params: Promise<{
     <div className="max-w-3xl">
       <div className="mb-4 flex items-center justify-between">
         <p className="text-sm text-ink-soft">How this brand shows up on each platform.</p>
-        <AddSocialStrategyButton clientId={id} />
+        <div className="flex items-center gap-2">
+          <Link
+            href={`/clients/${id}/social/import`}
+            className="rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-ink-soft transition-colors hover:bg-surface-muted hover:text-ink"
+          >
+            Import platform strategy
+          </Link>
+          <AddSocialStrategyButton clientId={id} />
+        </div>
       </div>
 
       {ayrshareEnabled && (
