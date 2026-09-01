@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect, useState, useTransition } from "react";
 import { AutosaveInput } from "@/components/ui/AutosaveInput";
+import { ExternalMediaField } from "@/components/clients/ExternalMediaField";
 import { AutosaveTextarea } from "@/components/ui/AutosaveTextarea";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { Button } from "@/components/ui/Button";
@@ -73,7 +74,7 @@ export function ContentOutputRow({
 
   const meta = outputStatusMeta(output.status as OutputStatus);
   const save = (
-    field: "platform" | "format" | "caption" | "cta" | "hashtags" | "alt_text" | "destination_link" | "live_url" | "notes" | "reach" | "engagement" | "views"
+    field: "platform" | "format" | "caption" | "cta" | "hashtags" | "alt_text" | "destination_link" | "media_source_url" | "thumbnail_source_url" | "live_url" | "notes" | "reach" | "engagement" | "views"
   ) => (value: string) => updateContentOutputField(clientId, output.id, field, value);
 
   function copyPost() {
@@ -208,13 +209,34 @@ export function ContentOutputRow({
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <AutosaveInput id={`out-cta-${output.id}`} label="Call to action" initialValue={output.cta} onSave={save("cta")} />
           <AutosaveInput id={`out-hashtags-${output.id}`} label="Hashtags / tags" initialValue={output.hashtags} onSave={save("hashtags")} />
-          <AutosaveInput id={`out-dest-${output.id}`} label="Destination link" initialValue={output.destination_link} onSave={save("destination_link")} placeholder="Where the CTA points" />
+          <AutosaveInput id={`out-dest-${output.id}`} label="Destination link (CTA)" initialValue={output.destination_link} onSave={save("destination_link")} placeholder="Where the CTA points — not the video" />
           <AutosaveInput id={`out-live-${output.id}`} label="Live post URL" initialValue={output.live_url} onSave={save("live_url")} />
           <AutosaveInput id={`out-alt-${output.id}`} label="Alt text" initialValue={output.alt_text} onSave={save("alt_text")} placeholder="Image description for accessibility" />
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <OutputMediaSlot clientId={clientId} outputId={output.id} kind="media" url={output.media_url} />
           <OutputMediaSlot clientId={clientId} outputId={output.id} kind="thumbnail" url={output.thumbnail_url} />
+        </div>
+        {/* Media hosted elsewhere — for anything above the upload cap. This
+            is what publishing sends to Ayrshare when it is set. */}
+        <div className="space-y-3 rounded-md border border-border bg-surface-muted/40 p-3">
+          <p className="text-xs font-medium text-ink-soft">Or use media hosted elsewhere</p>
+          <ExternalMediaField
+            clientId={clientId}
+            outputId={output.id}
+            field="media_source_url"
+            label="Media URL"
+            initialValue={output.media_source_url}
+            helpText="A direct link to the video or image. Used instead of the upload above when publishing."
+          />
+          <ExternalMediaField
+            clientId={clientId}
+            outputId={output.id}
+            field="thumbnail_source_url"
+            label="Thumbnail URL"
+            initialValue={output.thumbnail_source_url}
+            helpText="Optional. An uploaded thumbnail takes precedence over this."
+          />
         </div>
         <div className="grid grid-cols-3 gap-3">
           <AutosaveInput id={`out-reach-${output.id}`} label="Reach" type="number" initialValue={output.reach?.toString() ?? ""} onSave={save("reach")} />

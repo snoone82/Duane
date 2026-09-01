@@ -1,0 +1,105 @@
+/**
+ * External media on a platform version (Duane, 1 Sep 2026).
+ *
+ * Ayrshare fetches media by URL, so the cleanest route for a 145 MB video is
+ * to host it where it already lives and hand Ayrshare the link — no
+ * download, compress, re-upload round trip.
+ *
+ * The catch, and the reason this module exists: a Teams or SharePoint
+ * "share" link is not a media URL. It's an HTML page behind Microsoft
+ * sign-in. Ayrshare fetching it gets a login page, not a video, and the post
+ * fails at publish time with something unhelpful. Better to say so while the
+ * link is being pasted.
+ */
+
+export interface MediaSourceVerdict {
+  kind: "ok" | "warn" | "bad";
+  message: string;
+}
+
+/** Hosts whose ordinary share links are viewer pages rather than files. */
+const VIEWER_HOSTS: { match: RegExp; name: string; advice: string }[] = [
+  {
+    match: /(^|\.)sharepoint\.com$/i,
+    name: "SharePoint",
+    advice:
+      "A SharePoint share link opens a viewer page behind your Microsoft sign-in, so Ayrshare can't read the file itself. Use a link that downloads the file directly, or upload the clip here instead.",
+  },
+  {
+    match: /(^|\.)teams\.microsoft\.com$/i,
+    name: "Teams",
+    advice:
+      "A Teams link points at a conversation or viewer, not the file. Open the file in SharePoint or OneDrive and get a direct download link, or upload the clip here.",
+  },
+  {
+    match: /(^|\.)-my\.sharepoint\.com$|(^|\.)onedrive\.live\.com$/i,
+    name: "OneDrive",
+    advice:
+      "A OneDrive share link opens a viewer page rather than the file. Use a direct download link, or upload the clip here.",
+  },
+  {
+    match: /(^|\.)drive\.google\.com$/i,
+    name: "Google Drive",
+    advice:
+      "A Google Drive share link opens a viewer page. Use a direct download link, or upload the clip here.",
+  },
+  {
+    match: /(^|\.)dropbox\.com$/i,
+    name: "Dropbox",
+    advice:
+      "A Dropbox share link opens a preview page. Dropbox links ending ?dl=1 usually serve the file directly — try that.",
+  },
+];
+
+const MEDIA_EXTENSIONS = /\.(mp4|mov|m4v|webm|jpg|jpeg|png|gif|webp)(\?|$)/i;
+
+/**
+ * What we can tell from the URL alone, before asking the network. Cheap,
+ * instant, and catches the case Duane will actually hit.
+ */
+export function inspectMediaUrl(raw: string): MediaSourceVerdict | null {
+  const value = raw.trim();
+  if (!value) return null;
+
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return { kind: "bad", message: "That doesn't look like a full web address — it needs to start with https://." };
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") {
+    return { kind: "bad", message: "The link needs to be an http(s) web address." };
+  }
+
+  const viewer = VIEWER_HOSTS.find((h) => h.match.test(url.hostname));
+  if (viewer) return { kind: "warn", message: viewer.advice };
+
+  if (MEDIA_EXTENSIONS.test(url.pathname)) {
+    return { kind: "ok", message: "Looks like a direct media file. Check it to be sure." };
+  }
+  return {
+    kind: "warn",
+    message: "This doesn't end in a media file extension. It may still work — use Check link to find out before scheduling.",
+  };
+}
+
+/**
+ * Which URL publishing should actually send. External wins when set: it's
+ * the full-size asset, where an upload may have been compressed to fit.
+ */
+export function resolveMediaUrl(output: { media_source_url?: string | null; media_url?: string | null }): string | null {
+  const external = (output.media_source_url ?? "").trim();
+  if (external) return external;
+  const uploaded = (output.media_url ?? "").trim();
+  return uploaded || null;
+}
+
+export function resolveThumbnailUrl(output: {
+  thumbnail_source_url?: string | null;
+  thumbnail_url?: string | null;
+}): string | null {
+  const uploaded = (output.thumbnail_url ?? "").trim();
+  if (uploaded) return uploaded;
+  const external = (output.thumbnail_source_url ?? "").trim();
+  return external || null;
+}

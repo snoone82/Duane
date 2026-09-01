@@ -978,6 +978,7 @@ export type Database = {
           id: string
           live_url: string
           media_path: string | null
+          media_source_url: string
           media_url: string | null
           notes: string
           platform: string
@@ -989,6 +990,7 @@ export type Database = {
           sort_order: number
           status: string
           thumbnail_path: string | null
+          thumbnail_source_url: string
           thumbnail_url: string | null
           updated_at: string
           views: number | null
@@ -1008,6 +1010,7 @@ export type Database = {
           id?: string
           live_url?: string
           media_path?: string | null
+          media_source_url?: string
           media_url?: string | null
           notes?: string
           platform: string
@@ -1019,6 +1022,7 @@ export type Database = {
           sort_order?: number
           status?: string
           thumbnail_path?: string | null
+          thumbnail_source_url?: string
           thumbnail_url?: string | null
           updated_at?: string
           views?: number | null
@@ -1038,6 +1042,7 @@ export type Database = {
           id?: string
           live_url?: string
           media_path?: string | null
+          media_source_url?: string
           media_url?: string | null
           notes?: string
           platform?: string
@@ -1049,6 +1054,7 @@ export type Database = {
           sort_order?: number
           status?: string
           thumbnail_path?: string | null
+          thumbnail_source_url?: string
           thumbnail_url?: string | null
           updated_at?: string
           views?: number | null

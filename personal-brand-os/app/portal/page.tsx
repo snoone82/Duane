@@ -8,6 +8,8 @@ import { contentStatusMeta, actionStatusMeta } from "@/lib/status";
 import { signoffStatusMeta } from "@/lib/signoff-snapshot";
 import { formatDate, formatRelativeToToday, formatDateTime, socialAccountLabel } from "@/lib/format";
 import { thumbUrl } from "@/lib/media";
+import { getCadenceForClient, CADENCE_STAGES } from "@/lib/data/cadence";
+import { cadenceLabel, type CadenceState } from "@/lib/platform-strategy";
 
 export const metadata = { title: "Dashboard" };
 
@@ -53,6 +55,9 @@ export default async function PortalDashboardPage() {
   const { client, can, userId } = context;
 
   const supabase = await createClient();
+  // Cadence uses the shared calculation, so the client and the Aligned Media
+  // team always see the same numbers (Duane's condition for surfacing it).
+  const cadence = await getCadenceForClient(supabase, context.client.id);
   const today = new Date().toISOString().slice(0, 10);
   const weekAhead = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
   const fortnightAgo = new Date(Date.now() - 14 * 86400000).toISOString();
@@ -282,6 +287,71 @@ export default async function PortalDashboardPage() {
             <p className="text-sm text-ink-faint">Nothing in the pipeline yet.</p>
           )}
         </Card>
+
+        {/* Content cadence (Duane, 1 Sep): the client's quick answer to
+            "what's planned this month, and what's ready to go out?" — using
+            the same calculation as the admin Content tab, never its own. */}
+        {cadence.accounts.length > 0 && can("view_content") && (
+          <Card
+            title={`Content cadence · ${cadence.monthLabel}`}
+            action={<CardLink href="/portal/content">Content →</CardLink>}
+          >
+            <ul className="space-y-3">
+              {cadence.accounts.map((row) => {
+                const tone: Record<CadenceState, string> = {
+                  under: "text-amber-500",
+                  on_track: "text-success",
+                  over: "text-accent",
+                  untracked: "text-ink-faint",
+                };
+                const note =
+                  row.status.state === "under" ? "Below target"
+                  : row.status.state === "on_track" ? "On target"
+                  : row.status.state === "over" ? "Above target"
+                  : "";
+                const bar =
+                  row.status.state === "under" ? "bg-amber-500"
+                  : row.status.state === "on_track" ? "bg-success"
+                  : row.status.state === "over" ? "bg-accent"
+                  : "bg-ink-faint/40";
+                const pct = row.status.target ? Math.min(100, Math.round((row.status.planned / row.status.target) * 100)) : 0;
+                const stageBits = CADENCE_STAGES.filter((s) => row.stages[s.key] > 0);
+                return (
+                  <li key={row.account.id}>
+                    <div className="mb-1 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+                      <span className="min-w-0 text-sm text-ink">{row.label}</span>
+                      <span className={`text-xs tabular-nums ${tone[row.status.state]}`}>
+                        {row.status.label}
+                        {note && ` · ${note}`}
+                      </span>
+                    </div>
+                    {row.status.target === null ? (
+                      <p className="text-xs text-ink-faint">{cadenceLabel(row.account)}</p>
+                    ) : (
+                      <div className="h-1.5 overflow-hidden rounded-full bg-surface-muted">
+                        <div className={`h-full rounded-full ${bar}`} style={{ width: `${Math.max(pct, 2)}%` }} />
+                      </div>
+                    )}
+                    {stageBits.length > 0 && (
+                      <p className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-ink-faint">
+                        {stageBits.map((s) => (
+                          <span key={s.key}>
+                            <span className="tabular-nums text-ink-soft">{row.stages[s.key]}</span> {s.label.toLowerCase()}
+                          </span>
+                        ))}
+                      </p>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+            <p className="mt-3 border-t border-border pt-2 text-xs text-ink-faint">
+              <Link href="/portal/calendar" className="text-accent underline-offset-2 hover:underline">
+                See the dates on the calendar →
+              </Link>
+            </p>
+          </Card>
+        )}
 
         <Card title="Strategy status" action={can("view_strategy") ? <CardLink href="/portal/signoff">Sign-off →</CardLink> : undefined}>
           {latestPack ? (

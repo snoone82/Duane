@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentProfile } from "@/lib/current-user";
 import { runAction, type ActionResult } from "@/lib/action-result";
 import { UserFacingError } from "@/lib/errors";
+import { resolveMediaUrl, inspectMediaUrl } from "@/lib/media-source";
 import { rollUpMasterStatus } from "@/lib/actions/content";
 import {
   AYRSHARE_PLATFORMS,
@@ -143,8 +144,22 @@ export async function sendOutputToAyrshare(clientId: string, outputId: string): 
     }
     const caption = output.caption.trim();
     if (!caption) throw new UserFacingError("Write the final caption before publishing.");
-    if (MEDIA_REQUIRED_PLATFORMS.includes(platform) && !output.media_url) {
-      throw new UserFacingError(`${platform} posts need media — upload it to this version's media slot first.`);
+    // External media wins over an upload: it's the full-size asset, where an
+    // upload may have been compressed to fit the storage cap.
+    const mediaUrl = resolveMediaUrl(output);
+    if (MEDIA_REQUIRED_PLATFORMS.includes(platform) && !mediaUrl) {
+      throw new UserFacingError(
+        `${platform} posts need media — upload it to this version, or paste a media URL for the file hosted elsewhere.`
+      );
+    }
+    // Ayrshare fetches this URL itself, anonymously. A viewer page behind a
+    // sign-in fails at publish time with something unhelpful, so refuse the
+    // obvious cases here instead.
+    if (output.media_source_url.trim()) {
+      const verdict = inspectMediaUrl(output.media_source_url);
+      if (verdict?.kind === "bad") {
+        throw new UserFacingError(`That media URL can't be published: ${verdict.message}`);
+      }
     }
 
     let profileKey: string | null = null;
@@ -169,7 +184,7 @@ export async function sendOutputToAyrshare(clientId: string, outputId: string): 
       result = await sendAyrsharePost({
         post,
         platform,
-        mediaUrls: output.media_url ? [output.media_url] : undefined,
+        mediaUrls: mediaUrl ? [mediaUrl] : undefined,
         scheduleDate,
         profileKey,
       });
