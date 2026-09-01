@@ -38,7 +38,7 @@ function NavList({ items, pathname }: { items: PortalNavItem[]; pathname: string
   );
 }
 
-function AccountFooter({ clientName, personName }: { clientName: string; personName: string }) {
+function AccountFooter({ clientName, personName, previewing }: { clientName: string; personName: string; previewing?: boolean }) {
   return (
     <div className="border-t border-border p-4">
       <div className="mb-2 flex items-center gap-2 px-1">
@@ -50,14 +50,21 @@ function AccountFooter({ clientName, personName }: { clientName: string; personN
           <p className="truncate text-xs text-ink-faint">{clientName}</p>
         </div>
       </div>
-      <form action={signOut}>
-        <button
-          type="submit"
-          className="w-full rounded-md px-3 py-2 text-left text-sm text-ink-soft hover:bg-surface-muted hover:text-ink"
-        >
-          Sign out
-        </button>
-      </form>
+      {previewing ? (
+        <p className="px-3 py-2 text-xs text-ink-faint">
+          Viewing as this person. Use <span className="font-medium text-ink-soft">Exit user view</span> at the top to return
+          to your workspace.
+        </p>
+      ) : (
+        <form action={signOut}>
+          <button
+            type="submit"
+            className="w-full rounded-md px-3 py-2 text-left text-sm text-ink-soft hover:bg-surface-muted hover:text-ink"
+          >
+            Sign out
+          </button>
+        </form>
+      )}
     </div>
   );
 }
@@ -66,10 +73,12 @@ export function PortalSidebar({
   items,
   clientName,
   personName,
+  previewing,
 }: {
   items: PortalNavItem[];
   clientName: string;
   personName: string;
+  previewing?: boolean;
 }) {
   const pathname = usePathname();
 
@@ -82,7 +91,7 @@ export function PortalSidebar({
       <nav aria-label="Portal sections" className="flex-1 space-y-2 overflow-y-auto p-4 pt-5">
         <NavList items={items} pathname={pathname} />
       </nav>
-      <AccountFooter clientName={clientName} personName={personName} />
+      <AccountFooter clientName={clientName} personName={personName} previewing={previewing} />
     </aside>
   );
 }
@@ -91,10 +100,12 @@ export function PortalMobileHeader({
   items,
   clientName,
   personName,
+  previewing,
 }: {
   items: PortalNavItem[];
   clientName: string;
   personName: string;
+  previewing?: boolean;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const pathname = usePathname();
@@ -137,7 +148,7 @@ export function PortalMobileHeader({
             <nav aria-label="Portal sections" className="flex-1 space-y-1.5 overflow-y-auto p-4">
               <NavList items={items} pathname={pathname} />
             </nav>
-            <AccountFooter clientName={clientName} personName={personName} />
+            <AccountFooter clientName={clientName} personName={personName} previewing={previewing} />
           </div>
         </div>
       )}

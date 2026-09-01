@@ -16,8 +16,8 @@ export function PreviewBanner({ name }: { name: string }) {
     <div className="sticky top-0 z-50 border-b border-amber-500/40 bg-amber-500/15 backdrop-blur">
       <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-2 px-4 py-2">
         <p className="text-sm text-ink">
-          <span className="font-semibold">Previewing as {name}</span>
-          <span className="text-ink-soft"> — read only. Nothing you do here can change anything or reach the client.</span>
+          <span className="font-semibold">Viewing as {name} — preview mode, read only</span>
+          <span className="text-ink-soft"> · This is their view, with their permissions. Nothing here can change anything or reach the client.</span>
         </p>
         <button
           type="button"
@@ -32,7 +32,7 @@ export function PreviewBanner({ name }: { name: string }) {
           className="flex-shrink-0 rounded-md border border-amber-500/50 bg-surface px-3 py-1 text-xs font-medium text-ink transition-colors hover:bg-surface-muted disabled:opacity-60"
           disabled={isExiting}
         >
-          {isExiting ? "Exiting…" : "Exit preview"}
+          {isExiting ? "Exiting…" : "Exit user view"}
         </button>
       </div>
     </div>

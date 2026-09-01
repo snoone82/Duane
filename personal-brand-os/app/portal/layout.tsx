@@ -17,10 +17,13 @@ export default async function PortalLayout({ children }: { children: React.React
   if (!user) redirect("/login");
 
   const profile = await getCurrentProfile();
-  // Team roles have the full workspace — the portal is only for client accounts.
-  if (profile && profile.role !== "client") redirect("/");
-
   const context = await getPortalContext();
+
+  // Team roles have the full workspace — the portal is only for client
+  // accounts, with one exception: an admin running a read-only View as User
+  // preview. getPortalContext() only returns a preview for an admin whose
+  // cookie names a real portal user, so this can't widen access on its own.
+  if (profile && profile.role !== "client" && !context?.preview) redirect("/");
 
   if (!profile || !context) {
     return (
@@ -60,8 +63,8 @@ export default async function PortalLayout({ children }: { children: React.React
     <div className="flex h-dvh flex-col overflow-hidden">
       {context.preview && <PreviewBanner name={context.preview.name} />}
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden md:flex-row">
-      <PortalMobileHeader items={navItems} clientName={context.client.name} personName={personName} />
-      <PortalSidebar items={navItems} clientName={context.client.name} personName={personName} />
+      <PortalMobileHeader items={navItems} clientName={context.client.name} personName={personName} previewing={Boolean(context.preview)} />
+      <PortalSidebar items={navItems} clientName={context.client.name} personName={personName} previewing={Boolean(context.preview)} />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <main className="min-w-0 flex-1 overflow-y-auto px-4 py-5 md:px-8 md:py-7">
           <div className="mx-auto w-full max-w-4xl">{children}</div>
