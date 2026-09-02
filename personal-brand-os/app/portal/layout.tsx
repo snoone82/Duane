@@ -66,9 +66,12 @@ export default async function PortalLayout({ children }: { children: React.React
       <PortalMobileHeader items={navItems} clientName={context.client.name} personName={personName} previewing={Boolean(context.preview)} />
       <PortalSidebar items={navItems} clientName={context.client.name} personName={personName} previewing={Boolean(context.preview)} />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <main className="min-w-0 flex-1 overflow-y-auto px-4 py-5 md:px-8 md:py-7">
-          <div className="mx-auto w-full max-w-4xl">{children}</div>
-        </main>
+        {/* Same metrics as the admin workspace: identical padding, and no
+            layout-level width cap - each page sets its own, exactly as the
+            admin pages do. The portal felt cramped because the content was
+            pinned to max-w-4xl and centred while the sidebar stayed the same
+            width, which read as an oversized sidebar. */}
+        <main className="min-w-0 flex-1 overflow-y-auto px-4 py-4 md:px-6 md:py-6">{children}</main>
       </div>
       </div>
     </div>

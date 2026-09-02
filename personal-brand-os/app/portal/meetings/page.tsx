@@ -20,7 +20,7 @@ export default async function PortalMeetingsPage() {
     .order("meeting_date", { ascending: false });
 
   return (
-    <div className="space-y-4">
+    <div className="max-w-4xl space-y-4">
       <p className="text-sm text-ink-soft">A record of your sessions with the team — what was covered and what&rsquo;s next.</p>
 
       {!meetings || meetings.length === 0 ? (

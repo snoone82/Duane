@@ -28,7 +28,7 @@ export default async function PortalAccountsPage() {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="max-w-3xl space-y-5">
       <p className="text-sm text-ink-soft">
         Connect the accounts you&rsquo;d like us to publish to on your behalf. You stay in control — access is granted by you,
         directly with each platform, and can be withdrawn whenever you choose.

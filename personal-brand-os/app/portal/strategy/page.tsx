@@ -59,7 +59,7 @@ export default async function PortalStrategyPage() {
     (socials?.length ?? 0) > 0;
 
   return (
-    <div className="space-y-4">
+    <div className="max-w-4xl space-y-4">
       <p className="text-sm text-ink-soft">
         The strategy behind your personal brand — kept up to date by the Aligned Media team. Tap a section to open it.
       </p>

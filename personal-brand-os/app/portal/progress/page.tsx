@@ -36,7 +36,7 @@ export default async function PortalProgressPage() {
   const hasAnything = platforms.length > 0 || (milestones?.length ?? 0) > 0;
 
   return (
-    <div className="space-y-4">
+    <div className="max-w-4xl space-y-4">
       <p className="text-sm text-ink-soft">How your brand is growing — audience numbers and the milestones along the way.</p>
 
       {!hasAnything && (

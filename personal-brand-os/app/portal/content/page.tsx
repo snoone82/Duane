@@ -102,7 +102,7 @@ export default async function PortalContentPage() {
   };
 
   return (
-    <div className="space-y-5">
+    <div className="max-w-4xl space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-ink-soft">Your content pipeline — what&rsquo;s planned, in production and recently published.</p>
         <AddIdeaButton />

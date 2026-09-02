@@ -40,7 +40,7 @@ export default async function PortalSignoffPage() {
     : [];
 
   return (
-    <div className="space-y-5">
+    <div className="max-w-3xl space-y-5">
       <p className="text-sm text-ink-soft">
         Your Personal Brand Strategy — review what&rsquo;s been agreed, approve it, or send it back with comments.
       </p>

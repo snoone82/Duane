@@ -61,7 +61,7 @@ export default async function PortalActionsPage() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="max-w-4xl space-y-6">
       <p className="text-sm text-ink-soft">
         The work being done for {context.client.name} — updates you make here go straight to the Aligned Media team.
       </p>
