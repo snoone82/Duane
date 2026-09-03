@@ -603,7 +603,21 @@ export async function removeOutputMedia(clientId: string, outputId: string, kind
         : { thumbnail_path: null, thumbnail_url: null };
     const { error } = await supabase.from("content_outputs").update(patch).eq("id", outputId);
     if (error) throw new Error(error.message);
-    if (oldPath) await supabase.storage.from(MEDIA_BUCKET).remove([oldPath]);
+
+    // Detach, don't destroy. Removing media from one platform version used to
+    // delete the underlying file, which cost Duane a 145 MB upload and made a
+    // working URL look like it had expired. It also becomes actively wrong
+    // once several versions share one master asset — so the object is only
+    // removed when nothing else still points at it.
+    if (oldPath) {
+      const [{ count: mediaRefs }, { count: thumbRefs }] = await Promise.all([
+        supabase.from("content_outputs").select("id", { count: "exact", head: true }).eq("media_path", oldPath),
+        supabase.from("content_outputs").select("id", { count: "exact", head: true }).eq("thumbnail_path", oldPath),
+      ]);
+      if ((mediaRefs ?? 0) === 0 && (thumbRefs ?? 0) === 0) {
+        await supabase.storage.from(MEDIA_BUCKET).remove([oldPath]);
+      }
+    }
 
     revalidateContent(clientId);
     return undefined;

@@ -51,6 +51,56 @@ interface AyrRequest {
   profileKey?: string | null;
 }
 
+/**
+ * Everything Ayrshare said when a call failed.
+ *
+ * Duane could only ever see "Ayrshare returned 400", which doesn't
+ * distinguish an unsupported codec from a wrong aspect ratio, a
+ * disconnected account or a media URL the platform couldn't fetch. All of it
+ * is carried here and stored against the platform version.
+ */
+export class AyrshareError extends UserFacingError {
+  readonly status: number;
+  readonly code: string | null;
+  readonly platform: string | null;
+  readonly postId: string | null;
+  /** The raw response body, pretty-printed, for the troubleshooting view. */
+  readonly body: string;
+
+  constructor(input: {
+    message: string;
+    status: number;
+    code?: string | null;
+    platform?: string | null;
+    postId?: string | null;
+    body: unknown;
+  }) {
+    super(input.message);
+    this.name = "AyrshareError";
+    this.status = input.status;
+    this.code = input.code ?? null;
+    this.platform = input.platform ?? null;
+    this.postId = input.postId ?? null;
+    this.body = JSON.stringify(input.body, null, 2);
+  }
+
+  /** One block of text holding everything worth keeping, stored verbatim. */
+  toRecord(): string {
+    return [
+      `HTTP status: ${this.status}`,
+      this.code ? `Ayrshare code: ${this.code}` : null,
+      this.platform ? `Platform: ${this.platform}` : null,
+      this.postId ? `Ayrshare post id: ${this.postId}` : null,
+      `Message: ${this.message}`,
+      "",
+      "Full response:",
+      this.body,
+    ]
+      .filter((line): line is string => line !== null)
+      .join("\n");
+  }
+}
+
 async function ayr<T = Record<string, unknown>>(path: string, options: AyrRequest = {}): Promise<T> {
   const key = process.env.AYRSHARE_API_KEY?.trim();
   if (!key) throw new UserFacingError("Ayrshare isn't configured — add AYRSHARE_API_KEY in Vercel and redeploy.");
@@ -68,15 +118,40 @@ async function ayr<T = Record<string, unknown>>(path: string, options: AyrReques
 
   const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
   if (!response.ok || data.status === "error") {
-    // Surface Ayrshare's own message (safe — our key is in the header, never
-    // echoed in their error bodies), fall back to the HTTP status.
-    const errors = Array.isArray(data.errors)
-      ? (data.errors as { message?: string; msg?: string }[]).map((e) => e.message ?? e.msg).filter(Boolean)
-      : [];
-    const message = errors.join("; ") || (typeof data.message === "string" ? data.message : "") || `Ayrshare returned ${response.status}`;
-    // Also log server-side so Vercel's runtime logs carry the detail.
-    console.error(`Ayrshare ${options.method ?? "GET"} ${path} failed:`, message);
-    throw new UserFacingError(message);
+    // Ayrshare nests the useful part differently depending on where the
+    // failure happened — its own validation, or the platform pushing back —
+    // so look in both, and keep the whole body either way.
+    const errorList = Array.isArray(data.errors) ? (data.errors as Record<string, unknown>[]) : [];
+    const posts = Array.isArray(data.postIds) ? (data.postIds as Record<string, unknown>[]) : [];
+    const platformError = posts.find((post) => post.status === "error" || post.errorMessage);
+    const first: Record<string, unknown> = errorList[0] ?? platformError ?? {};
+
+    const pick = (...keys: string[]): string | null => {
+      for (const key of keys) {
+        const value = first[key] ?? data[key];
+        if (typeof value === "string" && value.trim()) return value.trim();
+      }
+      return null;
+    };
+
+    const message =
+      pick("message", "msg", "errorMessage", "error") ||
+      errorList.map((e) => e.message ?? e.msg).filter(Boolean).join("; ") ||
+      `Ayrshare returned ${response.status}`;
+
+    const rawCode = first.code ?? data.code;
+    // Server-side log carries the whole body for Vercel's runtime logs. Our
+    // API key lives in the request header and is never echoed back, so the
+    // response body is safe to record.
+    console.error(`Ayrshare ${options.method ?? "GET"} ${path} failed:`, JSON.stringify(data));
+    throw new AyrshareError({
+      message,
+      status: response.status,
+      code: rawCode === undefined || rawCode === null ? null : String(rawCode),
+      platform: pick("platform"),
+      postId: pick("id", "postId", "refId"),
+      body: data,
+    });
   }
   return data as T;
 }
@@ -153,6 +228,10 @@ export async function sendAyrsharePost(input: {
   post: string;
   platform: string;
   mediaUrls?: string[];
+  /** Tell Ayrshare the media is video. A Supabase signed URL ends in a token
+   * rather than ".mp4", so Ayrshare can't infer the type from the path — and
+   * a video treated as an image is rejected by the platform. */
+  isVideo?: boolean;
   scheduleDate?: string; // ISO — omit to publish immediately
   profileKey?: string | null;
 }): Promise<AyrsharePostResult> {
@@ -166,6 +245,7 @@ export async function sendAyrsharePost(input: {
       post: input.post,
       platforms: [input.platform],
       ...(input.mediaUrls && input.mediaUrls.length > 0 ? { mediaUrls: input.mediaUrls } : {}),
+      ...(input.isVideo ? { isVideo: true } : {}),
       ...(input.scheduleDate ? { scheduleDate: input.scheduleDate } : {}),
     },
     profileKey: input.profileKey,

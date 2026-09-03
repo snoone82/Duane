@@ -80,13 +80,39 @@ export async function checkMediaUrl(url: string): Promise<ActionResult<MediaChec
       }
 
       if (isMedia) {
+        // Ayrshare fetching it is only half the story. For Instagram and
+        // Facebook, Meta's own crawler retrieves the media during publishing,
+        // and it can be blocked where Ayrshare isn't — which produces a 400
+        // at the platform with nothing useful attached. So ask as Meta.
+        let metaNote = "";
+        try {
+          const metaResponse = await fetch(trimmed, {
+            method: "GET",
+            headers: {
+              Range: "bytes=0-0",
+              "User-Agent": "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)",
+            },
+            redirect: "follow",
+            signal: controller.signal,
+          });
+          const metaType = metaResponse.headers.get("content-type") ?? "";
+          metaNote =
+            metaResponse.ok || metaResponse.status === 206
+              ? /^(video|image)\//i.test(metaType)
+                ? " Meta's crawler can fetch it too, so Instagram and Facebook will be able to read it."
+                : ` Meta's crawler reached it but got ${metaType || "an unknown type"} — worth watching if Instagram rejects the post.`
+              : ` But Meta's crawler got ${metaResponse.status}, so Instagram and Facebook would fail even though Ayrshare can read it.`;
+        } catch {
+          metaNote = " Couldn't complete the Meta crawler check — Ayrshare can read it, but Instagram may not.";
+        }
+
         return {
           reachable: true,
           contentType,
           sizeBytes,
           status: response.status,
-          verdict: "ok" as const,
-          message: `Good — ${contentType}${sizeBytes ? `, ${pretty(sizeBytes)}` : ""}. Ayrshare can fetch this directly.`,
+          verdict: metaNote.startsWith(" But") ? ("warn" as const) : ("ok" as const),
+          message: `Good — ${contentType}${sizeBytes ? `, ${pretty(sizeBytes)}` : ""}. Ayrshare can fetch this directly.${metaNote}`,
         };
       }
 

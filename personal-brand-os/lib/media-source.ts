@@ -103,3 +103,23 @@ export function resolveThumbnailUrl(output: {
   const external = (output.thumbnail_source_url ?? "").trim();
   return external || null;
 }
+
+const VIDEO_EXTENSIONS = /\.(mp4|mov|m4v|webm|avi|mkv)(\?|$)/i;
+
+/**
+ * Is this platform version's media a video?
+ *
+ * Ayrshare normally infers the type from the URL, but a Supabase signed URL
+ * ends in a token rather than ".mp4" — so it has to be told. The stored
+ * object path keeps its real extension, which is the reliable signal.
+ */
+export function isVideoMedia(
+  output: { media_path?: string | null; media_source_url?: string | null; format?: string | null },
+  resolvedUrl: string | null
+): boolean {
+  if (output.media_path && VIDEO_EXTENSIONS.test(output.media_path)) return true;
+  if (resolvedUrl && VIDEO_EXTENSIONS.test(resolvedUrl)) return true;
+  // Last resort: the version's own format field ("Reel", "Short", "Video").
+  const format = (output.format ?? "").toLowerCase();
+  return /reel|short|video|clip/.test(format);
+}

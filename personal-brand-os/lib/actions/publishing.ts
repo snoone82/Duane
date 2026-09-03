@@ -5,9 +5,10 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentProfile } from "@/lib/current-user";
 import { runAction, type ActionResult } from "@/lib/action-result";
 import { UserFacingError } from "@/lib/errors";
-import { resolveMediaUrl, inspectMediaUrl } from "@/lib/media-source";
+import { resolveMediaUrl, inspectMediaUrl, isVideoMedia } from "@/lib/media-source";
 import { rollUpMasterStatus } from "@/lib/actions/content";
 import {
+  AyrshareError,
   AYRSHARE_PLATFORMS,
   MEDIA_REQUIRED_PLATFORMS,
   createAyrshareProfile,
@@ -144,9 +145,29 @@ export async function sendOutputToAyrshare(clientId: string, outputId: string): 
     }
     const caption = output.caption.trim();
     if (!caption) throw new UserFacingError("Write the final caption before publishing.");
-    // External media wins over an upload: it's the full-size asset, where an
-    // upload may have been compressed to fit the storage cap.
-    const mediaUrl = resolveMediaUrl(output);
+    // Duane's architecture point, and a real bug for scheduled posts: the
+    // signed URL stored at upload time is a snapshot. What's durable is the
+    // object's PATH, so mint a fresh URL at the moment the post is handed
+    // over. An explicitly-pasted external URL still wins — that's a
+    // deliberate override.
+    let mediaUrl = resolveMediaUrl(output);
+    if (!output.media_source_url.trim() && output.media_path) {
+      const { data: fresh, error: signError } = await supabase.storage
+        .from("client-files")
+        // A year: long enough that a post scheduled months out is still
+        // fetchable when the platform actually comes for it.
+        .createSignedUrl(output.media_path, 60 * 60 * 24 * 365);
+      if (signError || !fresh) {
+        throw new UserFacingError(
+          `Couldn't create a media link for this version (${signError?.message ?? "unknown error"}). Re-upload the file and try again.`
+        );
+      }
+      mediaUrl = fresh.signedUrl;
+    }
+
+    // A signed URL carries no file extension, so tell Ayrshare explicitly
+    // whether this is video rather than letting it guess from the path.
+    const isVideo = isVideoMedia(output, mediaUrl);
     if (MEDIA_REQUIRED_PLATFORMS.includes(platform) && !mediaUrl) {
       throw new UserFacingError(
         `${platform} posts need media — upload it to this version, or paste a media URL for the file hosted elsewhere.`
@@ -185,12 +206,28 @@ export async function sendOutputToAyrshare(clientId: string, outputId: string): 
         post,
         platform,
         mediaUrls: mediaUrl ? [mediaUrl] : undefined,
+        isVideo,
         scheduleDate,
         profileKey,
       });
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Publishing failed.";
-      await supabase.from("content_outputs").update({ publish_error: message }).eq("id", outputId);
+      // Record everything Ayrshare said, not just the status. What's stored
+      // is what Duane sees on the version, so a failed post explains itself
+      // instead of needing a developer to read the logs.
+      const record =
+        err instanceof AyrshareError
+          ? [
+              err.toRecord(),
+              "",
+              `Media URL submitted: ${mediaUrl ?? "(none)"}`,
+              `Sent as video: ${isVideo ? "yes" : "no"}`,
+              `Publishing connection: ${profileKey ? "client profile" : "primary Ayrshare account"}`,
+              `Attempted: ${new Date().toISOString()}`,
+            ].join("\n")
+          : err instanceof Error
+            ? err.message
+            : "Publishing failed.";
+      await supabase.from("content_outputs").update({ publish_error: record }).eq("id", outputId);
       revalidateContent(clientId);
       throw err;
     }

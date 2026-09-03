@@ -246,7 +246,28 @@ export function ContentOutputRow({
         <AutosaveTextarea id={`out-notes-${output.id}`} label="Notes" initialValue={output.notes} onSave={save("notes")} rows={2} />
 
         {output.publish_error && !notice && (
-          <p className="text-xs text-danger">Last publish attempt failed: {output.publish_error}</p>
+          // The first line is the readable reason; everything under it is the
+          // full Ayrshare response, tucked away but there when a publish
+          // failure needs diagnosing rather than just reporting.
+          <div className="rounded-md border border-danger/40 bg-danger/5 px-3 py-2">
+            <p className="text-xs font-medium text-danger">
+              Last publish attempt failed
+              {(() => {
+                const line = output.publish_error.split("\n").find((l) => l.startsWith("Message: "));
+                return line ? `: ${line.replace("Message: ", "")}` : `: ${output.publish_error.split("\n")[0]}`;
+              })()}
+            </p>
+            {output.publish_error.includes("\n") && (
+              <details className="mt-1">
+                <summary className="cursor-pointer text-xs text-ink-faint hover:text-ink-soft">
+                  Full response from Ayrshare
+                </summary>
+                <pre className="mt-1.5 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded bg-surface-muted/60 p-2 text-[11px] leading-relaxed text-ink-soft">
+                  {output.publish_error}
+                </pre>
+              </details>
+            )}
+          </div>
         )}
         {notice && <p className="text-xs text-success">{notice}</p>}
         {error && <p className="text-xs text-danger">{error}</p>}
