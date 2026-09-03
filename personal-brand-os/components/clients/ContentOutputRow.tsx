@@ -18,7 +18,7 @@ import {
   publishContentOutput,
   assignOutputAccount,
 } from "@/lib/actions/content";
-import { sendOutputToAyrshare, refreshAyrshareOutput } from "@/lib/actions/publishing";
+import { sendOutputToAyrshare, refreshAyrshareOutput, pullOutputPerformance } from "@/lib/actions/publishing";
 import { outputStatusMeta, type OutputStatus } from "@/lib/status";
 import { OutputMediaSlot } from "@/components/clients/OutputMediaSlot";
 import { formatDateTime } from "@/lib/format";
@@ -90,6 +90,16 @@ export function ContentOutputRow({
       const result = await sendOutputToAyrshare(clientId, output.id);
       if (!result.ok) setError(result.message);
       else setNotice(result.data ?? "Done.");
+    });
+  }
+
+  function handlePullPerformance() {
+    setError(null);
+    setNotice(null);
+    startTransition(async () => {
+      const result = await pullOutputPerformance(clientId, output.id);
+      if (result.ok) setNotice(result.data);
+      else setError(result.message);
     });
   }
 
@@ -314,6 +324,21 @@ export function ContentOutputRow({
           <AutosaveInput id={`out-eng-${output.id}`} label="Engagement" type="number" initialValue={output.engagement?.toString() ?? ""} onSave={save("engagement")} />
           <AutosaveInput id={`out-views-${output.id}`} label="Views" type="number" initialValue={output.views?.toString() ?? ""} onSave={save("views")} />
         </div>
+        {(ayrshareEnabled && output.status === "published" && output.ayrshare_post_id) || output.analytics_at ? (
+          <div className="flex flex-wrap items-center gap-2 text-xs text-ink-faint">
+            {ayrshareEnabled && output.status === "published" && output.ayrshare_post_id && (
+              <Button variant="ghost" size="sm" onClick={handlePullPerformance} disabled={isBusy}>
+                {output.analytics_at ? "Refresh from Ayrshare" : "Pull performance from Ayrshare"}
+              </Button>
+            )}
+            {output.analytics_at && (
+              <span>
+                Likes {output.likes ?? "—"} · Comments {output.comments ?? "—"} · Shares {output.shares ?? "—"} · pulled{" "}
+                {formatDateTime(output.analytics_at)}
+              </span>
+            )}
+          </div>
+        ) : null}
         <AutosaveTextarea id={`out-notes-${output.id}`} label="Notes" initialValue={output.notes} onSave={save("notes")} rows={2} />
 
         {output.publish_error && !notice && (

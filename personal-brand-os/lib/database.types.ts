@@ -986,9 +986,12 @@ export type Database = {
       content_outputs: {
         Row: {
           alt_text: string
+          analytics_at: string | null
+          analytics_raw: Json | null
           ayrshare_post_id: string
           caption: string
           client_id: string
+          comments: number | null
           content_id: string
           created_at: string
           cta: string
@@ -997,6 +1000,7 @@ export type Database = {
           format: string
           hashtags: string
           id: string
+          likes: number | null
           live_url: string
           media_path: string | null
           media_source_url: string
@@ -1007,6 +1011,7 @@ export type Database = {
           published_at: string | null
           reach: number | null
           scheduled_at: string | null
+          shares: number | null
           social_account_id: string | null
           sort_order: number
           status: string
@@ -1018,9 +1023,12 @@ export type Database = {
         }
         Insert: {
           alt_text?: string
+          analytics_at?: string | null
+          analytics_raw?: Json | null
           ayrshare_post_id?: string
           caption?: string
           client_id: string
+          comments?: number | null
           content_id: string
           created_at?: string
           cta?: string
@@ -1029,6 +1037,7 @@ export type Database = {
           format?: string
           hashtags?: string
           id?: string
+          likes?: number | null
           live_url?: string
           media_path?: string | null
           media_source_url?: string
@@ -1039,6 +1048,7 @@ export type Database = {
           published_at?: string | null
           reach?: number | null
           scheduled_at?: string | null
+          shares?: number | null
           social_account_id?: string | null
           sort_order?: number
           status?: string
@@ -1050,9 +1060,12 @@ export type Database = {
         }
         Update: {
           alt_text?: string
+          analytics_at?: string | null
+          analytics_raw?: Json | null
           ayrshare_post_id?: string
           caption?: string
           client_id?: string
+          comments?: number | null
           content_id?: string
           created_at?: string
           cta?: string
@@ -1061,6 +1074,7 @@ export type Database = {
           format?: string
           hashtags?: string
           id?: string
+          likes?: number | null
           live_url?: string
           media_path?: string | null
           media_source_url?: string
@@ -1071,6 +1085,7 @@ export type Database = {
           published_at?: string | null
           reach?: number | null
           scheduled_at?: string | null
+          shares?: number | null
           social_account_id?: string | null
           sort_order?: number
           status?: string
