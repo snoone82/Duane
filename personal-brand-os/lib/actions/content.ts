@@ -606,18 +606,10 @@ export async function removeOutputMedia(clientId: string, outputId: string, kind
 
     // Detach, don't destroy. Removing media from one platform version used to
     // delete the underlying file, which cost Duane a 145 MB upload and made a
-    // working URL look like it had expired. It also becomes actively wrong
-    // once several versions share one master asset — so the object is only
-    // removed when nothing else still points at it.
-    if (oldPath) {
-      const [{ count: mediaRefs }, { count: thumbRefs }] = await Promise.all([
-        supabase.from("content_outputs").select("id", { count: "exact", head: true }).eq("media_path", oldPath),
-        supabase.from("content_outputs").select("id", { count: "exact", head: true }).eq("thumbnail_path", oldPath),
-      ]);
-      if ((mediaRefs ?? 0) === 0 && (thumbRefs ?? 0) === 0) {
-        await supabase.storage.from(MEDIA_BUCKET).remove([oldPath]);
-      }
-    }
+    // working URL look like it had expired. With master media shared across
+    // versions it would be actively destructive, so the object only goes once
+    // nothing — idea or version — still points at it.
+    if (oldPath) await removeObjectIfUnreferenced(supabase, oldPath);
 
     revalidateContent(clientId);
     return undefined;
@@ -643,4 +635,106 @@ export async function unscheduleContentOutput(clientId: string, outputId: string
     revalidateContent(clientId);
     return undefined;
   });
+}
+
+// ---------------------------------------------------------------------------
+// Master media on the content idea (Duane, 3 Sep 2026)
+// ---------------------------------------------------------------------------
+
+/**
+ * Attach the master asset to a content idea. Every platform version with no
+ * media of its own then inherits it automatically — Duane chose inheritance
+ * over a copy button, so there is nothing to click per platform and nothing
+ * is duplicated in storage.
+ */
+export async function attachIdeaMedia(
+  clientId: string,
+  ideaId: string,
+  kind: MediaKind,
+  storagePath: string
+): Promise<ActionResult> {
+  if (!MEDIA_KINDS.includes(kind)) return { ok: false, message: "Unknown media slot." };
+
+  return runAction(async () => {
+    const supabase = await createClient();
+    const { data: existing, error: readError } = await supabase
+      .from("content_ideas")
+      .select("media_path,thumbnail_path,client_id")
+      .eq("id", ideaId)
+      .single();
+    if (readError) throw new Error(readError.message);
+    if (existing.client_id !== clientId) throw new Error("That content idea belongs to a different client.");
+
+    // The signed URL here is only for previewing in the admin UI. Publishing
+    // always mints a fresh one from the path.
+    const { data: signed, error: signError } = await supabase.storage
+      .from(MEDIA_BUCKET)
+      .createSignedUrl(storagePath, 60 * 60 * 24 * 365 * 10);
+    if (signError || !signed) {
+      throw new Error(signError?.message ?? "Couldn't create the media link — was the upload interrupted?");
+    }
+
+    const patch =
+      kind === "media"
+        ? { media_path: storagePath, media_url: signed.signedUrl }
+        : { thumbnail_path: storagePath, thumbnail_url: signed.signedUrl };
+    const { error } = await supabase.from("content_ideas").update(patch).eq("id", ideaId);
+    if (error) throw new Error(error.message);
+
+    const oldPath = kind === "media" ? existing.media_path : existing.thumbnail_path;
+    if (oldPath && oldPath !== storagePath) await removeObjectIfUnreferenced(supabase, oldPath);
+
+    revalidateContent(clientId);
+    return undefined;
+  });
+}
+
+export async function removeIdeaMedia(clientId: string, ideaId: string, kind: MediaKind): Promise<ActionResult> {
+  if (!MEDIA_KINDS.includes(kind)) return { ok: false, message: "Unknown media slot." };
+
+  return runAction(async () => {
+    const supabase = await createClient();
+    const { data: existing, error: readError } = await supabase
+      .from("content_ideas")
+      .select("media_path,thumbnail_path,client_id")
+      .eq("id", ideaId)
+      .single();
+    if (readError) throw new Error(readError.message);
+    if (existing.client_id !== clientId) throw new Error("That content idea belongs to a different client.");
+
+    const oldPath = kind === "media" ? existing.media_path : existing.thumbnail_path;
+    const patch =
+      kind === "media"
+        ? { media_path: null, media_url: null }
+        : { thumbnail_path: null, thumbnail_url: null };
+    const { error } = await supabase.from("content_ideas").update(patch).eq("id", ideaId);
+    if (error) throw new Error(error.message);
+
+    if (oldPath) await removeObjectIfUnreferenced(supabase, oldPath);
+
+    revalidateContent(clientId);
+    return undefined;
+  });
+}
+
+/**
+ * Delete the stored object only once nothing points at it any more.
+ *
+ * Removing media used to delete the file outright, which cost Duane a 145 MB
+ * upload. With master media shared across platform versions it would be
+ * actively destructive — so every reference, idea and version alike, has to
+ * be gone first.
+ */
+async function removeObjectIfUnreferenced(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  path: string
+): Promise<void> {
+  const counts = await Promise.all([
+    supabase.from("content_outputs").select("id", { count: "exact", head: true }).eq("media_path", path),
+    supabase.from("content_outputs").select("id", { count: "exact", head: true }).eq("thumbnail_path", path),
+    supabase.from("content_ideas").select("id", { count: "exact", head: true }).eq("media_path", path),
+    supabase.from("content_ideas").select("id", { count: "exact", head: true }).eq("thumbnail_path", path),
+  ]);
+  const stillUsed = counts.some(({ count }) => (count ?? 0) > 0);
+  if (!stillUsed) await supabase.storage.from(MEDIA_BUCKET).remove([path]);
 }

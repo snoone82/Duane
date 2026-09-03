@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentProfile } from "@/lib/current-user";
 import { runAction, type ActionResult } from "@/lib/action-result";
 import { UserFacingError } from "@/lib/errors";
-import { resolveMediaUrl, inspectMediaUrl, isVideoMedia } from "@/lib/media-source";
+import { inspectMediaUrl, isVideoMedia, resolveMedia } from "@/lib/media-source";
 import { rollUpMasterStatus } from "@/lib/actions/content";
 import {
   AyrshareError,
@@ -149,18 +149,27 @@ export async function sendOutputToAyrshare(clientId: string, outputId: string): 
     }
     const caption = output.caption.trim();
     if (!caption) throw new UserFacingError("Write the final caption before publishing.");
-    // Duane's architecture point, and a real bug for scheduled posts: the
+    // Master media inheritance: this version's own media if it has any,
+    // otherwise the content idea's master asset. Nothing is duplicated in
+    // storage — an inheriting version resolves straight to the idea's path.
+    const master = await supabase
+      .from("content_ideas")
+      .select("media_path,media_source_url,thumbnail_path,thumbnail_source_url")
+      .eq("id", output.content_id)
+      .maybeSingle();
+    const media = resolveMedia(output, master.data);
+
+    // Duane's architecture point, and a real bug for scheduled posts: a
     // signed URL stored at upload time is a snapshot. What's durable is the
-    // object's PATH, so mint a fresh URL at the moment the post is handed
-    // over. An explicitly-pasted external URL still wins — that's a
-    // deliberate override.
-    let mediaUrl = resolveMediaUrl(output);
-    if (!output.media_source_url.trim() && output.media_path) {
+    // object PATH, so mint a fresh URL at the moment the post is handed over.
+    // An explicitly-pasted external URL still wins — that's deliberate.
+    let mediaUrl = media.sourceUrl;
+    if (!mediaUrl && media.path) {
       const { data: fresh, error: signError } = await supabase.storage
         .from("client-files")
         // A year: long enough that a post scheduled months out is still
         // fetchable when the platform actually comes for it.
-        .createSignedUrl(output.media_path, 60 * 60 * 24 * 365);
+        .createSignedUrl(media.path, 60 * 60 * 24 * 365);
       if (signError || !fresh) {
         throw new UserFacingError(
           `Couldn't create a media link for this version (${signError?.message ?? "unknown error"}). Re-upload the file and try again.`
@@ -170,8 +179,9 @@ export async function sendOutputToAyrshare(clientId: string, outputId: string): 
     }
 
     // A signed URL carries no file extension, so tell Ayrshare explicitly
-    // whether this is video rather than letting it guess from the path.
-    const isVideo = isVideoMedia(output, mediaUrl);
+    // whether this is video rather than letting it guess from the path. The
+    // resolved path keeps the real extension, master or override.
+    const isVideo = isVideoMedia({ media_path: media.path, format: output.format }, mediaUrl);
     if (MEDIA_REQUIRED_PLATFORMS.includes(platform) && !mediaUrl) {
       throw new UserFacingError(
         `${platform} posts need media — upload it to this version, or paste a media URL for the file hosted elsewhere.`

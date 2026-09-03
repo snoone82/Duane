@@ -3,6 +3,7 @@
 import { useActionState, useEffect, useState, useTransition } from "react";
 import { AutosaveInput } from "@/components/ui/AutosaveInput";
 import { ExternalMediaField } from "@/components/clients/ExternalMediaField";
+import { resolveMedia, mediaOriginLabel } from "@/lib/media-source";
 import { AutosaveTextarea } from "@/components/ui/AutosaveTextarea";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { Button } from "@/components/ui/Button";
@@ -30,11 +31,14 @@ export type PublishingAccount = { id: string; label: string };
 export function ContentOutputRow({
   clientId,
   output,
+  idea,
   accounts = [],
   ayrshareEnabled = false,
 }: {
   clientId: string;
   output: Output;
+  /** The parent content idea, for master-media inheritance. */
+  idea?: { media_path: string | null; media_url: string | null; media_source_url: string; thumbnail_path: string | null; thumbnail_url: string | null; thumbnail_source_url: string };
   accounts?: PublishingAccount[];
   ayrshareEnabled?: boolean;
 }) {
@@ -73,6 +77,8 @@ export function ContentOutputRow({
   }
 
   const meta = outputStatusMeta(output.status as OutputStatus);
+  // Master or override — Duane wants each version to say plainly which it is.
+  const media = resolveMedia(output, idea);
   const save = (
     field: "platform" | "format" | "caption" | "cta" | "hashtags" | "alt_text" | "destination_link" | "media_source_url" | "thumbnail_source_url" | "live_url" | "notes" | "reach" | "engagement" | "views"
   ) => (value: string) => updateContentOutputField(clientId, output.id, field, value);
@@ -213,6 +219,30 @@ export function ContentOutputRow({
           <AutosaveInput id={`out-live-${output.id}`} label="Live post URL" initialValue={output.live_url} onSave={save("live_url")} />
           <AutosaveInput id={`out-alt-${output.id}`} label="Alt text" initialValue={output.alt_text} onSave={save("alt_text")} placeholder="Image description for accessibility" />
         </div>
+        {/* What this version will actually publish. */}
+        <div className="rounded-md border border-border bg-surface-muted/40 px-3 py-2">
+          <p className="text-xs">
+            <span className="text-ink-soft">Media: </span>
+            <span className={media.origin === "override" ? "font-medium text-accent" : media.origin === "master" ? "font-medium text-success" : "text-ink-faint"}>
+              {mediaOriginLabel(media.origin)}
+            </span>
+          </p>
+          {media.origin === "master" && (
+            <p className="mt-0.5 text-xs text-ink-faint">
+              Inherited from the content idea. Upload below only if this platform needs something different.
+            </p>
+          )}
+          {media.origin === "none" && (
+            <p className="mt-0.5 text-xs text-ink-faint">
+              Upload master media on the content idea above and every platform inherits it.
+            </p>
+          )}
+          {media.origin === "override" && idea && (idea.media_path || idea.media_source_url) && (
+            <p className="mt-0.5 text-xs text-ink-faint">
+              This platform uses its own file. Remove it below to go back to the master media.
+            </p>
+          )}
+        </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <OutputMediaSlot clientId={clientId} outputId={output.id} kind="media" url={output.media_url} />
           <OutputMediaSlot clientId={clientId} outputId={output.id} kind="thumbnail" url={output.thumbnail_url} />
@@ -220,7 +250,7 @@ export function ContentOutputRow({
         {/* Media hosted elsewhere — for anything above the upload cap. This
             is what publishing sends to Ayrshare when it is set. */}
         <div className="space-y-3 rounded-md border border-border bg-surface-muted/40 p-3">
-          <p className="text-xs font-medium text-ink-soft">Or use media hosted elsewhere</p>
+          <p className="text-xs font-medium text-ink-soft">Platform override — or media hosted elsewhere</p>
           <ExternalMediaField
             clientId={clientId}
             outputId={output.id}

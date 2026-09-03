@@ -123,3 +123,60 @@ export function isVideoMedia(
   const format = (output.format ?? "").toLowerCase();
   return /reel|short|video|clip/.test(format);
 }
+
+// ---------------------------------------------------------------------------
+// Master media inheritance (Duane, 3 Sep 2026)
+// ---------------------------------------------------------------------------
+
+/** The media fields both content_ideas and content_outputs carry. */
+export interface MediaHolder {
+  media_path?: string | null;
+  media_source_url?: string | null;
+  thumbnail_path?: string | null;
+  thumbnail_source_url?: string | null;
+}
+
+export type MediaOrigin = "override" | "master" | "none";
+
+export interface ResolvedMedia {
+  /** Where this media came from — drives the label on each platform version. */
+  origin: MediaOrigin;
+  /** The durable Supabase object path, when the media is an upload. */
+  path: string | null;
+  /** Externally hosted media, when that's what was supplied instead. */
+  sourceUrl: string | null;
+  thumbnailPath: string | null;
+  thumbnailSourceUrl: string | null;
+}
+
+const has = (holder: MediaHolder | null | undefined): boolean =>
+  Boolean(holder && ((holder.media_path ?? "").trim() || (holder.media_source_url ?? "").trim()));
+
+/**
+ * Which media a platform version should actually publish.
+ *
+ * Duane's rule, and he chose automatic inheritance over a copy button: a
+ * version with media of its own uses it; otherwise it inherits the master
+ * asset from the content idea. Nothing is duplicated in storage — the
+ * version simply resolves to the idea's object path.
+ */
+export function resolveMedia(output: MediaHolder, idea: MediaHolder | null | undefined): ResolvedMedia {
+  const pick = (holder: MediaHolder, origin: MediaOrigin): ResolvedMedia => ({
+    origin,
+    path: (holder.media_path ?? "").trim() || null,
+    sourceUrl: (holder.media_source_url ?? "").trim() || null,
+    thumbnailPath: (holder.thumbnail_path ?? "").trim() || null,
+    thumbnailSourceUrl: (holder.thumbnail_source_url ?? "").trim() || null,
+  });
+
+  if (has(output)) return pick(output, "override");
+  if (has(idea)) return pick(idea!, "master");
+  return { origin: "none", path: null, sourceUrl: null, thumbnailPath: null, thumbnailSourceUrl: null };
+}
+
+/** Label for the platform version, in Duane's words. */
+export function mediaOriginLabel(origin: MediaOrigin): string {
+  if (origin === "override") return "Platform override";
+  if (origin === "master") return "Using master media";
+  return "No media yet";
+}

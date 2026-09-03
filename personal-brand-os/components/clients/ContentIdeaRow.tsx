@@ -21,6 +21,8 @@ import {
 import { CONTENT_STATUS, CONTENT_PRIORITY } from "@/lib/status";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { ContentOutputRow } from "@/components/clients/ContentOutputRow";
+import { MasterMediaSlot } from "@/components/clients/MasterMediaSlot";
+import { resolveMedia } from "@/lib/media-source";
 import type { Database } from "@/lib/database.types";
 
 type Idea = Database["public"]["Tables"]["content_ideas"]["Row"];
@@ -107,6 +109,9 @@ export function ContentIdeaRow({
   const accountLabel = (output: Output) =>
     (output.social_account_id && accounts.find((a) => a.id === output.social_account_id)?.label) || output.platform;
   const platformSummary = outputs.map(accountLabel).join(" · ");
+  // How many versions are actually inheriting the master asset — shown on the
+  // master slot so it is obvious what removing it would affect.
+  const inheritingCount = outputs.filter((output) => resolveMedia(output, idea).origin === "master").length;
 
   return (
     <details className="group rounded-lg border border-border bg-surface" open={defaultOpen}>
@@ -233,6 +238,22 @@ export function ContentIdeaRow({
         <AutosaveTextarea id={`idea-body-${idea.id}`} label="Brief / body" initialValue={idea.body} onSave={save("body")} rows={3} />
         <AutosaveTextarea id={`idea-notes-${idea.id}`} label="Notes" initialValue={idea.notes} onSave={save("notes")} rows={2} />
 
+        {/* Master media (Duane, 3 Sep): upload once here, every platform
+            version inherits it unless that platform has its own override. */}
+        <div className="space-y-3 rounded-md border border-accent/30 bg-accent/5 p-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-accent-strong">Master media</p>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <MasterMediaSlot
+              clientId={clientId}
+              ideaId={idea.id}
+              kind="media"
+              url={idea.media_url}
+              inheritingCount={inheritingCount}
+            />
+            <MasterMediaSlot clientId={clientId} ideaId={idea.id} kind="thumbnail" url={idea.thumbnail_url} />
+          </div>
+        </div>
+
         {/* Platform outputs */}
         <div>
           <div className="mb-2 flex items-center justify-between">
@@ -248,7 +269,7 @@ export function ContentIdeaRow({
           ) : (
             <div className="space-y-2">
               {outputs.map((output) => (
-                <ContentOutputRow key={output.id} clientId={clientId} output={output} accounts={accounts} ayrshareEnabled={ayrshareEnabled} />
+                <ContentOutputRow key={output.id} clientId={clientId} output={output} idea={idea} accounts={accounts} ayrshareEnabled={ayrshareEnabled} />
               ))}
             </div>
           )}
