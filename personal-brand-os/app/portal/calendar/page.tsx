@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getPortalContext } from "@/lib/data/portal";
 import { MediaThumb } from "@/components/portal/MediaThumb";
 import { formatDate, socialAccountLabel } from "@/lib/format";
-import { thumbUrl } from "@/lib/media";
+import { mediaPreview, type MediaPreview } from "@/lib/media";
 import type { TagColor } from "@/lib/status";
 
 export const metadata = { title: "Calendar" };
@@ -16,7 +16,7 @@ interface PortalCalendarItem {
   type: ItemType;
   label: string;
   platform: string | null;
-  thumb: string | null;
+  thumb: MediaPreview | null;
   href: string | null;
   color: TagColor;
   overdue?: boolean;
@@ -85,7 +85,7 @@ export default async function PortalCalendarPage({
       can("view_content")
         ? supabase
             .from("content_outputs")
-            .select("id,content_id,platform,scheduled_at,thumbnail_url,media_url,social:social_strategies(account_name),content:content_ideas(title)")
+            .select("id,content_id,platform,scheduled_at,media_path,media_url,media_source_url,thumbnail_path,thumbnail_url,thumbnail_source_url,social:social_strategies(account_name),content:content_ideas(title,media_path,media_url,media_source_url,thumbnail_path,thumbnail_url,thumbnail_source_url)")
             .eq("client_id", client.id)
             .eq("status", "scheduled")
             .not("scheduled_at", "is", null)
@@ -95,7 +95,7 @@ export default async function PortalCalendarPage({
       can("view_content")
         ? supabase
             .from("content_outputs")
-            .select("id,content_id,platform,published_at,thumbnail_url,media_url,social:social_strategies(account_name),content:content_ideas(title)")
+            .select("id,content_id,platform,published_at,media_path,media_url,media_source_url,thumbnail_path,thumbnail_url,thumbnail_source_url,social:social_strategies(account_name),content:content_ideas(title,media_path,media_url,media_source_url,thumbnail_path,thumbnail_url,thumbnail_source_url)")
             .eq("client_id", client.id)
             .eq("status", "published")
             .not("published_at", "is", null)
@@ -133,10 +133,22 @@ export default async function PortalCalendarPage({
     platform: string;
     scheduled_at?: string | null;
     published_at?: string | null;
-    thumbnail_url: string | null;
+    media_path: string | null;
     media_url: string | null;
+    media_source_url: string;
+    thumbnail_path: string | null;
+    thumbnail_url: string | null;
+    thumbnail_source_url: string;
     social: { account_name: string } | null;
-    content: { title: string } | null;
+    content: {
+      title: string;
+      media_path: string | null;
+      media_url: string | null;
+      media_source_url: string;
+      thumbnail_path: string | null;
+      thumbnail_url: string | null;
+      thumbnail_source_url: string;
+    } | null;
   };
   for (const o of (scheduled ?? []) as OutputRow[]) {
     const when = o.scheduled_at as string;
@@ -146,7 +158,7 @@ export default async function PortalCalendarPage({
       type: "content",
       label: `${o.content?.title ?? "Content"} · ${socialAccountLabel(o.platform, o.social?.account_name)}`,
       platform: o.platform,
-      thumb: thumbUrl(o),
+      thumb: mediaPreview(o, o.content),
       href: `/portal/content#idea-${o.content_id}`,
       color: "orange",
     });
@@ -159,7 +171,7 @@ export default async function PortalCalendarPage({
       type: "content",
       label: `Published: ${o.content?.title ?? "Content"} · ${socialAccountLabel(o.platform, o.social?.account_name)}`,
       platform: o.platform,
-      thumb: thumbUrl(o),
+      thumb: mediaPreview(o, o.content),
       href: `/portal/content#idea-${o.content_id}`,
       color: "green",
     });
@@ -232,8 +244,8 @@ export default async function PortalCalendarPage({
 
   const ItemChip = ({ item }: { item: PortalCalendarItem }) => {
     const body = (
-      <span className={`flex items-center gap-1 rounded px-1 py-0.5 text-[10px] leading-tight ${chipColor[item.color]} ${item.overdue ? "ring-1 ring-danger/60" : ""}`}>
-        {item.thumb && <MediaThumb url={item.thumb} size="sm" />}
+      <span className={`flex items-center gap-1.5 rounded px-1 py-0.5 text-[10px] leading-tight ${chipColor[item.color]} ${item.overdue ? "ring-1 ring-danger/60" : ""}`}>
+        {item.thumb && <MediaThumb url={item.thumb.url} kind={item.thumb.kind} size="sm" />}
         <span className="min-w-0 truncate">{item.time ? `${item.time} ` : ""}{item.label}</span>
       </span>
     );

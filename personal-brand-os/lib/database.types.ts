@@ -873,6 +873,7 @@ export type Database = {
           pillar_id: string | null
           priority: Database["public"]["Enums"]["content_priority"]
           production_due_date: string | null
+          scheduled_at: string | null
           status: Database["public"]["Enums"]["content_status"]
           target_publish_date: string | null
           thumbnail_path: string | null
@@ -900,6 +901,7 @@ export type Database = {
           pillar_id?: string | null
           priority?: Database["public"]["Enums"]["content_priority"]
           production_due_date?: string | null
+          scheduled_at?: string | null
           status?: Database["public"]["Enums"]["content_status"]
           target_publish_date?: string | null
           thumbnail_path?: string | null
@@ -927,6 +929,7 @@ export type Database = {
           pillar_id?: string | null
           priority?: Database["public"]["Enums"]["content_priority"]
           production_due_date?: string | null
+          scheduled_at?: string | null
           status?: Database["public"]["Enums"]["content_status"]
           target_publish_date?: string | null
           thumbnail_path?: string | null

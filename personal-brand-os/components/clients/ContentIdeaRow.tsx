@@ -22,6 +22,7 @@ import { CONTENT_STATUS, CONTENT_PRIORITY } from "@/lib/status";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { ContentOutputRow } from "@/components/clients/ContentOutputRow";
 import { MasterMediaSlot } from "@/components/clients/MasterMediaSlot";
+import { MasterScheduleField } from "@/components/clients/MasterScheduleField";
 import { resolveMedia } from "@/lib/media-source";
 import type { Database } from "@/lib/database.types";
 
@@ -112,6 +113,11 @@ export function ContentIdeaRow({
   // How many versions are actually inheriting the master asset — shown on the
   // master slot so it is obvious what removing it would affect.
   const inheritingCount = outputs.filter((output) => resolveMedia(output, idea).origin === "master").length;
+  // Master post schedule: what "apply to all" would reach, and what's left
+  // to confirm onto the calendar afterwards.
+  const unpublished = outputs.filter((output) => output.status !== "published");
+  const awaitingConfirmation = unpublished.filter((output) => output.scheduled_at && output.status !== "scheduled").length;
+  const handedToAyrshare = unpublished.filter((output) => Boolean(output.ayrshare_post_id)).length;
 
   return (
     <details className="group rounded-lg border border-border bg-surface" open={defaultOpen}>
@@ -253,6 +259,17 @@ export function ContentIdeaRow({
             <MasterMediaSlot clientId={clientId} ideaId={idea.id} kind="thumbnail" url={idea.thumbnail_url} />
           </div>
         </div>
+
+        {/* Master post schedule (Duane, 3 Sep): set the date and time once,
+            every platform version takes it, amend individually below. */}
+        <MasterScheduleField
+          clientId={clientId}
+          ideaId={idea.id}
+          scheduledAt={idea.scheduled_at}
+          versionCount={unpublished.length}
+          awaitingConfirmation={awaitingConfirmation}
+          handedToAyrshare={handedToAyrshare}
+        />
 
         {/* Platform outputs */}
         <div>

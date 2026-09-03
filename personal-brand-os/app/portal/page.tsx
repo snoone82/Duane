@@ -7,7 +7,7 @@ import { Donut } from "@/components/dashboard/Charts";
 import { contentStatusMeta, actionStatusMeta } from "@/lib/status";
 import { signoffStatusMeta } from "@/lib/signoff-snapshot";
 import { formatDate, formatRelativeToToday, formatDateTime, socialAccountLabel } from "@/lib/format";
-import { thumbUrl } from "@/lib/media";
+import { mediaPreview } from "@/lib/media";
 import { getCadenceForClient, CADENCE_STAGES } from "@/lib/data/cadence";
 import { cadenceLabel, type CadenceState } from "@/lib/platform-strategy";
 
@@ -75,7 +75,7 @@ export default async function PortalDashboardPage() {
     supabase.from("content_ideas").select("id,title,status,updated_at,target_publish_date").eq("client_id", client.id).order("updated_at", { ascending: false }),
     supabase
       .from("content_outputs")
-      .select("id,content_id,platform,status,scheduled_at,published_at,thumbnail_url,media_url,social:social_strategies(account_name),content:content_ideas(title)")
+      .select("id,content_id,platform,status,scheduled_at,published_at,media_path,media_url,media_source_url,thumbnail_path,thumbnail_url,thumbnail_source_url,social:social_strategies(account_name),content:content_ideas(title,media_path,media_url,media_source_url,thumbnail_path,thumbnail_url,thumbnail_source_url)")
       .eq("client_id", client.id),
     supabase.from("actions").select("*").eq("client_id", client.id).order("due_date", { ascending: true, nullsFirst: false }),
     supabase.from("client_members").select("user_id,name").eq("client_id", client.id),
@@ -312,10 +312,10 @@ export default async function PortalDashboardPage() {
                 </li>
               )}
               {scheduledThisWeek.map((o) => {
-                const thumb = thumbUrl(o);
+                const thumb = mediaPreview(o, o.content);
                 return (
                   <li key={o.id} className="flex items-center gap-2 text-sm text-ink">
-                    {thumb ? <MediaThumb url={thumb} size="sm" /> : <StatusPill label="Post" color="orange" />}
+                    {thumb ? <MediaThumb url={thumb.url} kind={thumb.kind} size="sm" /> : <StatusPill label="Post" color="orange" />}
                     <span className="min-w-0 truncate">
                       {o.content?.title ?? "Content"} · {socialAccountLabel(o.platform, o.social?.account_name)}
                       <span className="text-ink-faint"> — {o.scheduled_at ? formatDateTime(o.scheduled_at) : ""}</span>

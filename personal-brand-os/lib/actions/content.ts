@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { UserFacingError } from "@/lib/errors";
 import { runAction, type ActionResult } from "@/lib/action-result";
 import type { Database } from "@/lib/database.types";
 import type { ContentPriority, ContentStatus } from "@/lib/enums";
@@ -737,4 +738,107 @@ async function removeObjectIfUnreferenced(
   ]);
   const stillUsed = counts.some(({ count }) => (count ?? 0) > 0);
   if (!stillUsed) await supabase.storage.from(MEDIA_BUCKET).remove([path]);
+}
+
+// ---------------------------------------------------------------------------
+// Master post schedule (Duane, 3 Sep 2026)
+// ---------------------------------------------------------------------------
+
+/**
+ * Set the publish date and time once at the master level and every platform
+ * version takes it — the same enter-once-populate-everywhere principle as
+ * master media. Each version keeps its own scheduled_at afterwards, so
+ * Instagram can still be moved without touching LinkedIn.
+ *
+ * Rules: published versions are never touched; a version already handed to
+ * Ayrshare's scheduler is left alone too (moving its time here would not
+ * move it there — reschedule that one from its own row). Clearing the master
+ * clears the time on versions that are not yet on the calendar; a version
+ * already scheduled stays scheduled, since taking it off is Unschedule's job.
+ */
+export async function setMasterSchedule(
+  clientId: string,
+  ideaId: string,
+  scheduledAt: string
+): Promise<ActionResult<{ applied: number; skipped: number }>> {
+  const value = scheduledAt.trim();
+  const when = value ? new Date(value) : null;
+  if (when && Number.isNaN(when.getTime())) return { ok: false, message: "That date didn't parse." };
+  const iso = when ? when.toISOString() : null;
+
+  return runAction(async () => {
+    const supabase = await createClient();
+    const { error: ideaError } = await supabase
+      .from("content_ideas")
+      .update({ scheduled_at: iso })
+      .eq("id", ideaId)
+      .eq("client_id", clientId);
+    if (ideaError) throw new Error(ideaError.message);
+
+    const { data: outputs, error: readError } = await supabase
+      .from("content_outputs")
+      .select("id,status,ayrshare_post_id")
+      .eq("content_id", ideaId)
+      .eq("client_id", clientId);
+    if (readError) throw new Error(readError.message);
+
+    const eligible = (outputs ?? []).filter((o) => {
+      if (o.status === "published") return false;
+      if (o.ayrshare_post_id) return false;
+      if (!iso && o.status === "scheduled") return false;
+      return true;
+    });
+    if (eligible.length > 0) {
+      const { error } = await supabase
+        .from("content_outputs")
+        .update({ scheduled_at: iso })
+        .in(
+          "id",
+          eligible.map((o) => o.id)
+        );
+      if (error) throw new Error(error.message);
+    }
+
+    revalidateContent(clientId);
+    const unpublished = (outputs ?? []).filter((o) => o.status !== "published").length;
+    return { applied: eligible.length, skipped: unpublished - eligible.length };
+  });
+}
+
+/**
+ * The one-click confirmation after a master schedule: every unpublished
+ * version that has a time but is not yet on the calendar becomes Scheduled
+ * at its own time (master or individually amended).
+ */
+export async function scheduleAllOutputs(
+  clientId: string,
+  ideaId: string
+): Promise<ActionResult<{ scheduled: number }>> {
+  return runAction(async () => {
+    const supabase = await createClient();
+    const { data: outputs, error: readError } = await supabase
+      .from("content_outputs")
+      .select("id,status,scheduled_at")
+      .eq("content_id", ideaId)
+      .eq("client_id", clientId);
+    if (readError) throw new Error(readError.message);
+
+    const pending = (outputs ?? []).filter(
+      (o) => o.scheduled_at && o.status !== "scheduled" && o.status !== "published"
+    );
+    if (pending.length === 0) throw new UserFacingError("Every platform version with a time is already on the calendar.");
+
+    const { error } = await supabase
+      .from("content_outputs")
+      .update({ status: "scheduled" })
+      .in(
+        "id",
+        pending.map((o) => o.id)
+      );
+    if (error) throw new Error(error.message);
+
+    await rollUpMasterStatus(supabase, ideaId);
+    revalidateContent(clientId);
+    return { scheduled: pending.length };
+  });
 }
