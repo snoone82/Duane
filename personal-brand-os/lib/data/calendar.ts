@@ -27,6 +27,9 @@ export interface CalendarItem {
   overdue?: boolean;
   /** Team-member owner, where the underlying record has one (actions). */
   ownerUserId?: string | null;
+  /** Scheduled posts only: true once Ayrshare holds the post (it will publish
+   * itself), false when it is on the PBOS calendar alone. */
+  handedToAyrshare?: boolean;
 }
 
 export const CALENDAR_TYPE_META: Record<CalendarItemType, { label: string; color: TagColor }> = {
@@ -105,7 +108,7 @@ export async function getCalendarItems(
     maybeFilter(
       supabase
         .from("content_outputs")
-        .select("id,client_id,platform,status,scheduled_at,content:content_ideas(title),social:social_strategies(account_name)")
+        .select("id,client_id,platform,status,scheduled_at,ayrshare_post_id,content:content_ideas(title),social:social_strategies(account_name)")
         .eq("status", "scheduled")
         .not("scheduled_at", "is", null)
         .gte("scheduled_at", fromTs)
@@ -171,6 +174,7 @@ export async function getCalendarItems(
       clientName: name(o.client_id),
       tab: "content",
       overdue: when < now,
+      handedToAyrshare: Boolean(o.ayrshare_post_id),
     });
   }
   for (const o of publishedOutputs ?? []) {

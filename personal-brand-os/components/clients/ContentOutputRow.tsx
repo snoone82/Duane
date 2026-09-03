@@ -49,9 +49,36 @@ export function ContentOutputRow({
   const [showPublish, setShowPublish] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  const handedToAyrshare = Boolean(output.ayrshare_post_id) && output.status !== "published";
+  const handover =
+    output.status === "published"
+      ? null
+      : handedToAyrshare
+        ? {
+            label: "With Ayrshare",
+            color: "teal" as const,
+            title: "Handed to Ayrshare — it will publish at the scheduled time. Use Check status afterwards to pull in the live link.",
+          }
+        : output.status === "scheduled"
+          ? {
+              label: "PBOS only",
+              color: "amber" as const,
+              title: "On the PBOS calendar but not handed to Ayrshare — it will not post by itself. Use Send to Ayrshare when it's ready to go.",
+            }
+          : null;
+
   function handleAyrsharePublish() {
     const scheduled = output.scheduled_at && new Date(output.scheduled_at).getTime() > Date.now() + 60_000;
     if (
+      handedToAyrshare &&
+      !window.confirm(
+        "This version has already been handed to Ayrshare. Sending it again creates a second post there — only do this if the first one was deleted in Ayrshare. Continue?"
+      )
+    ) {
+      return;
+    }
+    if (
+      !handedToAyrshare &&
       !scheduled &&
       !window.confirm("Publish this version to the connected social account right now?")
     ) {
@@ -132,6 +159,15 @@ export function ContentOutputRow({
             <span className="text-xs text-ink-faint">{formatDateTime(output.published_at)}</span>
           )}
           <StatusPill label={meta.label} color={meta.color} />
+          {/* Duane's testing question (3 Sep): "Scheduled" alone can't tell
+              you whether Ayrshare has the post or it's only on the PBOS
+              calendar. The handover is the only thing that makes it publish
+              by itself, so say which it is. */}
+          {handover && (
+            <span title={handover.title}>
+              <StatusPill label={handover.label} color={handover.color} />
+            </span>
+          )}
         </div>
       </summary>
       <div className="space-y-3 border-t border-border p-3">
@@ -162,10 +198,12 @@ export function ContentOutputRow({
             </a>
           )}
           {ayrshareEnabled && output.status !== "published" && output.social_account_id && (
-            <Button variant="secondary" size="sm" onClick={handleAyrsharePublish} disabled={isBusy}>
-              {output.scheduled_at && new Date(output.scheduled_at).getTime() > Date.now() + 60_000
-                ? "Send to Ayrshare (auto-publishes at the scheduled time)"
-                : "Publish now via Ayrshare"}
+            <Button variant={handedToAyrshare ? "ghost" : "secondary"} size="sm" onClick={handleAyrsharePublish} disabled={isBusy}>
+              {handedToAyrshare
+                ? "Resend to Ayrshare…"
+                : output.scheduled_at && new Date(output.scheduled_at).getTime() > Date.now() + 60_000
+                  ? "Send to Ayrshare (auto-publishes at the scheduled time)"
+                  : "Publish now via Ayrshare"}
             </Button>
           )}
           {ayrshareEnabled && output.ayrshare_post_id && output.status !== "published" && (

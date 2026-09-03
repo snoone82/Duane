@@ -37,16 +37,25 @@ function monthParam(year: number, month: number) {
 
 function ItemChip({ item }: { item: CalendarItem }) {
   const meta = CALENDAR_TYPE_META[item.type];
+  // A scheduled post either sits with Ayrshare (publishes itself) or only on
+  // this calendar (won't) — Duane wants to see which without opening it.
+  const handover =
+    item.type === "scheduled"
+      ? item.handedToAyrshare
+        ? { mark: "✓ Ayrshare", title: "With Ayrshare — publishes at the scheduled time" }
+        : { mark: "PBOS only", title: "On the PBOS calendar only — not handed to Ayrshare, won't post by itself" }
+      : null;
   return (
     <Link
       href={`/clients/${item.clientId}/${item.tab}`}
-      title={`${item.label} — ${item.clientName}${item.overdue ? " (overdue)" : ""}`}
+      title={`${item.label} — ${item.clientName}${item.overdue ? " (overdue)" : ""}${handover ? ` — ${handover.title}` : ""}`}
       className={`block truncate rounded px-1.5 py-0.5 text-xs leading-5 hover:opacity-80 ${chipClass[meta.color]} ${
         item.overdue ? "ring-1 ring-danger" : ""
       }`}
     >
       {item.time && <span className="mr-1 opacity-70">{item.time}</span>}
       {item.label}
+      {handover && <span className="ml-1 opacity-70">· {handover.mark}</span>}
     </Link>
   );
 }
