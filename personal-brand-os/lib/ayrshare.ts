@@ -216,6 +216,19 @@ export async function getLinkedNetworks(profileKey: string | null): Promise<stri
 
 // --- Posting ----------------------------------------------------------------
 
+export interface AyrshareYouTubeOptions {
+  /** Required by Ayrshare. Max 100 characters. */
+  title: string;
+  /** Ayrshare's default is "private" — never what a client wants from a
+   * scheduled post, so the caller always sets this explicitly. */
+  visibility: "public" | "unlisted" | "private";
+  /** Post as a YouTube Short (video must be 3 minutes or under). */
+  shorts?: boolean;
+}
+
+/** Ayrshare's hard limit on youTubeOptions.title. */
+export const YOUTUBE_TITLE_MAX = 100;
+
 export interface AyrsharePostResult {
   /** Ayrshare's post record id — used later to check a scheduled post. */
   id: string;
@@ -232,6 +245,10 @@ export async function sendAyrsharePost(input: {
    * rather than ".mp4", so Ayrshare can't infer the type from the path — and
    * a video treated as an image is rejected by the platform. */
   isVideo?: boolean;
+  /** YouTube is the one network that rejects a bare post: Ayrshare requires
+   * youTubeOptions.title (max 100 chars), and defaults visibility to
+   * PRIVATE, so both are always sent for YouTube. */
+  youTubeOptions?: AyrshareYouTubeOptions;
   scheduleDate?: string; // ISO — omit to publish immediately
   profileKey?: string | null;
 }): Promise<AyrsharePostResult> {
@@ -246,6 +263,7 @@ export async function sendAyrsharePost(input: {
       platforms: [input.platform],
       ...(input.mediaUrls && input.mediaUrls.length > 0 ? { mediaUrls: input.mediaUrls } : {}),
       ...(input.isVideo ? { isVideo: true } : {}),
+      ...(input.youTubeOptions ? { youTubeOptions: input.youTubeOptions } : {}),
       ...(input.scheduleDate ? { scheduleDate: input.scheduleDate } : {}),
     },
     profileKey: input.profileKey,

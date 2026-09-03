@@ -11,6 +11,8 @@ import {
   AyrshareError,
   AYRSHARE_PLATFORMS,
   MEDIA_REQUIRED_PLATFORMS,
+  YOUTUBE_TITLE_MAX,
+  type AyrshareYouTubeOptions,
   createAyrshareProfile,
   getAyrshareLinkUrl,
   getLinkedNetworks,
@@ -131,7 +133,9 @@ export async function sendOutputToAyrshare(clientId: string, outputId: string): 
     const supabase = await createClient();
     const { data: output, error } = await supabase
       .from("content_outputs")
-      .select("*, social:social_strategies(id,platform,account_name,ayrshare_platform,ayrshare_profile_id)")
+      .select(
+        "*, social:social_strategies(id,platform,account_name,ayrshare_platform,ayrshare_profile_id), content:content_ideas(title)"
+      )
       .eq("id", outputId)
       .eq("client_id", clientId)
       .single();
@@ -195,6 +199,15 @@ export async function sendOutputToAyrshare(clientId: string, outputId: string): 
     }
 
     const post = [caption, output.hashtags.trim()].filter(Boolean).join("\n\n");
+
+    // Jonny's YouTube version came back "Ayrshare returned 400" while the
+    // same file went out to LinkedIn, Instagram and Facebook: the storage
+    // logs showed no media fetch at all for that attempt, because the
+    // request never got that far. YouTube is the one network Ayrshare
+    // refuses without youTubeOptions.title — and it defaults visibility to
+    // private, which would make a "successful" post invisible.
+    const youTubeOptions = platform === "youtube" ? buildYouTubeOptions(output) : undefined;
+
     const scheduleDate =
       output.scheduled_at && new Date(output.scheduled_at).getTime() > Date.now() + 60_000
         ? new Date(output.scheduled_at).toISOString()
@@ -207,6 +220,7 @@ export async function sendOutputToAyrshare(clientId: string, outputId: string): 
         platform,
         mediaUrls: mediaUrl ? [mediaUrl] : undefined,
         isVideo,
+        youTubeOptions,
         scheduleDate,
         profileKey,
       });
@@ -221,6 +235,7 @@ export async function sendOutputToAyrshare(clientId: string, outputId: string): 
               "",
               `Media URL submitted: ${mediaUrl ?? "(none)"}`,
               `Sent as video: ${isVideo ? "yes" : "no"}`,
+              ...(youTubeOptions ? [`YouTube title: ${youTubeOptions.title}`] : []),
               `Publishing connection: ${profileKey ? "client profile" : "primary Ayrshare account"}`,
               `Attempted: ${new Date().toISOString()}`,
             ].join("\n")
@@ -296,4 +311,30 @@ export async function refreshAyrshareOutput(clientId: string, outputId: string):
     revalidateContent(clientId);
     return "Published — live link saved to this version.";
   });
+}
+
+/**
+ * The title YouTube shows above the video. The master idea's title is the
+ * natural one — it's what the team named the piece — falling back to the
+ * first line of the caption. Trimmed to Ayrshare's 100-character limit.
+ * Anything with "short" in the version's format posts as a YouTube Short.
+ */
+function buildYouTubeOptions(output: {
+  caption: string;
+  format: string;
+  content: { title: string } | null;
+}): AyrshareYouTubeOptions {
+  const fromMaster = (output.content?.title ?? "").trim();
+  const fromCaption = output.caption
+    .split("\n")
+    .map((line) => line.trim())
+    .find(Boolean) ?? "";
+  const raw = fromMaster || fromCaption;
+  if (!raw) throw new UserFacingError("YouTube needs a title — give the master idea a title before publishing.");
+  const title = raw.length > YOUTUBE_TITLE_MAX ? `${raw.slice(0, YOUTUBE_TITLE_MAX - 1).trimEnd()}…` : raw;
+  return {
+    title,
+    visibility: "public",
+    ...(/short/i.test(output.format) ? { shorts: true } : {}),
+  };
 }
