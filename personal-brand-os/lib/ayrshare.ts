@@ -252,11 +252,7 @@ export async function sendAyrsharePost(input: {
   scheduleDate?: string; // ISO — omit to publish immediately
   profileKey?: string | null;
 }): Promise<AyrsharePostResult> {
-  const data = await ayr<{
-    id?: string;
-    status?: string;
-    postIds?: { platform?: string; postUrl?: string; status?: string; id?: string }[];
-  }>("/post", {
+  const data = await ayr<AyrsharePostResponse>("/post", {
     method: "POST",
     body: {
       post: input.post,
@@ -268,20 +264,192 @@ export async function sendAyrsharePost(input: {
     },
     profileKey: input.profileKey,
   });
+  // With a Profile-Key (a client's own profile) Ayrshare nests the result
+  // under posts[0] and there is NO top-level id. Reading data.id alone
+  // silently lost every post id and live link for Jonny — which is why
+  // his versions showed "PBOS only" after a successful handover.
+  const record = unwrapPostRecord(data);
   return {
-    id: data.id ?? "",
-    postUrl: data.postIds?.[0]?.postUrl ?? null,
+    id: record.id ?? "",
+    postUrl: record.postIds?.find((p) => p.postUrl)?.postUrl ?? null,
     scheduled: Boolean(input.scheduleDate),
   };
+}
+
+interface AyrsharePlatformPost {
+  platform?: string;
+  postUrl?: string;
+  status?: string;
+  id?: string;
+}
+
+interface AyrsharePostRecord {
+  id?: string;
+  status?: string;
+  refId?: string;
+  post?: string;
+  platforms?: string[];
+  scheduleDate?: string | { _seconds?: number; utc?: string };
+  created?: string | { _seconds?: number; utc?: string };
+  postIds?: AyrsharePlatformPost[];
+}
+
+type AyrsharePostResponse = AyrsharePostRecord & { posts?: AyrsharePostRecord[] };
+
+/** The one post record inside either response shape (primary account vs
+ * Profile-Key). */
+function unwrapPostRecord(data: AyrsharePostResponse): AyrsharePostRecord {
+  if (Array.isArray(data.posts) && data.posts.length > 0) return data.posts[0] as AyrsharePostRecord;
+  return data;
+}
+
+/** Ayrshare returns dates as ISO strings in some places and Firestore-style
+ * objects in others (history). Normalise to ISO or null. */
+function ayrDate(value: AyrsharePostRecord["created"]): string | null {
+  if (!value) return null;
+  if (typeof value === "string") return Number.isNaN(new Date(value).getTime()) ? null : new Date(value).toISOString();
+  if (typeof value.utc === "string") return ayrDate(value.utc);
+  if (typeof value._seconds === "number") return new Date(value._seconds * 1000).toISOString();
+  return null;
+}
+
+// --- History (reconciliation) ----------------------------------------------
+
+export interface AyrshareHistoryRecord {
+  id: string;
+  post: string;
+  platforms: string[];
+  status: string;
+  createdAt: string | null;
+  scheduledAt: string | null;
+  postIds: { platform: string; id: string | null; postUrl: string | null; status: string | null }[];
+}
+
+/**
+ * Every post this profile has sent through Ayrshare recently. Used to
+ * recover post ids for versions published before the Profile-Key shape was
+ * handled — and as a safety net whenever a handover's id goes missing.
+ */
+export async function getAyrshareHistory(profileKey: string | null, lastDays = 90): Promise<AyrshareHistoryRecord[]> {
+  const data = await ayr<{ history?: AyrsharePostRecord[]; posts?: AyrsharePostRecord[] } | AyrsharePostRecord[]>(
+    `/history?lastDays=${lastDays}&limit=1000`,
+    { profileKey }
+  );
+  const list: AyrsharePostRecord[] = Array.isArray(data) ? data : (data.history ?? data.posts ?? []);
+  return list
+    .filter((r): r is AyrsharePostRecord & { id: string } => typeof r.id === "string" && r.id.length > 0)
+    .map((r) => ({
+      id: r.id,
+      post: typeof r.post === "string" ? r.post : "",
+      platforms: Array.isArray(r.platforms) ? r.platforms.map(String) : [],
+      status: typeof r.status === "string" ? r.status : "",
+      createdAt: ayrDate(r.created),
+      scheduledAt: ayrDate(r.scheduleDate),
+      postIds: (r.postIds ?? []).map((p) => ({
+        platform: String(p.platform ?? ""),
+        id: p.id ? String(p.id) : null,
+        postUrl: p.postUrl ? String(p.postUrl) : null,
+        status: p.status ? String(p.status) : null,
+      })),
+    }));
+}
+
+// --- Analytics --------------------------------------------------------------
+
+export interface AyrsharePostAnalytics {
+  reach: number | null;
+  views: number | null;
+  engagement: number | null;
+  likes: number | null;
+  comments: number | null;
+  shares: number | null;
+  /** Everything the network reported, verbatim. */
+  raw: Record<string, unknown>;
+  postUrl: string | null;
+}
+
+const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+
+/** First numeric value among the candidate keys, else null. */
+function firstNumber(source: Record<string, unknown>, keys: string[]): number | null {
+  for (const key of keys) {
+    const value = source[key];
+    if (isNum(value)) return Math.round(value);
+    if (typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value))) return Math.round(Number(value));
+  }
+  return null;
+}
+
+/**
+ * Normalise one network's analytics object into the six numbers PBOS keeps.
+ *
+ * Each network names things differently (Instagram reachCount, TikTok
+ * reach, LinkedIn uniqueImpressionsCount…), so this maps by meaning:
+ *   reach      — unique accounts reached, else impressions
+ *   views      — video plays, else impressions
+ *   engagement — the network's own count where it gives one, else the sum
+ *                of likes + comments + shares + saves that were reported
+ */
+export function normaliseAnalytics(analytics: Record<string, unknown>, postUrl: string | null): AyrsharePostAnalytics {
+  const likes = firstNumber(analytics, ["likeCount", "likes", "reactionCount", "favoriteCount", "diggCount"]);
+  const comments = firstNumber(analytics, ["commentsCount", "commentCount", "comments", "replyCount"]);
+  const shares = firstNumber(analytics, ["sharesCount", "shareCount", "shares", "retweetCount", "repostCount"]);
+  const saves = firstNumber(analytics, ["savedCount", "saveCount", "saves", "bookmarkCount"]);
+  const reach = firstNumber(analytics, ["reachCount", "reach", "uniqueImpressionsCount", "impressionCount", "impressions"]);
+  const views = firstNumber(analytics, [
+    "videoViews",
+    "views",
+    "viewsCount",
+    "playsCount",
+    "igReelsAggregatedAllPlaysCount",
+    "mediaView",
+    "viewCount",
+    "impressionCount",
+    "impressions",
+  ]);
+  let engagement = firstNumber(analytics, ["engagementCount", "engagements", "totalEngagement"]);
+  if (engagement === null) {
+    const parts = [likes, comments, shares, saves].filter((v): v is number => v !== null);
+    engagement = parts.length > 0 ? parts.reduce((a, b) => a + b, 0) : null;
+  }
+  return { reach, views, engagement, likes, comments, shares, raw: analytics, postUrl };
+}
+
+/**
+ * Performance numbers for one post on one network.
+ *
+ * Read-only: nothing is posted, changed or deleted at Ayrshare or the
+ * network — it is the same data the network shows in its own app.
+ * TikTok and YouTube take 24–48 hours after publishing to report anything.
+ */
+export async function getAyrsharePostAnalytics(
+  postId: string,
+  platform: string,
+  profileKey: string | null
+): Promise<AyrsharePostAnalytics> {
+  const data = await ayr<Record<string, unknown>>("/analytics/post", {
+    method: "POST",
+    body: { id: postId, platforms: [platform] },
+    profileKey,
+  });
+  const entry = data[platform];
+  if (!entry || typeof entry !== "object") {
+    const errors = Array.isArray(data.errors) ? (data.errors as Record<string, unknown>[]) : [];
+    const first = errors.find((e) => e.platform === platform) ?? errors[0];
+    const message =
+      (first && typeof first.message === "string" && first.message) ||
+      `Ayrshare returned no ${platform} analytics for this post yet.`;
+    throw new UserFacingError(message);
+  }
+  const block = entry as { analytics?: Record<string, unknown>; postUrl?: string };
+  const analytics = block.analytics && typeof block.analytics === "object" ? block.analytics : {};
+  return normaliseAnalytics(analytics, typeof block.postUrl === "string" ? block.postUrl : null);
 }
 
 /** Check a post (typically a scheduled one): returns the live URL once it
  * has actually gone out, null while still pending. */
 export async function getAyrsharePostUrl(postId: string, profileKey?: string | null): Promise<{ postUrl: string | null; status: string }> {
-  const data = await ayr<{
-    status?: string;
-    postIds?: { postUrl?: string; status?: string }[];
-  }>(`/post/${postId}`, { profileKey });
+  const data = unwrapPostRecord(await ayr<AyrsharePostResponse>(`/post/${postId}`, { profileKey }));
   const posted = data.postIds?.find((p) => p.postUrl);
   return { postUrl: posted?.postUrl ?? null, status: typeof data.status === "string" ? data.status : "unknown" };
 }

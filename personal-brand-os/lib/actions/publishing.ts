@@ -7,6 +7,7 @@ import { runAction, type ActionResult } from "@/lib/action-result";
 import { UserFacingError } from "@/lib/errors";
 import { inspectMediaUrl, isVideoMedia, resolveMedia } from "@/lib/media-source";
 import { rollUpMasterStatus } from "@/lib/actions/content";
+import type { Database, Json } from "@/lib/database.types";
 import {
   AyrshareError,
   AYRSHARE_PLATFORMS,
@@ -18,6 +19,9 @@ import {
   getLinkedNetworks,
   sendAyrsharePost,
   getAyrsharePostUrl,
+  getAyrshareHistory,
+  getAyrsharePostAnalytics,
+  type AyrshareHistoryRecord,
 } from "@/lib/ayrshare";
 
 function revalidateSocial(clientId: string) {
@@ -347,4 +351,208 @@ function buildYouTubeOptions(output: {
     visibility: "public",
     ...(/short/i.test(output.format) ? { shorts: true } : {}),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Reconciliation and performance (Duane, 3 Sep 2026)
+// ---------------------------------------------------------------------------
+
+/** Profile key for a social account row, or null for the primary account. */
+async function profileKeyFor(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  profileId: string | null
+): Promise<string | null> {
+  if (!profileId) return null;
+  const { data } = await supabase.from("ayrshare_profiles").select("profile_key").eq("id", profileId).single();
+  return data?.profile_key ?? null;
+}
+
+const squash = (text: string) => text.replace(/\s+/g, " ").trim().toLowerCase();
+
+/**
+ * Recover Ayrshare post ids for versions that were handed over but never
+ * recorded the id — every post sent through a client's own profile before
+ * the Profile-Key response shape was handled. Without the id there is no
+ * "Check status", no "With Ayrshare" pill and no performance pull.
+ *
+ * Matching, in order of confidence: the live URL Ayrshare reported; then
+ * the same platform with the identical post text; then the same platform
+ * with the same opening line. Each Ayrshare record is claimed once per
+ * platform. Read-only at Ayrshare — only PBOS rows change.
+ */
+export async function reconcileAyrshareHistory(
+  clientId: string
+): Promise<ActionResult<{ matched: number; unmatched: number; published: number }>> {
+  return runAction(async () => {
+    const supabase = await createClient();
+    const { data: outputs, error } = await supabase
+      .from("content_outputs")
+      .select("id,content_id,platform,caption,hashtags,status,live_url,ayrshare_post_id,social:social_strategies(ayrshare_platform,ayrshare_profile_id)")
+      .eq("client_id", clientId)
+      .eq("ayrshare_post_id", "")
+      .in("status", ["scheduled", "published"]);
+    if (error) throw new UserFacingError(error.message);
+
+    const candidates = (outputs ?? []).filter((o) => o.social?.ayrshare_platform);
+    if (candidates.length === 0) {
+      throw new UserFacingError("Every scheduled or published version with a publishing account already has its Ayrshare id.");
+    }
+
+    // One history fetch per profile (plus one for the primary account).
+    const historyByProfile = new Map<string, AyrshareHistoryRecord[]>();
+    const claimed = new Set<string>();
+    let matched = 0;
+    let published = 0;
+
+    for (const output of candidates) {
+      const profileId = output.social?.ayrshare_profile_id ?? null;
+      const key = profileId ?? "__primary__";
+      if (!historyByProfile.has(key)) {
+        historyByProfile.set(key, await getAyrshareHistory(await profileKeyFor(supabase, profileId)));
+      }
+      const history = historyByProfile.get(key) ?? [];
+      const platform = output.social!.ayrshare_platform as string;
+      const postText = squash([output.caption.trim(), output.hashtags.trim()].filter(Boolean).join("\n\n"));
+      const firstLine = squash(output.caption).slice(0, 60);
+      const onPlatform = (r: AyrshareHistoryRecord) =>
+        !claimed.has(`${r.id}:${platform}`) &&
+        (r.platforms.includes(platform) || r.postIds.some((p) => p.platform === platform));
+
+      const record =
+        (output.live_url &&
+          history.find((r) => onPlatform(r) && r.postIds.some((p) => p.postUrl && p.postUrl === output.live_url))) ||
+        history.find((r) => onPlatform(r) && squash(r.post) === postText) ||
+        (firstLine.length >= 20 && history.find((r) => onPlatform(r) && squash(r.post).startsWith(firstLine))) ||
+        null;
+      if (!record) continue;
+
+      claimed.add(`${record.id}:${platform}`);
+      const live = record.postIds.find((p) => p.platform === platform && p.postUrl)?.postUrl ?? null;
+      const patch: Database["public"]["Tables"]["content_outputs"]["Update"] = { ayrshare_post_id: record.id };
+      if (live && !output.live_url) patch.live_url = live;
+      if (live && output.status !== "published") {
+        patch.status = "published";
+        patch.published_at = record.scheduledAt ?? record.createdAt ?? new Date().toISOString();
+        published += 1;
+      }
+      const { error: updateError } = await supabase.from("content_outputs").update(patch).eq("id", output.id);
+      if (updateError) throw new UserFacingError(updateError.message);
+      if (patch.status === "published") await rollUpMasterStatus(supabase, output.content_id);
+      matched += 1;
+    }
+
+    revalidateContent(clientId);
+    revalidatePath(`/clients/${clientId}/metrics`);
+    return { matched, unmatched: candidates.length - matched, published };
+  });
+}
+
+interface PerformanceTarget {
+  id: string;
+  platform: string;
+  ayrshare_post_id: string;
+  social: { ayrshare_platform: string; ayrshare_profile_id: string | null } | null;
+}
+
+async function pullOne(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  output: PerformanceTarget,
+  profileKeys: Map<string, string | null>
+): Promise<void> {
+  const platform = output.social?.ayrshare_platform;
+  if (!platform) throw new UserFacingError("This version has no Ayrshare platform on its publishing account.");
+  const profileId = output.social?.ayrshare_profile_id ?? null;
+  const key = profileId ?? "__primary__";
+  if (!profileKeys.has(key)) profileKeys.set(key, await profileKeyFor(supabase, profileId));
+
+  const stats = await getAyrsharePostAnalytics(output.ayrshare_post_id, platform, profileKeys.get(key) ?? null);
+  const { error } = await supabase
+    .from("content_outputs")
+    .update({
+      reach: stats.reach,
+      views: stats.views,
+      engagement: stats.engagement,
+      likes: stats.likes,
+      comments: stats.comments,
+      shares: stats.shares,
+      analytics_at: new Date().toISOString(),
+      analytics_raw: stats.raw as Json,
+      ...(stats.postUrl ? { live_url: stats.postUrl } : {}),
+    })
+    .eq("id", output.id);
+  if (error) throw new UserFacingError(error.message);
+}
+
+/** Pull one published version's numbers from Ayrshare. Read-only there. */
+export async function pullOutputPerformance(clientId: string, outputId: string): Promise<ActionResult<string>> {
+  return runAction(async () => {
+    const supabase = await createClient();
+    const { data: output, error } = await supabase
+      .from("content_outputs")
+      .select("id,platform,ayrshare_post_id,social:social_strategies(ayrshare_platform,ayrshare_profile_id)")
+      .eq("id", outputId)
+      .eq("client_id", clientId)
+      .single();
+    if (error) throw new UserFacingError(error.message);
+    if (!output.ayrshare_post_id) {
+      throw new UserFacingError("This version has no Ayrshare post id — use \"Match posts with Ayrshare\" on the Metrics tab first.");
+    }
+    await pullOne(supabase, output, new Map());
+    revalidateContent(clientId);
+    revalidatePath(`/clients/${clientId}/metrics`);
+    return "Performance updated from Ayrshare.";
+  });
+}
+
+/**
+ * Pull performance for every published version of this client that has an
+ * Ayrshare id — least recently pulled first, a batch at a time so a client
+ * with a long back catalogue stays within one request. Each version's
+ * failure is reported, not fatal: TikTok and YouTube say nothing for the
+ * first day or two after publishing.
+ */
+export async function pullClientPerformance(
+  clientId: string
+): Promise<ActionResult<{ updated: number; failed: { label: string; message: string }[]; remaining: number }>> {
+  const BATCH = 8;
+  return runAction(async () => {
+    const supabase = await createClient();
+    const { data: outputs, error } = await supabase
+      .from("content_outputs")
+      .select("id,platform,ayrshare_post_id,analytics_at,content:content_ideas(title),social:social_strategies(ayrshare_platform,ayrshare_profile_id)")
+      .eq("client_id", clientId)
+      .eq("status", "published")
+      .neq("ayrshare_post_id", "")
+      .order("analytics_at", { ascending: true, nullsFirst: true });
+    if (error) throw new UserFacingError(error.message);
+    const targets = (outputs ?? []).filter((o) => o.social?.ayrshare_platform);
+    if (targets.length === 0) {
+      throw new UserFacingError("No published versions carry an Ayrshare post id yet — run \"Match posts with Ayrshare\" first, or publish through PBOS.");
+    }
+
+    const batch = targets.slice(0, BATCH);
+    const profileKeys = new Map<string, string | null>();
+    let updated = 0;
+    const failed: { label: string; message: string }[] = [];
+    // Small parallelism: quick enough for a dozen posts, gentle on Ayrshare.
+    for (let i = 0; i < batch.length; i += 4) {
+      await Promise.all(
+        batch.slice(i, i + 4).map(async (output) => {
+          try {
+            await pullOne(supabase, output, profileKeys);
+            updated += 1;
+          } catch (err) {
+            failed.push({
+              label: `${output.content?.title ?? "Content"} · ${output.platform}`,
+              message: err instanceof Error ? err.message : "Unknown error",
+            });
+          }
+        })
+      );
+    }
+
+    revalidateContent(clientId);
+    revalidatePath(`/clients/${clientId}/metrics`);
+    return { updated, failed, remaining: targets.length - batch.length };
+  });
 }

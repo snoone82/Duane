@@ -91,7 +91,7 @@ export interface ContentMetrics {
   postsPublished: number;
   averageReach: number | null;
   averageEngagement: number | null;
-  topContent: { id: string; title: string; reach: number | null }[];
+  topContent: { id: string; title: string; reach: number | null; views: number | null; engagement: number | null }[];
   topPillar: { name: string; averageReach: number } | null;
 }
 
@@ -102,7 +102,7 @@ export interface ContentMetrics {
 export async function getContentMetrics(supabase: Client, clientId: string): Promise<ContentMetrics> {
   const { data: outputs } = await supabase
     .from("content_outputs")
-    .select("id,platform,reach,engagement,content:content_ideas(id,title,pillar_id)")
+    .select("id,platform,reach,engagement,views,content:content_ideas(id,title,pillar_id)")
     .eq("client_id", clientId)
     .eq("status", "published");
 
@@ -111,6 +111,7 @@ export async function getContentMetrics(supabase: Client, clientId: string): Pro
     title: `${o.content?.title ?? "Untitled"} · ${o.platform}`,
     reach: o.reach,
     engagement: o.engagement,
+    views: o.views,
     pillar_id: o.content?.pillar_id ?? null,
   }));
   const withReach = rows.filter((r) => r.reach !== null);
@@ -123,10 +124,14 @@ export async function getContentMetrics(supabase: Client, clientId: string): Pro
     ? withEngagement.reduce((sum, r) => sum + (r.engagement ?? 0), 0) / withEngagement.length
     : null;
 
-  const topContent = [...withReach]
-    .sort((a, b) => (b.reach ?? 0) - (a.reach ?? 0))
+  // Ranked by reach; a network that reports views but not reach (YouTube,
+  // Facebook) still ranks on what it does report.
+  const measured = rows.filter((r) => r.reach !== null || r.views !== null || r.engagement !== null);
+  const score = (r: (typeof rows)[number]) => r.reach ?? r.views ?? r.engagement ?? 0;
+  const topContent = [...measured]
+    .sort((a, b) => score(b) - score(a))
     .slice(0, 5)
-    .map((r) => ({ id: r.id, title: r.title, reach: r.reach }));
+    .map((r) => ({ id: r.id, title: r.title, reach: r.reach, views: r.views, engagement: r.engagement }));
 
   let topPillar: ContentMetrics["topPillar"] = null;
   const pillarIds = [...new Set(withReach.map((r) => r.pillar_id).filter((id): id is string => id !== null))];

@@ -6,6 +6,8 @@ import { AddMetricTargetButton } from "@/components/clients/AddMetricTargetButto
 import { AddScorecardEntryButton } from "@/components/clients/AddScorecardEntryButton";
 import { AddCommercialOutcomeButton } from "@/components/clients/AddCommercialOutcomeButton";
 import { AddCommercialSnapshotButton } from "@/components/clients/AddCommercialSnapshotButton";
+import { AyrsharePerformancePanel } from "@/components/clients/AyrsharePerformancePanel";
+import { isAyrshareConfigured } from "@/lib/ayrshare";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Table, Thead, Th, Td, Tr } from "@/components/ui/Table";
 import { formatNumber, formatDate, formatCurrency } from "@/lib/format";
@@ -40,13 +42,22 @@ export default async function MetricsPage({ params }: { params: Promise<{ id: st
   const { id } = await params;
   const supabase = await createClient();
 
-  const [platformMetrics, scorecard, contentMetrics, { data: outcomes }, { data: commercialSnapshots }] = await Promise.all([
-    getPlatformMetrics(supabase, id),
-    getScorecard(supabase, id),
-    getContentMetrics(supabase, id),
-    supabase.from("commercial_outcomes").select("*").eq("client_id", id).order("outcome_date", { ascending: false }),
-    supabase.from("commercial_snapshots").select("*").eq("client_id", id).order("period_date", { ascending: false }),
-  ]);
+  const [platformMetrics, scorecard, contentMetrics, { data: outcomes }, { data: commercialSnapshots }, { data: publishedOutputs }] =
+    await Promise.all([
+      getPlatformMetrics(supabase, id),
+      getScorecard(supabase, id),
+      getContentMetrics(supabase, id),
+      supabase.from("commercial_outcomes").select("*").eq("client_id", id).order("outcome_date", { ascending: false }),
+      supabase.from("commercial_snapshots").select("*").eq("client_id", id).order("period_date", { ascending: false }),
+      supabase.from("content_outputs").select("id,ayrshare_post_id,analytics_at").eq("client_id", id).eq("status", "published"),
+    ]);
+  const ayrshareEnabled = isAyrshareConfigured();
+  const published = publishedOutputs ?? [];
+  const withId = published.filter((o) => o.ayrshare_post_id).length;
+  const lastPulledAt = published.reduce<string | null>(
+    (latest, o) => (o.analytics_at && (!latest || o.analytics_at > latest) ? o.analytics_at : latest),
+    null
+  );
 
   return (
     <div className="max-w-4xl space-y-8">
@@ -114,7 +125,15 @@ export default async function MetricsPage({ params }: { params: Promise<{ id: st
 
       <section>
         <h2 className="mb-3 text-sm font-semibold text-ink">Content metrics</h2>
-        <p className="mb-3 text-xs text-ink-faint">Derived from published/measured content ideas — add a reach/engagement number to a content idea once it&rsquo;s measured to feed this.</p>
+        <p className="mb-3 text-xs text-ink-faint">
+          Derived from published platform versions. Numbers come from Ayrshare when a post went out through PBOS, or can be
+          typed onto a version by hand.
+        </p>
+        {ayrshareEnabled && (
+          <div className="mb-3">
+            <AyrsharePerformancePanel clientId={id} publishedCount={published.length} withIdCount={withId} lastPulledAt={lastPulledAt} />
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <div className="rounded-lg border border-border bg-surface p-3">
             <p className="text-xs text-ink-faint">Posts published</p>
@@ -141,7 +160,11 @@ export default async function MetricsPage({ params }: { params: Promise<{ id: st
                 <li key={c.id}>
                   <Link href={`/clients/${id}/content`} className="flex items-center justify-between gap-3 px-3 py-2 text-sm hover:bg-surface-muted">
                     <span className="truncate text-ink">{c.title}</span>
-                    <span className="flex-shrink-0 text-ink-faint">{formatNumber(c.reach)} reach</span>
+                    <span className="flex-shrink-0 text-ink-faint">
+                      {c.views !== null ? `${formatNumber(c.views)} views · ` : ""}
+                      {formatNumber(c.reach)} reach
+                      {c.engagement !== null ? ` · ${formatNumber(c.engagement)} eng.` : ""}
+                    </span>
                   </Link>
                 </li>
               ))}
