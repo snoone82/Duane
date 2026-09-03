@@ -123,7 +123,10 @@ export function ContentOutputRow({
         </div>
         <div className="flex flex-shrink-0 items-center gap-2">
           {output.scheduled_at && output.status !== "published" && (
-            <span className="text-xs text-ink-faint">{formatDateTime(output.scheduled_at)}</span>
+            <span className="text-xs text-ink-faint" title={output.status === "scheduled" ? "Scheduled" : "Time set (from the master schedule or this row) — not on the calendar until it's scheduled"}>
+              {output.status === "scheduled" ? "" : "Planned "}
+              {formatDateTime(output.scheduled_at)}
+            </span>
           )}
           {output.published_at && output.status === "published" && (
             <span className="text-xs text-ink-faint">{formatDateTime(output.published_at)}</span>

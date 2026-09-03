@@ -8,7 +8,7 @@ import { MediaThumb } from "@/components/portal/MediaThumb";
 import { AddIdeaButton, EditableIdea } from "@/components/portal/ClientIdeaComposer";
 import { contentStatusMeta, outputStatusMeta, type OutputStatus } from "@/lib/status";
 import { formatDate, formatDateTime, socialAccountLabel } from "@/lib/format";
-import { thumbUrl } from "@/lib/media";
+import { mediaPreview } from "@/lib/media";
 
 export const metadata = { title: "Content" };
 
@@ -53,13 +53,14 @@ export default async function PortalContentPage() {
   const outputLine = (contentId: string) =>
     (outputsByContent.get(contentId) ?? []).map((o) => socialAccountLabel(o.platform, o.social?.account_name)).join(" · ");
 
-  /** The card's primary thumbnail: the first platform version with media. */
-  const primaryThumb = (contentId: string) => {
-    for (const output of outputsByContent.get(contentId) ?? []) {
-      const thumb = thumbUrl(output);
+  /** The card's primary thumbnail: the first platform version with media,
+   * inherited master media included. */
+  const primaryThumb = (idea: NonNullable<typeof ideas>[number]) => {
+    for (const output of outputsByContent.get(idea.id) ?? []) {
+      const thumb = mediaPreview(output, idea);
       if (thumb) return thumb;
     }
-    return null;
+    return mediaPreview(idea);
   };
 
   /** Expandable per-platform versions — Duane's "open the content item and
@@ -176,12 +177,12 @@ export default async function PortalContentPage() {
                 {upcoming.map((idea) => {
                   const meta = contentStatusMeta(idea.status);
                   const scheduled = (outputsByContent.get(idea.id) ?? []).filter((o) => o.status === "scheduled");
-                  const thumb = primaryThumb(idea.id);
+                  const thumb = primaryThumb(idea);
                   return (
                     <div key={idea.id} id={`idea-${idea.id}`} className="scroll-mt-4 rounded-lg border border-border bg-surface px-4 py-3">
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex min-w-0 items-start gap-3">
-                          {thumb && <MediaThumb url={thumb} />}
+                          {thumb && <MediaThumb url={thumb.url} kind={thumb.kind} />}
                           <div className="min-w-0">
                             <p className="text-sm font-medium text-ink">{idea.title}</p>
                             <p className="mt-0.5 text-xs text-ink-faint">
@@ -216,12 +217,12 @@ export default async function PortalContentPage() {
               <div className="space-y-2">
                 {published.map((idea) => {
                   const ideaOutputs = (outputsByContent.get(idea.id) ?? []).filter((o) => o.status === "published");
-                  const thumb = primaryThumb(idea.id);
+                  const thumb = primaryThumb(idea);
                   return (
                     <div key={idea.id} id={`idea-${idea.id}`} className="scroll-mt-4 rounded-lg border border-border bg-surface px-4 py-3">
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex min-w-0 items-start gap-3">
-                          {thumb && <MediaThumb url={thumb} />}
+                          {thumb && <MediaThumb url={thumb.url} kind={thumb.kind} />}
                           <p className="text-sm font-medium text-ink">{idea.title}</p>
                         </div>
                         <StatusPill label={contentStatusMeta(idea.status).label} color={contentStatusMeta(idea.status).color} />
