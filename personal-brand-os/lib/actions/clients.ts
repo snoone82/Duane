@@ -7,6 +7,7 @@ import type { ActionResult } from "@/lib/action-result";
 import { runAction } from "@/lib/action-result";
 import type { ClientStatus } from "@/lib/enums";
 import { CLIENT_STATUS } from "@/lib/status";
+import { resolveOutstandingProfileLabels } from "@/lib/actions/profile-confirmation";
 
 export async function createClientAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
   const name = String(formData.get("name") ?? "").trim();
@@ -77,17 +78,39 @@ export async function updateClient(clientId: string, patch: Partial<ClientHeader
   });
 }
 
+/** The exact label text lib/import/client-profile.ts gives each of these
+ * fields — deliberately not humanised from the raw key, so a field filled
+ * in here ticks the same outstanding-profile item a re-import would. */
+const OVERVIEW_LABELS: Partial<Record<keyof ClientHeaderInput, string>> = {
+  email: "Overview → email",
+  phone: "Overview → phone",
+  company: "Overview → company",
+  job_title: "Overview → job title",
+  industry: "Overview → industry",
+  location: "Overview → location",
+  package: "Overview → package",
+  retainer_amount: "Overview → retainer amount",
+  north_star: "Overview → North Star",
+  website_url: "Overview → website",
+};
+
 export async function updateClientField(
   clientId: string,
   field: keyof ClientHeaderInput,
   value: string
 ): Promise<ActionResult> {
-  if (NUMERIC_CLIENT_FIELDS.includes(field)) {
-    if (value.trim() && Number.isNaN(Number(value))) return { ok: false, message: "Must be a number." };
-    return updateClient(clientId, { [field]: value.trim() ? Number(value) : null } as Partial<ClientHeaderInput>);
+  const result = NUMERIC_CLIENT_FIELDS.includes(field)
+    ? value.trim() && Number.isNaN(Number(value))
+      ? { ok: false as const, message: "Must be a number." }
+      : await updateClient(clientId, { [field]: value.trim() ? Number(value) : null } as Partial<ClientHeaderInput>)
+    : NON_NULL_TEXT_FIELDS.includes(field)
+      ? await updateClient(clientId, { [field]: value } as Partial<ClientHeaderInput>)
+      : await updateClient(clientId, { [field]: value || null } as Partial<ClientHeaderInput>);
+
+  const label = OVERVIEW_LABELS[field];
+  if (result.ok && label && value.trim()) {
+    const supabase = await createSupabaseClient();
+    await resolveOutstandingProfileLabels(supabase, clientId, [label]);
   }
-  if (NON_NULL_TEXT_FIELDS.includes(field)) {
-    return updateClient(clientId, { [field]: value } as Partial<ClientHeaderInput>);
-  }
-  return updateClient(clientId, { [field]: value || null } as Partial<ClientHeaderInput>);
+  return result;
 }

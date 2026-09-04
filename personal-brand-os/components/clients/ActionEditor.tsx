@@ -9,6 +9,7 @@ import { Input, Label } from "@/components/ui/Input";
 import { Notice } from "@/components/ui/Notice";
 import { ACTION_STATUS, ACTION_PRIORITY, ACTION_VISIBILITY, ACTION_SOURCE_LABELS } from "@/lib/status";
 import { formatDate } from "@/lib/format";
+import { isProductionChecklistText } from "@/lib/production-checklist";
 import type { Database } from "@/lib/database.types";
 
 type ActionRowData = Database["public"]["Tables"]["actions"]["Row"];
@@ -201,6 +202,14 @@ export function ActionEditor({
                   className={item.done ? "line-through opacity-60" : ""}
                   autoComplete="off"
                 />
+                {isProductionChecklistText(item.text) && (
+                  <span
+                    className="flex-shrink-0 rounded bg-surface-muted px-1 text-[10px] font-medium uppercase tracking-wide text-ink-faint"
+                    title="PBOS ticks this automatically once it happens elsewhere in the system — renaming it stops that."
+                  >
+                    Auto
+                  </span>
+                )}
                 <button
                   type="button"
                   aria-label={`Remove checklist item ${index + 1}`}

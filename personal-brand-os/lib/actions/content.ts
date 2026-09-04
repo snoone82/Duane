@@ -8,17 +8,7 @@ import type { Database } from "@/lib/database.types";
 import type { ContentPriority, ContentStatus } from "@/lib/enums";
 import { CONTENT_STATUS, CONTENT_PRIORITY, type OutputStatus } from "@/lib/status";
 import { fieldPatch } from "@/lib/field-patch";
-
-/** The production steps seeded into the checklist of the Action that gets
- * created when an idea is approved for production (Duane's workflow §1). */
-const PRODUCTION_CHECKLIST = [
-  "Write the draft",
-  "Record / create the media",
-  "Edit the content",
-  "Complete internal review",
-  "Send for client approval",
-  "Schedule the approved content",
-];
+import { PRODUCTION_CHECKLIST_STEPS, productionChecklistItemDone } from "@/lib/production-checklist";
 
 function revalidateContent(clientId: string) {
   revalidatePath(`/clients/${clientId}/content`);
@@ -62,6 +52,7 @@ export async function updateContentIdeaStatus(
     const supabase = await createClient();
     const { error } = await supabase.from("content_ideas").update({ status }).eq("id", ideaId);
     if (error) throw new Error(error.message);
+    await syncProductionChecklist(supabase, ideaId);
     revalidateContent(clientId);
     return undefined;
   });
@@ -121,6 +112,8 @@ export async function updateContentIdeaField(
       .update(fieldPatch<Database["public"]["Tables"]["content_ideas"]["Update"]>(field, patchValue))
       .eq("id", ideaId);
     if (error) throw new Error(error.message);
+    // "Write the draft" is watching these two fields.
+    if (field === "body" || field === "hook") await syncProductionChecklist(supabase, ideaId);
     revalidateContent(clientId);
     return undefined;
   });
@@ -185,7 +178,7 @@ export async function approveForProduction(_prev: ActionResult | null, formData:
         status: "in_progress",
         content_id: ideaId,
         source: "content",
-        checklist: PRODUCTION_CHECKLIST.map((text) => ({ text, done: false })),
+        checklist: PRODUCTION_CHECKLIST_STEPS.map((text) => ({ text, done: false })),
       })
       .select("id")
       .single();
@@ -234,6 +227,9 @@ export async function approveForProduction(_prev: ActionResult | null, formData:
       .eq("id", ideaId);
     if (updateError) throw new Error(updateError.message);
 
+    // Catches the case where a draft was already written before approval —
+    // the fresh checklist shouldn't sit at 0/8 when step one is done.
+    await syncProductionChecklist(supabase, ideaId);
     revalidateContent(clientId);
     return undefined;
   });
@@ -263,6 +259,11 @@ export async function requestContentChanges(clientId: string, ideaId: string, co
     if (idea.action_id) {
       await supabase.from("actions").update({ status: "in_progress", completed_at: null }).eq("id", idea.action_id);
     }
+    // Reopening above is belt-and-braces for an Action the sync wouldn't
+    // otherwise touch (e.g. a manually completed one); the sync itself
+    // un-ticks review/approval and, if that was the only thing keeping the
+    // checklist complete, reopens the Action on its own too.
+    await syncProductionChecklist(supabase, ideaId);
     revalidateContent(clientId);
     return undefined;
   });
@@ -411,6 +412,77 @@ export async function rollUpMasterStatus(supabase: Awaited<ReturnType<typeof cre
       await supabase.from("content_ideas").update({ status: "scheduled" }).eq("id", contentId);
     }
   }
+  // Whatever just happened to the outputs, the checklist should reflect it —
+  // "Schedule the content" and, once published, the whole Action closing
+  // via the branch above both come from the same idea.status this touches.
+  await syncProductionChecklist(supabase, contentId);
+}
+
+/**
+ * Keep a production Action's checklist honest against what PBOS already
+ * knows happened elsewhere in the system, and close the Action out once
+ * every item — the ones PBOS manages and anything added by hand — is done.
+ *
+ * Scoped deliberately: only actions.source === 'content' (what
+ * approveForProduction creates), and only checklist items whose text
+ * matches a recognised production step (lib/production-checklist.ts) — a
+ * manually added extra item is left for a person to tick, and it alone can
+ * keep the Action from auto-completing. Idempotent, so every call site that
+ * might move an idea's stage just calls this afterwards rather than each
+ * working out what changed.
+ */
+export async function syncProductionChecklist(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  ideaId: string
+): Promise<void> {
+  const { data: idea } = await supabase
+    .from("content_ideas")
+    .select("client_id,status,body,hook,media_path,media_source_url,action_id")
+    .eq("id", ideaId)
+    .maybeSingle();
+  if (!idea?.action_id) return;
+
+  const { data: action } = await supabase
+    .from("actions")
+    .select("id,checklist,status,source")
+    .eq("id", idea.action_id)
+    .maybeSingle();
+  if (!action || action.source !== "content") return;
+
+  const list = Array.isArray(action.checklist) ? (action.checklist as { text: string; done: boolean }[]) : [];
+  if (list.length === 0) return;
+
+  const ctx = {
+    hasDraft: Boolean(idea.body?.trim() || idea.hook?.trim()),
+    hasMedia: Boolean(idea.media_path?.trim() || idea.media_source_url?.trim()),
+    status: idea.status as ContentStatus,
+  };
+
+  let changed = false;
+  const next = list.map((item) => {
+    const done = productionChecklistItemDone(item.text, ctx);
+    if (done === null || done === item.done) return item;
+    changed = true;
+    return { ...item, done };
+  });
+
+  const allDone = next.length > 0 && next.every((c) => c.done);
+  const patch: Database["public"]["Tables"]["actions"]["Update"] = {};
+  if (changed) patch.checklist = next;
+  if (allDone && action.status !== "completed") {
+    patch.status = "completed";
+    patch.completed_at = new Date().toISOString();
+  } else if (!allDone && action.status === "completed") {
+    // The work regressed after being marked done — changes were requested,
+    // or a version got unscheduled — so the Action reopens rather than
+    // sitting stale as "Completed" against work that no longer is.
+    patch.status = "in_progress";
+    patch.completed_at = null;
+  }
+  if (Object.keys(patch).length === 0) return;
+
+  await supabase.from("actions").update(patch).eq("id", action.id);
+  revalidatePath(`/clients/${idea.client_id}/actions`);
 }
 
 export async function scheduleContentOutput(
@@ -685,6 +757,8 @@ export async function attachIdeaMedia(
     const oldPath = kind === "media" ? existing.media_path : existing.thumbnail_path;
     if (oldPath && oldPath !== storagePath) await removeObjectIfUnreferenced(supabase, oldPath);
 
+    // "Record" / "Create the media" are watching the master media slot.
+    if (kind === "media") await syncProductionChecklist(supabase, ideaId);
     revalidateContent(clientId);
     return undefined;
   });
@@ -713,6 +787,7 @@ export async function removeIdeaMedia(clientId: string, ideaId: string, kind: Me
 
     if (oldPath) await removeObjectIfUnreferenced(supabase, oldPath);
 
+    if (kind === "media") await syncProductionChecklist(supabase, ideaId);
     revalidateContent(clientId);
     return undefined;
   });
