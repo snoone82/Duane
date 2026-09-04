@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { runAction, type ActionResult } from "@/lib/action-result";
 import { fieldPatch } from "@/lib/field-patch";
+import { resolveOutstandingProfileLabels } from "@/lib/actions/profile-confirmation";
 import type { Database } from "@/lib/database.types";
 
 const VISION_FIELDS = [
@@ -25,6 +26,9 @@ export async function updateVisionField(clientId: string, field: VisionField, va
       .update(fieldPatch<Database["public"]["Tables"]["brand_vision"]["Update"]>(field, value))
       .eq("client_id", clientId);
     if (error) throw new Error(error.message);
+    // Matches the label the importer uses for this same field (Duane Part
+    // H §14) — filling it in here ticks the outstanding-profile item too.
+    if (value.trim()) await resolveOutstandingProfileLabels(supabase, clientId, [`Vision → ${field}`]);
     revalidatePath(`/clients/${clientId}/vision`);
     return undefined;
   });

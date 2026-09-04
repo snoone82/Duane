@@ -187,9 +187,13 @@ export async function portalRespondContent(
       .maybeSingle();
     if (error) throw new UserFacingError(error.message);
     if (!updated) throw new UserFacingError("This item is no longer awaiting your approval.");
-    // Reopening the linked production Action happens in the
-    // reopen_action_on_changes_requested trigger — portal users have no
-    // UPDATE rights on actions, so it can't be done here.
+    // Reopening the linked production Action, and ticking/un-ticking its
+    // "Complete internal review" / "Send for client approval" / "Content
+    // approved" checklist items to match, happens in the
+    // reopen_action_on_changes_requested trigger (migration 0031) — portal
+    // users have no UPDATE rights on the internal production Action, so it
+    // can't be done here the way lib/actions/content.ts's
+    // syncProductionChecklist does it for every admin-side write.
 
     revalidatePath("/portal/content");
     return undefined;

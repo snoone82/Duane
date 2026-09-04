@@ -8,6 +8,7 @@ import { StatusPill } from "@/components/ui/StatusPill";
 import { ActionEditor, type OwnerOption } from "@/components/clients/ActionEditor";
 import { updateActionField, updateActionStatus, deleteAction, toggleChecklistItem } from "@/lib/actions/actions";
 import { ACTION_STATUS, actionPriorityMeta } from "@/lib/status";
+import { isProductionChecklistText } from "@/lib/production-checklist";
 import { Td, Tr } from "@/components/ui/Table";
 import { isOverdue } from "@/lib/format";
 import type { Database } from "@/lib/database.types";
@@ -97,6 +98,14 @@ export function ActionRow({
                       onChange={(e) => toggleChecklistItem(clientId, action.id, index, e.target.checked)}
                     />
                     <span className={item.done ? "line-through opacity-60" : ""}>{item.text}</span>
+                    {isProductionChecklistText(item.text) && (
+                      <span
+                        className="rounded bg-surface-muted px-1 text-[10px] font-medium uppercase tracking-wide text-ink-faint"
+                        title="PBOS ticks this automatically once it happens elsewhere in the system"
+                      >
+                        Auto
+                      </span>
+                    )}
                   </label>
                 </li>
               ))}

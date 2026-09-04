@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { runAction, type ActionResult } from "@/lib/action-result";
 import { fieldPatch } from "@/lib/field-patch";
+import { resolveOutstandingProfileLabels } from "@/lib/actions/profile-confirmation";
 import type { Database } from "@/lib/database.types";
 
 const POSITIONING_FIELDS = [
@@ -31,6 +32,7 @@ export async function updatePositioningField(
       .update(fieldPatch<Database["public"]["Tables"]["positioning"]["Update"]>(field, value))
       .eq("client_id", clientId);
     if (error) throw new Error(error.message);
+    if (value.trim()) await resolveOutstandingProfileLabels(supabase, clientId, [`Positioning → ${field}`]);
     revalidatePath(`/clients/${clientId}/positioning`);
     return undefined;
   });

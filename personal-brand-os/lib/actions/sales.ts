@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { runAction, type ActionResult } from "@/lib/action-result";
 import { fieldPatch } from "@/lib/field-patch";
+import { resolveOutstandingProfileLabels } from "@/lib/actions/profile-confirmation";
 import type { Database } from "@/lib/database.types";
 
 /** Business-level Monthly Sales Target (Duane §3) — one number in the
@@ -55,6 +56,9 @@ export async function updateSalesStrategyField(clientId: string, field: SalesFie
       .update(fieldPatch<Database["public"]["Tables"]["sales_strategy"]["Update"]>(field, value))
       .eq("client_id", clientId);
     if (error) throw new Error(error.message);
+    // The importer's label for this field is "Sales → <field>", not
+    // "Sales strategy →" — matching lib/import/client-profile.ts exactly.
+    if (value.trim()) await resolveOutstandingProfileLabels(supabase, clientId, [`Sales → ${field}`]);
     revalidatePath(`/clients/${clientId}/sales`);
     return undefined;
   });

@@ -286,11 +286,19 @@ export default async function PortalCalendarPage({
           </Link>
         ))}
         {platforms.length > 1 && <span className="mx-1 text-ink-faint">·</span>}
+        {platforms.length > 1 && (
+          <Link
+            href={link(month, filter, "")}
+            className={`rounded-full px-2.5 py-1 text-xs ${platformFilter === "" ? "bg-accent-soft font-medium text-accent-strong" : "border border-border text-ink-soft hover:bg-surface-muted"}`}
+          >
+            All platforms
+          </Link>
+        )}
         {platforms.length > 1 &&
           platforms.map((p) => (
             <Link
               key={p}
-              href={link(month, filter, platformFilter === p ? "" : p)}
+              href={link(month, filter, p)}
               className={`rounded-full px-2.5 py-1 text-xs ${platformFilter === p ? "bg-accent-soft font-medium text-accent-strong" : "border border-border text-ink-soft hover:bg-surface-muted"}`}
             >
               {p}
