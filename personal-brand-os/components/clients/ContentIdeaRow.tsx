@@ -5,6 +5,7 @@ import Link from "next/link";
 import { AutosaveInput } from "@/components/ui/AutosaveInput";
 import { AutosaveTextarea } from "@/components/ui/AutosaveTextarea";
 import { StatusSelect } from "@/components/ui/StatusSelect";
+import { StatusPill } from "@/components/ui/StatusPill";
 import { Button } from "@/components/ui/Button";
 import { Input, Label, Select, Textarea } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
@@ -18,7 +19,9 @@ import {
   requestContentChanges,
   addContentOutput,
 } from "@/lib/actions/content";
-import { CONTENT_STATUS, CONTENT_PRIORITY } from "@/lib/status";
+import { updatePlanContentIdeaField } from "@/lib/actions/monthly-plans";
+import { CONTENT_STATUS, CONTENT_PRIORITY, contentOriginMeta } from "@/lib/status";
+import { planSequenceLabel } from "@/lib/monthly-plan-format";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { ContentOutputRow } from "@/components/clients/ContentOutputRow";
 import { MasterMediaSlot } from "@/components/clients/MasterMediaSlot";
@@ -124,7 +127,15 @@ export function ContentIdeaRow({
       <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 px-4 py-2.5">
         <div className="flex min-w-0 items-center gap-2">
           <span className="text-xs text-ink-faint transition-transform duration-150 group-open:rotate-180">▾</span>
+          {idea.monthly_plan_id && idea.plan_sequence !== null && (
+            <span className="flex-shrink-0 font-mono text-xs text-ink-faint">{planSequenceLabel(idea.plan_sequence)}</span>
+          )}
           <span className="truncate text-sm text-ink">{idea.title}</span>
+          {idea.origin !== "manual" && (
+            <span className="flex-shrink-0">
+              <StatusPill label={contentOriginMeta(idea.origin).label} color={contentOriginMeta(idea.origin).color} />
+            </span>
+          )}
           {pillarName && (
             <span className="flex-shrink-0 rounded-full bg-surface-muted px-2 py-0.5 text-xs text-ink-soft">{pillarName}</span>
           )}
@@ -243,6 +254,58 @@ export function ContentIdeaRow({
         <AutosaveInput id={`idea-hook-${idea.id}`} label="Hook" initialValue={idea.hook} onSave={save("hook")} placeholder="The opening line / angle that earns attention" />
         <AutosaveTextarea id={`idea-body-${idea.id}`} label="Brief / body" initialValue={idea.body} onSave={save("body")} rows={3} />
         <AutosaveTextarea id={`idea-notes-${idea.id}`} label="Notes" initialValue={idea.notes} onSave={save("notes")} rows={2} />
+
+        {/* Monthly Plan fields (Duane, 5 Sep 2026) — only meaningful for
+            Master Content created inside a plan, so hidden entirely for
+            content ideas outside one. */}
+        {idea.monthly_plan_id && (
+          <div className="space-y-3 rounded-md border border-border bg-surface-muted/30 p-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ink-faint">Monthly Plan fields</p>
+            <AutosaveTextarea
+              id={`idea-core-${idea.id}`}
+              label="Core message"
+              helpText="The single-sentence takeaway — distinct from the hook and the brief above."
+              initialValue={idea.core_message}
+              onSave={(v) => updatePlanContentIdeaField(clientId, idea.id, "core_message", v)}
+              rows={2}
+            />
+            <AutosaveTextarea
+              id={`idea-purpose-${idea.id}`}
+              label="Purpose"
+              initialValue={idea.purpose}
+              onSave={(v) => updatePlanContentIdeaField(clientId, idea.id, "purpose", v)}
+              rows={2}
+            />
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <AutosaveInput
+                id={`idea-cta-${idea.id}`}
+                label="CTA"
+                initialValue={idea.cta}
+                onSave={(v) => updatePlanContentIdeaField(clientId, idea.id, "cta", v)}
+              />
+              <AutosaveInput
+                id={`idea-ctadest-${idea.id}`}
+                label="CTA destination"
+                initialValue={idea.cta_destination}
+                onSave={(v) => updatePlanContentIdeaField(clientId, idea.id, "cta_destination", v)}
+              />
+              <AutosaveInput
+                id={`idea-leadplatform-${idea.id}`}
+                label="Lead platform"
+                initialValue={idea.lead_platform}
+                onSave={(v) => updatePlanContentIdeaField(clientId, idea.id, "lead_platform", v)}
+              />
+            </div>
+            <AutosaveTextarea
+              id={`idea-leaddraft-${idea.id}`}
+              label="Lead draft copy"
+              helpText="A fuller first draft of publish-ready copy for the lead platform."
+              initialValue={idea.lead_draft_copy}
+              onSave={(v) => updatePlanContentIdeaField(clientId, idea.id, "lead_draft_copy", v)}
+              rows={3}
+            />
+          </div>
+        )}
 
         {/* Master media (Duane, 3 Sep): upload once here, every platform
             version inherits it unless that platform has its own override. */}

@@ -333,6 +333,7 @@ const OUTPUT_FIELDS = [
   "cta",
   "hashtags",
   "alt_text",
+  "media_brief",
   "destination_link",
   // Externally hosted media — kept separate from destination_link, which is
   // the CTA/web destination and must never double as the video asset.
