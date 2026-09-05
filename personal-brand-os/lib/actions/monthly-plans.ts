@@ -5,7 +5,6 @@ import { createClient } from "@/lib/supabase/server";
 import { runAction, type ActionResult } from "@/lib/action-result";
 import { UserFacingError } from "@/lib/errors";
 import { fieldPatch } from "@/lib/field-patch";
-import { buildRecordMatcher, type RecordMatcher } from "@/lib/import/record-match";
 import { buildAccountResolver, normaliseAccountKey } from "@/lib/social-match";
 import { assessPlatformFit, cadenceStatus, cadenceLabel } from "@/lib/platform-strategy";
 import type { Database } from "@/lib/database.types";
@@ -13,10 +12,11 @@ import {
   MONTHLY_PLAN_STATUS,
   REQUIREMENT_TYPE,
   REQUIREMENT_STATE,
+  MEDIA_STATE,
   type MonthlyPlanStatus,
   type RequirementType,
 } from "@/lib/status";
-import { periodMonthLabel, planSequenceLabel } from "@/lib/monthly-plan-format";
+import { periodMonthLabel, planSequenceLabel, isPlatformExcluded, platformLabel } from "@/lib/monthly-plan-format";
 
 type SupabaseClient = Awaited<ReturnType<typeof createClient>>;
 
@@ -70,6 +70,72 @@ async function buildSnapshot(supabase: SupabaseClient, clientId: string): Promis
 }
 
 // ---------------------------------------------------------------------------
+// Readiness check (Duane, testing Daniel's October plan): PBOS must not
+// generate off incomplete client intelligence — a blank field is never
+// silently "excluded" and never something the AI is left to guess. Every
+// active platform gets one of three states: ready, excluded (the client's
+// own strategy has ruled it out — never offered as a destination), or
+// active-but-incomplete (a blank cadence on a live platform is exactly the
+// case that must block, not slide through as if excluded).
+// ---------------------------------------------------------------------------
+
+export interface PlatformReadiness {
+  id: string;
+  label: string;
+  state: "ready" | "excluded" | "incomplete";
+  missing: string[];
+}
+
+export interface MonthlyPlanReadiness {
+  ready: boolean;
+  blockers: string[];
+  platforms: PlatformReadiness[];
+}
+
+async function checkReadinessInternal(supabase: SupabaseClient, clientId: string): Promise<MonthlyPlanReadiness> {
+  const [{ data: client }, { data: guidelines }, { data: pillars }, { data: audiences }, { data: socials }] = await Promise.all([
+    supabase.from("clients").select("north_star").eq("id", clientId).maybeSingle(),
+    supabase.from("content_guidelines").select("*").eq("client_id", clientId).maybeSingle(),
+    supabase.from("brand_pillars").select("id").eq("client_id", clientId),
+    supabase.from("audiences").select("id").eq("client_id", clientId),
+    supabase.from("social_strategies").select("*").eq("client_id", clientId),
+  ]);
+
+  const blockers: string[] = [];
+  if (!client?.north_star?.trim()) blockers.push("Primary objective missing.");
+  if ((pillars ?? []).length === 0) blockers.push("No approved content pillars set up.");
+  if ((audiences ?? []).length === 0) blockers.push("No audiences set up.");
+  if (!guidelines?.cta_priorities?.trim()) blockers.push("CTA priorities / direction missing.");
+  if (!guidelines?.tone_voice_notes?.trim()) blockers.push("Tone / voice guidance missing.");
+
+  const platforms: PlatformReadiness[] = (socials ?? []).map((account) => {
+    const label = platformLabel(account);
+    if (isPlatformExcluded(account)) return { id: account.id, label, state: "excluded", missing: [] };
+
+    const missing: string[] = [];
+    if (!account.objective.trim()) missing.push("objective / role");
+    if (!(account.cadence_target > 0)) missing.push("cadence");
+    if (!account.tone_voice.trim()) missing.push("tone / voice guidance");
+    if (!account.primary_audience_id && !account.audience.trim()) missing.push("audience / strategic role");
+
+    if (missing.length > 0) {
+      for (const field of missing) blockers.push(`${label}: ${field} missing`);
+      return { id: account.id, label, state: "incomplete", missing };
+    }
+    return { id: account.id, label, state: "ready", missing: [] };
+  });
+
+  return { ready: blockers.length === 0, blockers, platforms };
+}
+
+export async function checkMonthlyPlanReadiness(clientId: string): Promise<ActionResult<MonthlyPlanReadiness>> {
+  return runAction(async () => {
+    const supabase = await createClient();
+    return checkReadinessInternal(supabase, clientId);
+  });
+}
+
+// ---------------------------------------------------------------------------
 // The plan itself
 // ---------------------------------------------------------------------------
 
@@ -83,8 +149,9 @@ export async function createMonthlyPlan(clientId: string, periodMonth: string): 
     const {
       data: { user },
     } = await supabase.auth.getUser();
-    const [{ data: client }, snapshot] = await Promise.all([
+    const [{ data: client }, { data: guidelines }, snapshot] = await Promise.all([
       supabase.from("clients").select("north_star").eq("id", clientId).maybeSingle(),
+      supabase.from("content_guidelines").select("*").eq("client_id", clientId).maybeSingle(),
       buildSnapshot(supabase, clientId),
     ]);
 
@@ -93,9 +160,17 @@ export async function createMonthlyPlan(clientId: string, periodMonth: string): 
       .insert({
         client_id: clientId,
         period_month: normalised,
-        // A best-effort starting point, not a rule — a strategist edits this
-        // fresh each month; it is never re-pulled automatically afterwards.
+        // Best-effort starting points inherited from the permanent client
+        // profile, not reconstructed from nothing — a strategist edits these
+        // fresh each month from here; never re-pulled automatically
+        // afterwards. scope_status stays blank: month-specific by design.
         primary_objective: client?.north_star ?? "",
+        secondary_objectives: guidelines?.secondary_objectives ?? "",
+        global_tone_notes: guidelines?.tone_voice_notes ?? "",
+        preferred_language: guidelines?.preferred_language ?? "",
+        avoid_language: guidelines?.avoid_language ?? "",
+        cta_priorities: guidelines?.cta_priorities ?? "",
+        primary_cta_destination: guidelines?.primary_cta_destination ?? "",
         snapshot: snapshot as unknown as Database["public"]["Tables"]["monthly_plans"]["Insert"]["snapshot"],
         created_by: user?.id ?? null,
       })
@@ -206,13 +281,19 @@ export async function addPlanContentIdea(_prev: ActionResult | null, formData: F
   if (!title) return { ok: false, message: "Title is required." };
   const pillarId = String(formData.get("pillar_id") ?? "") || null;
   const audienceId = String(formData.get("audience_id") ?? "") || null;
+  const leadPlatformId = String(formData.get("lead_platform_id") ?? "") || null;
 
   return runAction(async () => {
     const supabase = await createClient();
     const {
       data: { user },
     } = await supabase.auth.getUser();
-    const sequence = await nextPlanSequence(supabase, planId);
+    const [sequence, { data: leadAccount }] = await Promise.all([
+      nextPlanSequence(supabase, planId),
+      leadPlatformId
+        ? supabase.from("social_strategies").select("platform,account_name").eq("id", leadPlatformId).eq("client_id", clientId).maybeSingle()
+        : Promise.resolve({ data: null }),
+    ]);
     const { error } = await supabase.from("content_ideas").insert({
       client_id: clientId,
       monthly_plan_id: planId,
@@ -225,7 +306,8 @@ export async function addPlanContentIdea(_prev: ActionResult | null, formData: F
       hook: String(formData.get("hook") ?? "").trim(),
       cta: String(formData.get("cta") ?? "").trim(),
       cta_destination: String(formData.get("cta_destination") ?? "").trim(),
-      lead_platform: String(formData.get("lead_platform") ?? "").trim(),
+      lead_platform_id: leadPlatformId,
+      lead_platform: leadAccount ? platformLabel(leadAccount) : "",
       origin: "manual",
       created_by: user?.id ?? null,
     });
@@ -242,7 +324,6 @@ const PLAN_CONTENT_FIELDS = [
   "hook",
   "cta",
   "cta_destination",
-  "lead_platform",
   "lead_draft_copy",
   "body",
   "notes",
@@ -266,6 +347,33 @@ export async function updatePlanContentIdeaField(
     const { error } = await supabase
       .from("content_ideas")
       .update(fieldPatch<Database["public"]["Tables"]["content_ideas"]["Update"]>(field, patchValue))
+      .eq("id", ideaId);
+    if (error) throw new Error(error.message);
+    revalidatePlan(clientId);
+    return undefined;
+  });
+}
+
+/** Lead platform is a select against real accounts, not free text — set
+ * lead_platform_id and lead_platform (the display label) together so they
+ * never drift apart. */
+export async function updatePlanContentLeadPlatform(clientId: string, ideaId: string, leadPlatformId: string | null): Promise<ActionResult> {
+  return runAction(async () => {
+    const supabase = await createClient();
+    let label = "";
+    if (leadPlatformId) {
+      const { data: account } = await supabase
+        .from("social_strategies")
+        .select("platform,account_name")
+        .eq("id", leadPlatformId)
+        .eq("client_id", clientId)
+        .maybeSingle();
+      if (!account) throw new Error("That platform doesn't belong to this client.");
+      label = platformLabel(account);
+    }
+    const { error } = await supabase
+      .from("content_ideas")
+      .update({ lead_platform_id: leadPlatformId, lead_platform: label })
       .eq("id", ideaId);
     if (error) throw new Error(error.message);
     revalidatePlan(clientId);
@@ -360,7 +468,10 @@ async function reconcilePlanRequirementsInternal(
   planId: string
 ): Promise<{ created: number; updated: number; removed: number }> {
   const [{ data: ideas }, { data: existingReqs }, { data: socials }] = await Promise.all([
-    supabase.from("content_ideas").select("id,plan_sequence,title,lead_platform,cta,cta_destination").eq("monthly_plan_id", planId),
+    supabase
+      .from("content_ideas")
+      .select("id,plan_sequence,title,lead_platform,lead_platform_id,cta,cta_destination")
+      .eq("monthly_plan_id", planId),
     supabase.from("monthly_plan_requirements").select("id,generated_key").eq("monthly_plan_id", planId).eq("origin", "system_generated"),
     supabase.from("social_strategies").select("*").eq("client_id", clientId),
   ]);
@@ -393,12 +504,12 @@ async function reconcilePlanRequirementsInternal(
     const idea = ideaById.get(output.content_id);
     if (idea) bucket.seqs.add(planSequenceLabel(idea.plan_sequence));
     const account = accountFor(output);
-    bucket.labels.add(account ? (account.account_name ? `${account.platform} — ${account.account_name}` : account.platform) : output.platform);
+    bucket.labels.add(account ? platformLabel(account) : output.platform);
     byFormat.set(key, bucket);
   }
   for (const [key, bucket] of byFormat) {
     const isFilming = /film|record|shoot|reel|video|short|clip|live/i.test(key);
-    const isAsset = /image|photo|graphic|carousel|design|thumbnail|banner|infograph/i.test(key);
+    const isAsset = /image|photo|graphic|carousel|design|thumbnail|banner|infograph|static/i.test(key);
     desired.set(`format:${key}`, {
       type: isFilming ? "filming" : isAsset ? "asset_upload" : "other",
       description: `${isFilming ? "Film" : "Source"} ${bucket.count} × ${key} (${[...bucket.labels].sort().join(", ")})`,
@@ -407,21 +518,23 @@ async function reconcilePlanRequirementsInternal(
   }
 
   // b) A declared lead platform with no matching Platform Output yet.
+  // Prefers the real lead_platform_id link; falls back to text matching for
+  // ideas created before that column existed or added without one resolved.
   for (const idea of ideaList) {
-    const leadPlatform = idea.lead_platform.trim();
-    if (!leadPlatform) continue;
-    const leadAccount = resolveAccount(leadPlatform, leadPlatform);
+    const leadPlatformText = idea.lead_platform.trim();
+    if (!idea.lead_platform_id && !leadPlatformText) continue;
     const hasOutput = outputList.some((o) => {
       if (o.content_id !== idea.id) return false;
       const account = accountFor(o);
-      if (leadAccount && account) return account.id === leadAccount.id;
-      return normaliseAccountKey(o.platform) === normaliseAccountKey(leadPlatform);
+      if (idea.lead_platform_id) return account?.id === idea.lead_platform_id;
+      return normaliseAccountKey(o.platform) === normaliseAccountKey(leadPlatformText);
     });
     if (!hasOutput) {
       const seq = planSequenceLabel(idea.plan_sequence);
+      const label = idea.lead_platform_id ? (socialById.get(idea.lead_platform_id) ? platformLabel(socialById.get(idea.lead_platform_id)!) : leadPlatformText) : leadPlatformText;
       desired.set(`leadplatform:${idea.id}`, {
         type: "decision_approval",
-        description: `${seq} "${idea.title}" declares lead platform "${leadPlatform}" but has no Platform Output for it yet.`,
+        description: `${seq} "${idea.title}" declares lead platform "${label}" but has no Platform Output for it yet.`,
         related_content_note: seq,
       });
     }
@@ -462,7 +575,7 @@ async function reconcilePlanRequirementsInternal(
   for (const [accountId, count] of byAccountId) {
     const account = socialById.get(accountId);
     if (!account) continue;
-    const label = account.account_name ? `${account.platform} — ${account.account_name}` : account.platform;
+    const label = platformLabel(account);
     const verdict = assessPlatformFit(account);
     if (verdict.decision === "exclude") {
       desired.set(`platform_excluded:${accountId}`, {
@@ -536,12 +649,84 @@ export async function reconcilePlanRequirements(
 }
 
 // ---------------------------------------------------------------------------
-// AI export / import (Duane, 5 Sep 2026). No Claude API call here — PBOS
-// generates a brief, a person pastes it into Claude by hand, and pastes the
-// JSON that comes back into importAiOutput. Claude does not own the data:
-// this only ever proposes rows for PBOS to create, exactly as if a person
-// had typed them in — never a live connection, and nothing is trusted
-// without going through the same validation a person's input would.
+// Publish-date assignment (Duane: PBOS distributes outputs across the month
+// deterministically once it knows the month, the active platforms and their
+// cadence — not the AI). Spaces each lead platform's Master Content evenly
+// across the plan's calendar month, in plan_sequence order. Idempotent and
+// re-runnable, same as reconcilePlanRequirements — safe to call again after
+// hand-editing Master Content.
+// ---------------------------------------------------------------------------
+
+async function assignPlanPublishDatesInternal(
+  supabase: SupabaseClient,
+  clientId: string,
+  planId: string
+): Promise<{ assigned: number; skipped: number }> {
+  const { data: plan } = await supabase.from("monthly_plans").select("period_month").eq("id", planId).eq("client_id", clientId).maybeSingle();
+  if (!plan) throw new UserFacingError("Monthly Plan not found.");
+
+  const { data: ideas } = await supabase
+    .from("content_ideas")
+    .select("id,plan_sequence,lead_platform_id")
+    .eq("monthly_plan_id", planId)
+    .order("plan_sequence");
+  const ideaList = ideas ?? [];
+
+  const [year, month] = plan.period_month.split("-").map(Number) as [number, number];
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const yearMonth = plan.period_month.slice(0, 7);
+
+  const byAccount = new Map<string, typeof ideaList>();
+  let skipped = 0;
+  for (const idea of ideaList) {
+    if (!idea.lead_platform_id) {
+      skipped += 1;
+      continue;
+    }
+    const list = byAccount.get(idea.lead_platform_id) ?? [];
+    list.push(idea);
+    byAccount.set(idea.lead_platform_id, list);
+  }
+
+  let assigned = 0;
+  for (const group of byAccount.values()) {
+    const step = daysInMonth / group.length;
+    for (let i = 0; i < group.length; i++) {
+      const day = Math.min(daysInMonth, Math.max(1, Math.round(step * (i + 0.5))));
+      const date = `${yearMonth}-${String(day).padStart(2, "0")}`;
+      const { error } = await supabase.from("content_ideas").update({ target_publish_date: date }).eq("id", group[i]!.id);
+      if (error) throw new Error(error.message);
+      assigned += 1;
+    }
+  }
+
+  return { assigned, skipped };
+}
+
+/** Manual trigger for the same date-assignment pass importAiOutput runs
+ * automatically — for after hand-adding or reassigning Master Content. */
+export async function assignPlanPublishDates(clientId: string, planId: string): Promise<ActionResult<{ assigned: number; skipped: number }>> {
+  return runAction(async () => {
+    const supabase = await createClient();
+    const result = await assignPlanPublishDatesInternal(supabase, clientId, planId);
+    revalidatePlan(clientId, planId);
+    return result;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// AI export / import (Duane, 5 Sep 2026, refined after the Daniel stress
+// test). No Claude API call here — PBOS generates a brief, a person pastes
+// it into Claude by hand, and pastes the JSON that comes back into
+// importAiOutput. Claude does not own the data: this only ever proposes rows
+// for PBOS to create, exactly as if a person had typed them in — never a
+// live connection, and nothing is trusted without going through the same
+// validation a person's input would.
+//
+// Pillars, audiences and platforms are referenced by stable id, never by
+// display name — a name Claude normalises (spacing, punctuation, case) used
+// to fail silently; an id either matches or it doesn't, so a mismatch is now
+// a loud, pre-write validation error instead of a quietly unassigned field.
 // ---------------------------------------------------------------------------
 
 export interface AiBriefResult {
@@ -549,32 +734,35 @@ export interface AiBriefResult {
 }
 
 /** The exact JSON shape importAiOutput expects, embedded in the brief so
- * Claude sees it verbatim rather than a paraphrase of it. */
+ * Claude sees it verbatim rather than a paraphrase of it. Platform Outputs
+ * carry an adaptation note, not a finished caption — Master Content is the
+ * approval unit and owns the one full draft; hashtags are a post-approval
+ * publishing detail, not part of planning. */
 const OUTPUT_SCHEMA_EXAMPLE = {
   master_content: [
     {
       title: "string — the piece's working title",
       core_message: "string — the single-sentence takeaway",
       purpose: "string — why this piece exists",
-      pillar: "string — must exactly match one of the pillar names listed below, or leave blank",
-      audience: "string — must exactly match one of the audience names listed below, or leave blank",
+      pillar_id: "string — one of the pillar ids listed below, or omit",
+      audience_id: "string — one of the audience ids listed below, or omit",
       hook: "string — the opening line",
       cta: "string",
-      cta_destination: "string",
-      lead_platform: "string — should match one of the platforms listed below",
-      lead_draft_copy: "string — a fuller first draft of publish-ready copy for the lead platform",
+      cta_destination:
+        "string — an actual destination ONLY if you were given one below; otherwise return exactly \"Needs confirmation\" — never construct or guess a URL",
+      lead_platform_id: "string — one of the platform ids listed below",
+      lead_draft_copy: "string — the one full draft of publish-ready copy, for the lead platform",
     },
   ],
   platform_outputs: [
     {
       master_index: "number — 1-based position in master_content above that this output belongs to",
-      platform: "string — should match one of the platforms listed below",
+      platform_id: "string — one of the platform ids listed below",
       format: "string",
-      caption: "string",
-      cta: "string",
-      hashtags: "string",
+      adaptation_note:
+        "string — how this version should differ from the Master Content lead draft, e.g. \"Shorten for Instagram, make the opening more conversational, use the video hook on screen.\" Not a finished caption — that is written at production time, after approval.",
       media_brief: "string — what media this needs, described in words, before anyone sources or uploads it",
-      destination_link: "string — optional",
+      destination_link: "string — optional, only if genuinely different from the Master Content CTA destination",
     },
   ],
   requirements: [
@@ -588,21 +776,41 @@ const OUTPUT_SCHEMA_EXAMPLE = {
   ],
 };
 
+function lastDayOfMonth(periodMonth: string): number {
+  const [year, month] = periodMonth.split("-").map(Number) as [number, number];
+  return new Date(year, month, 0).getDate();
+}
+
 /** Generate the brief a person pastes into Claude — client context from the
  * Client Snapshot, plus the exact schema importAiOutput will validate
- * against. Nothing is written; this only reads. */
+ * against. Refuses to generate off an incomplete profile (checkMonthlyPlanReadiness)
+ * rather than let the AI guess. Nothing is written; this only reads. */
 export async function exportAiBrief(clientId: string, planId: string): Promise<ActionResult<AiBriefResult>> {
   return runAction(async () => {
     const supabase = await createClient();
-    const [{ data: client }, { data: plan }, { data: pillars }, { data: audiences }, { data: existingIdeas }] = await Promise.all([
-      supabase.from("clients").select("name").eq("id", clientId).maybeSingle(),
-      supabase.from("monthly_plans").select("*").eq("id", planId).eq("client_id", clientId).maybeSingle(),
-      supabase.from("brand_pillars").select("name").eq("client_id", clientId).order("sort_order"),
-      supabase.from("audiences").select("name").eq("client_id", clientId).order("sort_order"),
-      supabase.from("content_ideas").select("plan_sequence,title").eq("monthly_plan_id", planId).order("plan_sequence"),
-    ]);
+
+    const readiness = await checkReadinessInternal(supabase, clientId);
+    if (!readiness.ready) {
+      throw new UserFacingError(
+        `Monthly Plan not ready:\n${readiness.blockers.map((b) => `- ${b}`).join("\n")}\n\nComplete these on the client's profile (Content Guidelines / Social tab) before generating.`
+      );
+    }
+
+    const [{ data: client }, { data: plan }, { data: guidelines }, { data: pillars }, { data: audiences }, { data: socials }, { data: existingIdeas }] =
+      await Promise.all([
+        supabase.from("clients").select("name").eq("id", clientId).maybeSingle(),
+        supabase.from("monthly_plans").select("*").eq("id", planId).eq("client_id", clientId).maybeSingle(),
+        supabase.from("content_guidelines").select("content_safeguards").eq("client_id", clientId).maybeSingle(),
+        supabase.from("brand_pillars").select("id,name").eq("client_id", clientId).order("sort_order"),
+        supabase.from("audiences").select("id,name").eq("client_id", clientId).order("sort_order"),
+        supabase.from("social_strategies").select("*").eq("client_id", clientId).order("sort_order"),
+        supabase.from("content_ideas").select("plan_sequence,title,core_message").eq("monthly_plan_id", planId).order("plan_sequence"),
+      ]);
     if (!plan) throw new UserFacingError("Monthly Plan not found.");
     const snapshot = (plan.snapshot ?? {}) as unknown as MonthlyPlanSnapshot;
+    // Only accounts this plan can actually use — excluded ones are never
+    // offered as a destination, by id or by name.
+    const activeSocials = (socials ?? []).filter((s) => !isPlatformExcluded(s));
 
     const lines: string[] = [];
     lines.push(`# ${client?.name ?? "Client"} — ${periodMonthLabel(plan.period_month)} Monthly Plan: AI Content Brief`);
@@ -611,6 +819,17 @@ export async function exportAiBrief(clientId: string, planId: string): Promise<A
       "You are proposing structured content for this client's Monthly Plan inside PBOS (Personal Brand Operating System). PBOS owns the client record and this plan — you are only being asked to generate proposed structured content for a person to review and import into it. Return ONLY the JSON described at the end of this brief: no commentary, no markdown code fences, nothing before or after it."
     );
     lines.push("");
+    lines.push(`## Planning period`);
+    lines.push(`${periodMonthLabel(plan.period_month)}: ${plan.period_month.slice(0, 7)}-01 to ${plan.period_month.slice(0, 7)}-${String(lastDayOfMonth(plan.period_month)).padStart(2, "0")}.`);
+    lines.push("PBOS assigns publish dates after import from cadence — do not propose or mention scheduling or specific dates.");
+    lines.push("");
+
+    if (guidelines?.content_safeguards?.trim()) {
+      lines.push("## Hard constraints — non-negotiable");
+      lines.push(guidelines.content_safeguards.trim());
+      lines.push("");
+    }
+
     lines.push("## Client Snapshot");
     lines.push(`Primary objective: ${plan.primary_objective || "(not set)"}`);
     if (plan.secondary_objectives) lines.push(`Secondary objectives: ${plan.secondary_objectives}`);
@@ -634,17 +853,20 @@ export async function exportAiBrief(clientId: string, planId: string): Promise<A
       lines.push(`- **${p.name}** — ${bits.join(" | ") || "—"}`);
     }
     lines.push("");
-    lines.push("### Platform cadence & rules");
-    for (const pl of snapshot.platforms ?? []) {
-      const label = pl.account_name ? `${pl.platform} — ${pl.account_name}` : pl.platform;
-      const cadence = pl.cadence_target ? `${pl.cadence_target}/${pl.cadence_period ?? "period"}` : "—";
-      lines.push(`- **${label}** — objective: ${pl.objective || "—"}; cadence: ${cadence}; tone: ${pl.tone_voice || "—"}; CTA: ${pl.cta_strategy || "—"}`);
+    lines.push("### Active platforms & rules (the only valid destinations)");
+    for (const account of activeSocials) {
+      const cadence = account.cadence_target ? `${account.cadence_target}/${account.cadence_period}` : "—";
+      lines.push(
+        `- **${platformLabel(account)}** — id: ${account.id}; objective: ${account.objective || "—"}; cadence: ${cadence}; tone: ${account.tone_voice || "—"}; CTA: ${account.cta_strategy || "—"}`
+      );
     }
     lines.push("");
 
     if ((existingIdeas ?? []).length > 0) {
-      lines.push("### Already planned this month (do not duplicate)");
-      for (const idea of existingIdeas ?? []) lines.push(`- ${planSequenceLabel(idea.plan_sequence)}: ${idea.title}`);
+      lines.push("### Already planned this month — do not duplicate these");
+      for (const idea of existingIdeas ?? []) {
+        lines.push(`- ${planSequenceLabel(idea.plan_sequence)}: "${idea.title}" — ${idea.core_message || "(no core message set)"}`);
+      }
       lines.push("");
     }
 
@@ -655,10 +877,14 @@ export async function exportAiBrief(clientId: string, planId: string): Promise<A
     lines.push(JSON.stringify(OUTPUT_SCHEMA_EXAMPLE, null, 2));
     lines.push("```");
     lines.push("");
-    lines.push(`Pillar names available (use exactly): ${(pillars ?? []).map((p) => p.name).join(", ") || "(none set up yet)"}`);
-    lines.push(`Audience names available (use exactly): ${(audiences ?? []).map((a) => a.name).join(", ") || "(none set up yet)"}`);
-    const platformLabels = (snapshot.platforms ?? []).map((pl) => (pl.account_name ? `${pl.platform} — ${pl.account_name}` : pl.platform));
-    lines.push(`Platform names available (use exactly, for lead_platform and platform_outputs.platform): ${platformLabels.join(", ") || "(none set up yet)"}`);
+    lines.push("Pillar ids available:");
+    for (const p of pillars ?? []) lines.push(`- ${p.id} = ${p.name}`);
+    lines.push("");
+    lines.push("Audience ids available:");
+    for (const a of audiences ?? []) lines.push(`- ${a.id} = ${a.name}`);
+    lines.push("");
+    lines.push("Platform ids available (use for lead_platform_id and platform_outputs.platform_id — no other platform is valid for this plan):");
+    for (const account of activeSocials) lines.push(`- ${account.id} = ${platformLabel(account)}`);
 
     return { brief: lines.join("\n") };
   });
@@ -668,15 +894,13 @@ export interface ImportAiOutputResult {
   masterContentCreated: number;
   platformOutputsCreated: number;
   requirementsCreated: number;
-  /** "Needs confirmation" requirements PBOS raised itself — an unresolved
-   * pillar/audience name Claude gave that isn't on this client's approved
-   * list, never created to fit. */
-  requirementsFlagged: number;
   /** Production requirements PBOS computed from the plan's actual Master
    * Content / Platform Outputs — aggregate format counts, a missing lead
    * platform output, a missing CTA destination, an excluded or off-cadence
    * platform. See reconcilePlanRequirements. */
   requirementsAutoGenerated: number;
+  /** Master Content items PBOS assigned a publish date to from cadence. */
+  datesAssigned: number;
   warnings: string[];
 }
 
@@ -684,23 +908,22 @@ interface RawMasterContent {
   title?: unknown;
   core_message?: unknown;
   purpose?: unknown;
-  pillar?: unknown;
-  audience?: unknown;
+  pillar_id?: unknown;
+  audience_id?: unknown;
   hook?: unknown;
   cta?: unknown;
   cta_destination?: unknown;
-  lead_platform?: unknown;
+  lead_platform_id?: unknown;
   lead_draft_copy?: unknown;
 }
 interface RawPlatformOutput {
   master_index?: unknown;
-  platform?: unknown;
+  platform_id?: unknown;
   format?: unknown;
-  caption?: unknown;
-  cta?: unknown;
-  hashtags?: unknown;
+  adaptation_note?: unknown;
   media_brief?: unknown;
   destination_link?: unknown;
+  media_state?: unknown;
 }
 interface RawRequirement {
   type?: unknown;
@@ -712,20 +935,22 @@ interface RawRequirement {
 
 const str = (value: unknown): string => (typeof value === "string" ? value.trim() : "");
 
-function resolveName(matcher: RecordMatcher<{ id: string; name: string }>, name: string): string | null {
-  if (!name) return null;
-  const outcome = matcher.match({ name });
-  return outcome.kind === "exact" || outcome.kind === "normalised" || outcome.kind === "id" ? outcome.record.id : null;
+/** Claude was told to write this exact phrase rather than invent a URL — a
+ * hard rule, checked here too so an import can never quietly treat it as a
+ * real destination. */
+function normaliseCtaDestination(value: string): string {
+  return value.toLowerCase() === "needs confirmation" ? "" : value;
 }
 
 /**
  * Validate and populate a Monthly Plan from Claude's pasted JSON. PBOS owns
  * every row this creates — nothing here is a live AI connection; the JSON is
- * validated exactly as strictly as a person's own input would be, pillar and
- * audience names are resolved against this client's real records (never
- * created to fit), and platform_outputs are linked back to the
- * master_content item they belong to by position in the same JSON, not by
- * guessing.
+ * validated exactly as strictly as a person's own input would be, pillar,
+ * audience and platform ids are resolved against this client's real records
+ * (never created to fit, and a mismatch fails the whole import rather than
+ * silently dropping or guessing), and platform_outputs are linked back to
+ * the master_content item they belong to by position in the same JSON, not
+ * by guessing.
  */
 export async function importAiOutput(clientId: string, planId: string, jsonText: string): Promise<ActionResult<ImportAiOutputResult>> {
   let parsed: unknown;
@@ -754,26 +979,25 @@ export async function importAiOutput(clientId: string, planId: string, jsonText:
     return { ok: false, message: "Nothing to import — the JSON has no master_content, platform_outputs, or requirements." };
   }
 
-  const errors: string[] = [];
+  const shapeErrors: string[] = [];
   masterRaw.forEach((item, i) => {
-    if (!str(item.title)) errors.push(`master_content[${i}]: title is required.`);
+    if (!str(item.title)) shapeErrors.push(`master_content[${i}]: title is required.`);
   });
   outputsRaw.forEach((item, i) => {
     const idx = item.master_index;
     if (typeof idx !== "number" || !Number.isInteger(idx) || idx < 1 || idx > masterRaw.length) {
-      errors.push(`platform_outputs[${i}]: master_index must be a whole number from 1 to ${masterRaw.length || "?"}, pointing at a master_content item.`);
+      shapeErrors.push(`platform_outputs[${i}]: master_index must be a whole number from 1 to ${masterRaw.length || "?"}, pointing at a master_content item.`);
     }
-    if (!str(item.platform)) errors.push(`platform_outputs[${i}]: platform is required.`);
   });
   requirementsRaw.forEach((item, i) => {
     const type = str(item.type) || "other";
     if (!REQUIREMENT_TYPE.some((t) => t.value === type)) {
-      errors.push(`requirements[${i}]: type "${str(item.type)}" isn't one of ${REQUIREMENT_TYPE.map((t) => t.value).join(", ")}.`);
+      shapeErrors.push(`requirements[${i}]: type "${str(item.type)}" isn't one of ${REQUIREMENT_TYPE.map((t) => t.value).join(", ")}.`);
     }
-    if (!str(item.description)) errors.push(`requirements[${i}]: description is required.`);
+    if (!str(item.description)) shapeErrors.push(`requirements[${i}]: description is required.`);
   });
-  if (errors.length > 0) {
-    return { ok: false, message: `Couldn't import — fix these and try again:\n${errors.join("\n")}` };
+  if (shapeErrors.length > 0) {
+    return { ok: false, message: `Couldn't import — fix these and try again:\n${shapeErrors.join("\n")}` };
   }
 
   return runAction(async () => {
@@ -789,42 +1013,61 @@ export async function importAiOutput(clientId: string, planId: string, jsonText:
       supabase.from("audiences").select("id,name").eq("client_id", clientId),
       supabase.from("social_strategies").select("*").eq("client_id", clientId),
     ]);
-    const pillarMatcher = buildRecordMatcher((pillars ?? []).map((p) => ({ id: p.id, name: p.name })));
-    const audienceMatcher = buildRecordMatcher((audiences ?? []).map((a) => ({ id: a.id, name: a.name })));
-    const resolveAccount = buildAccountResolver(socials ?? []);
+    const pillarIds = new Set((pillars ?? []).map((p) => p.id));
+    const audienceIds = new Set((audiences ?? []).map((a) => a.id));
+    const socialById = new Map((socials ?? []).map((s) => [s.id, s]));
+
+    // Fail visibly rather than silently dropping or guessing (Duane's
+    // explicit ask): every id-shaped reference is checked against this
+    // client's real records before anything is written.
+    const idErrors: string[] = [];
+    masterRaw.forEach((item, i) => {
+      const label = `master_content[${i}] "${str(item.title)}"`;
+      const pillarId = str(item.pillar_id);
+      if (pillarId && !pillarIds.has(pillarId)) idErrors.push(`${label}: pillar_id "${pillarId}" doesn't match one of this client's approved pillars.`);
+      const audienceId = str(item.audience_id);
+      if (audienceId && !audienceIds.has(audienceId)) idErrors.push(`${label}: audience_id "${audienceId}" doesn't match one of this client's audiences.`);
+      const leadPlatformId = str(item.lead_platform_id);
+      if (leadPlatformId) {
+        const account = socialById.get(leadPlatformId);
+        if (!account) idErrors.push(`${label}: lead_platform_id "${leadPlatformId}" doesn't match a platform on this client's Social tab.`);
+        else if (isPlatformExcluded(account)) idErrors.push(`${label}: lead_platform_id resolves to ${platformLabel(account)}, which is excluded for this plan.`);
+      }
+    });
+    const seenOutputKeys = new Set<string>();
+    outputsRaw.forEach((item, i) => {
+      const label = `platform_outputs[${i}]`;
+      const platformId = str(item.platform_id);
+      if (!platformId) {
+        idErrors.push(`${label}: platform_id is required.`);
+        return;
+      }
+      const account = socialById.get(platformId);
+      if (!account) {
+        idErrors.push(`${label}: platform_id "${platformId}" doesn't match a platform on this client's Social tab.`);
+        return;
+      }
+      if (isPlatformExcluded(account)) idErrors.push(`${label}: ${platformLabel(account)} is excluded for this plan — it must not be offered as a destination.`);
+      const dupeKey = `${item.master_index}:${platformId}`;
+      if (seenOutputKeys.has(dupeKey)) idErrors.push(`${label}: duplicate output for the same Master Content item and platform.`);
+      seenOutputKeys.add(dupeKey);
+      const mediaState = str(item.media_state);
+      if (mediaState && !MEDIA_STATE.some((m) => m.value === mediaState)) {
+        idErrors.push(`${label}: media_state "${mediaState}" isn't one of ${MEDIA_STATE.map((m) => m.value).join(", ")}.`);
+      }
+    });
+    if (idErrors.length > 0) {
+      throw new UserFacingError(`Couldn't import — fix these and try again:\n${idErrors.join("\n")}`);
+    }
 
     const warnings: string[] = [];
-    // "Needs confirmation" requirements PBOS raises itself — only for what
-    // this import step alone can tell (an unresolved name in the raw JSON);
-    // everything derivable from the stored rows afterwards (missing lead
-    // platform output, missing CTA destination, aggregate production counts)
-    // is reconcilePlanRequirementsInternal's job below, not duplicated here.
-    const flagged: DesiredRequirement[] = [];
     let sequence = await nextPlanSequence(supabase, planId);
     const masterIds: string[] = [];
 
     try {
       for (const item of masterRaw) {
-        const pillarName = str(item.pillar);
-        const pillarId = resolveName(pillarMatcher, pillarName);
-        if (pillarName && !pillarId) {
-          warnings.push(`"${str(item.title)}": pillar "${pillarName}" not recognised — left unassigned.`);
-          flagged.push({
-            type: "decision_approval",
-            description: `"${str(item.title)}": Claude proposed pillar "${pillarName}", which isn't one of this client's approved pillars.`,
-            related_content_note: "",
-          });
-        }
-        const audienceName = str(item.audience);
-        const audienceId = resolveName(audienceMatcher, audienceName);
-        if (audienceName && !audienceId) {
-          warnings.push(`"${str(item.title)}": audience "${audienceName}" not recognised — left unassigned.`);
-          flagged.push({
-            type: "decision_approval",
-            description: `"${str(item.title)}": Claude proposed audience "${audienceName}", which isn't one of this client's audiences.`,
-            related_content_note: "",
-          });
-        }
+        const leadPlatformId = str(item.lead_platform_id) || null;
+        const leadAccount = leadPlatformId ? socialById.get(leadPlatformId) : undefined;
 
         const { data: row, error } = await supabase
           .from("content_ideas")
@@ -837,11 +1080,12 @@ export async function importAiOutput(clientId: string, planId: string, jsonText:
             purpose: str(item.purpose),
             hook: str(item.hook),
             cta: str(item.cta),
-            cta_destination: str(item.cta_destination),
-            lead_platform: str(item.lead_platform),
+            cta_destination: normaliseCtaDestination(str(item.cta_destination)),
+            lead_platform_id: leadPlatformId,
+            lead_platform: leadAccount ? platformLabel(leadAccount) : "",
             lead_draft_copy: str(item.lead_draft_copy),
-            pillar_id: pillarId,
-            audience_id: audienceId,
+            pillar_id: str(item.pillar_id) || null,
+            audience_id: str(item.audience_id) || null,
             origin: "ai_import",
             created_by: user?.id ?? null,
           })
@@ -860,32 +1104,22 @@ export async function importAiOutput(clientId: string, planId: string, jsonText:
           warnings.push(`A platform output referenced master_index ${idx}, which wasn't created — skipped.`);
           continue;
         }
-        const platformText = str(item.platform);
-        // Link to the real account when it resolves — without this, a newly
-        // imported output is invisible to the client's cadence tracking
-        // (keyed by social_account_id, never by free-text platform).
-        const account = resolveAccount(platformText, platformText);
-        if (account) {
-          const verdict = assessPlatformFit(account);
-          if (verdict.decision === "exclude") {
-            warnings.push(`Output for master_index ${idx} on ${platformText}: ${verdict.reason} — created anyway, check before producing.`);
-          } else if (verdict.decision === "review") {
-            warnings.push(`Output for master_index ${idx} on ${platformText}: ${verdict.reason}`);
-          }
-        } else {
-          warnings.push(`Output for master_index ${idx}: "${platformText}" doesn't match any account on the Social tab — created as free text, won't count toward cadence tracking until linked.`);
+        const account = socialById.get(str(item.platform_id))!;
+        const verdict = assessPlatformFit(account);
+        if (verdict.decision === "review") {
+          warnings.push(`Output for master_index ${idx} on ${platformLabel(account)}: ${verdict.reason}`);
         }
+        const mediaState = str(item.media_state) || "concept";
         const { error } = await supabase.from("content_outputs").insert({
           content_id: contentId,
           client_id: clientId,
-          platform: account?.platform ?? platformText,
-          social_account_id: account?.id ?? null,
+          platform: account.platform,
+          social_account_id: account.id,
           format: str(item.format),
-          caption: str(item.caption),
-          cta: str(item.cta),
-          hashtags: str(item.hashtags),
+          adaptation_note: str(item.adaptation_note),
           media_brief: str(item.media_brief),
           destination_link: str(item.destination_link),
+          media_state: mediaState,
           origin: "ai_import",
         });
         if (error) throw new Error(`Platform output for master_index ${idx}: ${error.message}`);
@@ -910,25 +1144,19 @@ export async function importAiOutput(clientId: string, planId: string, jsonText:
         requirementsCreated += 1;
       }
 
-      let requirementsFlagged = 0;
-      if (flagged.length > 0) {
-        const { error } = await supabase.from("monthly_plan_requirements").insert(
-          flagged.map((f) => ({
-            monthly_plan_id: planId,
-            client_id: clientId,
-            type: f.type,
-            description: f.description,
-            related_content_note: f.related_content_note,
-            state: "needs_confirmation" as const,
-            origin: "ai_import" as const,
-          }))
-        );
-        if (error) throw new Error(`Needs-confirmation requirements: ${error.message}`);
-        requirementsFlagged = flagged.length;
+      // PBOS assigns dates from cadence — best-effort: a hiccup here
+      // shouldn't undo an otherwise good import.
+      let datesAssigned = 0;
+      try {
+        const dated = await assignPlanPublishDatesInternal(supabase, clientId, planId);
+        datesAssigned = dated.assigned;
+      } catch (dateError) {
+        warnings.push(`Couldn't assign publish dates: ${dateError instanceof Error ? dateError.message : String(dateError)}`);
       }
 
       // Production requirements PBOS derives from what's actually planned —
-      // best-effort: a hiccup here shouldn't undo an otherwise good import.
+      // also best-effort, and run after dates so its cadence math sees the
+      // final picture.
       let requirementsAutoGenerated = 0;
       try {
         const reconciled = await reconcilePlanRequirementsInternal(supabase, clientId, planId);
@@ -942,10 +1170,10 @@ export async function importAiOutput(clientId: string, planId: string, jsonText:
       revalidatePlan(clientId, planId);
       return {
         masterContentCreated: masterIds.length,
-        requirementsFlagged,
-        requirementsAutoGenerated,
         platformOutputsCreated: outputsCreated,
         requirementsCreated,
+        requirementsAutoGenerated,
+        datesAssigned,
         warnings,
       };
     } catch (err) {
@@ -995,16 +1223,17 @@ export interface MonthlyPlanExport {
     cta_destination: string;
     lead_platform: string;
     lead_draft_copy: string;
+    target_publish_date: string | null;
     status: string;
     origin: string;
     platform_outputs: {
       platform: string;
       format: string;
       caption: string;
-      cta: string;
-      hashtags: string;
+      adaptation_note: string;
       destination_link: string;
       media_brief: string;
+      media_state: string;
       status: string;
       origin: string;
     }[];
@@ -1078,16 +1307,17 @@ export async function exportMonthlyPlanJson(clientId: string, planId: string): P
         cta_destination: idea.cta_destination,
         lead_platform: idea.lead_platform,
         lead_draft_copy: idea.lead_draft_copy,
+        target_publish_date: idea.target_publish_date,
         status: idea.status,
         origin: idea.origin,
         platform_outputs: (outputsByIdea.get(idea.id) ?? []).map((output) => ({
           platform: output.platform,
           format: output.format,
           caption: output.caption,
-          cta: output.cta,
-          hashtags: output.hashtags,
+          adaptation_note: output.adaptation_note,
           destination_link: output.destination_link,
           media_brief: output.media_brief,
+          media_state: output.media_state,
           status: output.status,
           origin: output.origin,
         })),

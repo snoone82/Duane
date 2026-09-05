@@ -145,11 +145,25 @@ export const REQUIREMENT_ORIGIN: { value: RequirementOrigin; label: string; colo
   { value: "system_generated", label: "Auto-generated", color: "cyan" },
 ];
 
+/** Where a Platform Output's media actually is (migration 0034) — feeds the
+ * placeholder / content-bank / client-preview system. Stored explicitly
+ * rather than derived, since "has a media_path" alone can't distinguish a
+ * placeholder reference from a finished asset. */
+export type MediaState = "concept" | "reference" | "draft" | "final";
+
+export const MEDIA_STATE: { value: MediaState; label: string; color: TagColor }[] = [
+  { value: "concept", label: "Concept", color: "slate" },
+  { value: "reference", label: "Reference", color: "amber" },
+  { value: "draft", label: "Draft", color: "blue" },
+  { value: "final", label: "Final", color: "green" },
+];
+
 export const monthlyPlanStatusMeta = (value: string) => lookup(MONTHLY_PLAN_STATUS, value as MonthlyPlanStatus);
 export const contentOriginMeta = (value: string) => lookup(CONTENT_ORIGIN, value as ContentOrigin);
 export const requirementTypeMeta = (value: string) => lookup(REQUIREMENT_TYPE, value as RequirementType);
 export const requirementOriginMeta = (value: string) => lookup(REQUIREMENT_ORIGIN, value as RequirementOrigin);
 export const requirementStateMeta = (value: string) => lookup(REQUIREMENT_STATE, value as RequirementState);
+export const mediaStateMeta = (value: string) => lookup(MEDIA_STATE, value as MediaState);
 
 /** Duane's sales pipeline stages, in journey order. Won/lost are terminal. */
 export type SalesStage =

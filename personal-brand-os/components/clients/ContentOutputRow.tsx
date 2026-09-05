@@ -12,6 +12,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Notice } from "@/components/ui/Notice";
 import {
   updateContentOutputField,
+  updateContentOutputMediaState,
   deleteContentOutput,
   scheduleContentOutput,
   unscheduleContentOutput,
@@ -19,7 +20,8 @@ import {
   assignOutputAccount,
 } from "@/lib/actions/content";
 import { sendOutputToAyrshare, refreshAyrshareOutput, pullOutputPerformance } from "@/lib/actions/publishing";
-import { outputStatusMeta, contentOriginMeta, type OutputStatus } from "@/lib/status";
+import { StatusSelect } from "@/components/ui/StatusSelect";
+import { outputStatusMeta, contentOriginMeta, MEDIA_STATE, type OutputStatus, type MediaState } from "@/lib/status";
 import { OutputMediaSlot } from "@/components/clients/OutputMediaSlot";
 import { formatDateTime } from "@/lib/format";
 import type { Database } from "@/lib/database.types";
@@ -133,6 +135,7 @@ export function ContentOutputRow({
       | "engagement"
       | "views"
       | "media_brief"
+      | "adaptation_note"
   ) => (value: string) => updateContentOutputField(clientId, output.id, field, value);
 
   function copyPost() {
@@ -186,6 +189,12 @@ export function ContentOutputRow({
           {output.published_at && output.status === "published" && (
             <span className="text-xs text-ink-faint">{formatDateTime(output.published_at)}</span>
           )}
+          <StatusSelect
+            value={output.media_state as MediaState}
+            options={MEDIA_STATE}
+            ariaLabel={`Media state for ${output.platform}`}
+            onChange={(value) => updateContentOutputMediaState(clientId, output.id, value)}
+          />
           <StatusPill label={meta.label} color={meta.color} />
           {/* Duane's testing question (3 Sep): "Scheduled" alone can't tell
               you whether Ayrshare has the post or it's only on the PBOS
@@ -280,6 +289,14 @@ export function ContentOutputRow({
           )}
           <AutosaveInput id={`out-format-${output.id}`} label="Format" initialValue={output.format} onSave={save("format")} placeholder="e.g. Carousel, Reel, Text post" />
         </div>
+        <AutosaveTextarea
+          id={`out-adaptation-${output.id}`}
+          label="Adaptation note"
+          helpText="How this version should differ from the Master Content lead draft — not a finished caption. That's written below once the idea is approved."
+          initialValue={output.adaptation_note}
+          onSave={save("adaptation_note")}
+          rows={2}
+        />
         <AutosaveTextarea id={`out-caption-${output.id}`} label="Final caption / copy" initialValue={output.caption} onSave={save("caption")} rows={3} />
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <AutosaveInput id={`out-cta-${output.id}`} label="Call to action" initialValue={output.cta} onSave={save("cta")} />

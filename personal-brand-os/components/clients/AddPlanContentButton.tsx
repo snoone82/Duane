@@ -10,17 +10,20 @@ import type { Database } from "@/lib/database.types";
 
 type Pillar = Database["public"]["Tables"]["brand_pillars"]["Row"];
 type Audience = Database["public"]["Tables"]["audiences"]["Row"];
+type PlatformAccount = { id: string; label: string };
 
 export function AddPlanContentButton({
   clientId,
   planId,
   pillars,
   audiences,
+  accounts = [],
 }: {
   clientId: string;
   planId: string;
   pillars: Pillar[];
   audiences: Audience[];
+  accounts?: PlatformAccount[];
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [state, formAction, isPending] = useActionState(addPlanContentIdea, null);
@@ -68,6 +71,17 @@ export function AddPlanContentButton({
                   {audiences.map((a) => (
                     <option key={a.id} value={a.id}>
                       {a.name}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="pc-leadplatform">Lead platform</Label>
+                <Select id="pc-leadplatform" name="lead_platform_id" defaultValue="">
+                  <option value="">No lead platform</option>
+                  {accounts.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.label}
                     </option>
                   ))}
                 </Select>

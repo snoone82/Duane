@@ -853,6 +853,50 @@ export type Database = {
           },
         ]
       }
+      content_guidelines: {
+        Row: {
+          avoid_language: string
+          client_id: string
+          content_safeguards: string
+          cta_priorities: string
+          preferred_language: string
+          primary_cta_destination: string
+          secondary_objectives: string
+          tone_voice_notes: string
+          updated_at: string
+        }
+        Insert: {
+          avoid_language?: string
+          client_id: string
+          content_safeguards?: string
+          cta_priorities?: string
+          preferred_language?: string
+          primary_cta_destination?: string
+          secondary_objectives?: string
+          tone_voice_notes?: string
+          updated_at?: string
+        }
+        Update: {
+          avoid_language?: string
+          client_id?: string
+          content_safeguards?: string
+          cta_priorities?: string
+          preferred_language?: string
+          primary_cta_destination?: string
+          secondary_objectives?: string
+          tone_voice_notes?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "content_guidelines_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: true
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       content_ideas: {
         Row: {
           action_id: string | null
@@ -871,6 +915,7 @@ export type Database = {
           id: string
           lead_draft_copy: string
           lead_platform: string
+          lead_platform_id: string | null
           media_path: string | null
           media_source_url: string
           media_url: string | null
@@ -908,6 +953,7 @@ export type Database = {
           id?: string
           lead_draft_copy?: string
           lead_platform?: string
+          lead_platform_id?: string | null
           media_path?: string | null
           media_source_url?: string
           media_url?: string | null
@@ -945,6 +991,7 @@ export type Database = {
           id?: string
           lead_draft_copy?: string
           lead_platform?: string
+          lead_platform_id?: string | null
           media_path?: string | null
           media_source_url?: string
           media_url?: string | null
@@ -1002,6 +1049,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "content_ideas_lead_platform_id_fkey"
+            columns: ["lead_platform_id"]
+            isOneToOne: false
+            referencedRelation: "social_strategies"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "content_ideas_monthly_plan_id_fkey"
             columns: ["monthly_plan_id"]
             isOneToOne: false
@@ -1019,6 +1073,7 @@ export type Database = {
       }
       content_outputs: {
         Row: {
+          adaptation_note: string
           alt_text: string
           analytics_at: string | null
           analytics_raw: Json | null
@@ -1039,6 +1094,7 @@ export type Database = {
           media_brief: string
           media_path: string | null
           media_source_url: string
+          media_state: string
           media_url: string | null
           notes: string
           origin: string
@@ -1058,6 +1114,7 @@ export type Database = {
           views: number | null
         }
         Insert: {
+          adaptation_note?: string
           alt_text?: string
           analytics_at?: string | null
           analytics_raw?: Json | null
@@ -1078,6 +1135,7 @@ export type Database = {
           media_brief?: string
           media_path?: string | null
           media_source_url?: string
+          media_state?: string
           media_url?: string | null
           notes?: string
           origin?: string
@@ -1097,6 +1155,7 @@ export type Database = {
           views?: number | null
         }
         Update: {
+          adaptation_note?: string
           alt_text?: string
           analytics_at?: string | null
           analytics_raw?: Json | null
@@ -1117,6 +1176,7 @@ export type Database = {
           media_brief?: string
           media_path?: string | null
           media_source_url?: string
+          media_state?: string
           media_url?: string | null
           notes?: string
           origin?: string
