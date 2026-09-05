@@ -6,8 +6,9 @@ import { AutosaveTextarea } from "@/components/ui/AutosaveTextarea";
 import { StatusSelect } from "@/components/ui/StatusSelect";
 import { Button } from "@/components/ui/Button";
 import { Select, Label } from "@/components/ui/Input";
+import { StatusPill } from "@/components/ui/StatusPill";
 import { updateRequirementField, deleteRequirement } from "@/lib/actions/monthly-plans";
-import { REQUIREMENT_TYPE, REQUIREMENT_STATE, requirementTypeMeta } from "@/lib/status";
+import { REQUIREMENT_TYPE, REQUIREMENT_STATE, requirementTypeMeta, requirementOriginMeta } from "@/lib/status";
 import type { Database } from "@/lib/database.types";
 
 type Requirement = Database["public"]["Tables"]["monthly_plan_requirements"]["Row"];
@@ -36,6 +37,11 @@ export function RequirementRow({ clientId, requirement }: { clientId: string; re
             {requirementTypeMeta(requirement.type).label}
           </span>
           <span className="truncate text-sm text-ink">{requirement.description || "(no description)"}</span>
+          {requirement.origin !== "manual" && (
+            <span className="flex-shrink-0">
+              <StatusPill label={requirementOriginMeta(requirement.origin).label} color={requirementOriginMeta(requirement.origin).color} />
+            </span>
+          )}
         </div>
         <div className="flex flex-shrink-0 items-center gap-2">
           {requirement.due_date && <span className="text-xs text-ink-faint">Due {requirement.due_date}</span>}
@@ -48,6 +54,12 @@ export function RequirementRow({ clientId, requirement }: { clientId: string; re
         </div>
       </summary>
       <div className="space-y-3 border-t border-border p-4">
+        {requirement.origin === "system_generated" && (
+          <p className="text-xs text-ink-faint">
+            PBOS computed this from the plan&rsquo;s Master Content / Platform Outputs — it&rsquo;ll come back on the next
+            recompute if the underlying condition still holds, and disappear on its own once it doesn&rsquo;t.
+          </p>
+        )}
         <div>
           <Label htmlFor={`req-type-${requirement.id}`}>Type</Label>
           <Select

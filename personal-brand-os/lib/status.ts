@@ -132,9 +132,23 @@ export const REQUIREMENT_STATE: { value: RequirementState; label: string; color:
   { value: "done", label: "Done", color: "green" },
 ];
 
+/** Who or what raised a requirement (migration 0033). system_generated ones
+ * are PBOS's own — computed from the plan's actual Master Content / Platform
+ * Outputs (an aggregate filming count, a missing CTA destination, an
+ * off-cadence platform) and recomputed on demand, never left stale once the
+ * underlying condition clears. */
+export type RequirementOrigin = "manual" | "ai_import" | "system_generated";
+
+export const REQUIREMENT_ORIGIN: { value: RequirementOrigin; label: string; color: TagColor }[] = [
+  { value: "manual", label: "Manual", color: "slate" },
+  { value: "ai_import", label: "AI import", color: "purple" },
+  { value: "system_generated", label: "Auto-generated", color: "cyan" },
+];
+
 export const monthlyPlanStatusMeta = (value: string) => lookup(MONTHLY_PLAN_STATUS, value as MonthlyPlanStatus);
 export const contentOriginMeta = (value: string) => lookup(CONTENT_ORIGIN, value as ContentOrigin);
 export const requirementTypeMeta = (value: string) => lookup(REQUIREMENT_TYPE, value as RequirementType);
+export const requirementOriginMeta = (value: string) => lookup(REQUIREMENT_ORIGIN, value as RequirementOrigin);
 export const requirementStateMeta = (value: string) => lookup(REQUIREMENT_STATE, value as RequirementState);
 
 /** Duane's sales pipeline stages, in journey order. Won/lost are terminal. */

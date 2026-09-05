@@ -1309,8 +1309,10 @@ export type Database = {
           created_at: string
           description: string
           due_date: string | null
+          generated_key: string | null
           id: string
           monthly_plan_id: string
+          origin: string
           owner_note: string
           related_content_note: string
           state: string
@@ -1322,8 +1324,10 @@ export type Database = {
           created_at?: string
           description?: string
           due_date?: string | null
+          generated_key?: string | null
           id?: string
           monthly_plan_id: string
+          origin?: string
           owner_note?: string
           related_content_note?: string
           state?: string
@@ -1335,8 +1339,10 @@ export type Database = {
           created_at?: string
           description?: string
           due_date?: string | null
+          generated_key?: string | null
           id?: string
           monthly_plan_id?: string
+          origin?: string
           owner_note?: string
           related_content_note?: string
           state?: string

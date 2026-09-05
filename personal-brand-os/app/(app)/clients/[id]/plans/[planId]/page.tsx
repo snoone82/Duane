@@ -6,7 +6,9 @@ import { ContentIdeaRow } from "@/components/clients/ContentIdeaRow";
 import { AddPlanContentButton } from "@/components/clients/AddPlanContentButton";
 import { RequirementRow } from "@/components/clients/RequirementRow";
 import { AddRequirementButton } from "@/components/clients/AddRequirementButton";
+import { RecomputeRequirementsButton } from "@/components/clients/RecomputeRequirementsButton";
 import { AiBriefPanel } from "@/components/clients/AiBriefPanel";
+import { ExportPlanJsonButton } from "@/components/clients/ExportPlanJsonButton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { getApproverOptions } from "@/lib/data/approvers";
 import { socialAccountLabel } from "@/lib/format";
@@ -108,10 +110,15 @@ export default async function MonthlyPlanPage({ params }: { params: Promise<{ id
       <section>
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-ink">Requirements</h2>
-          <AddRequirementButton clientId={id} planId={planId} />
+          <div className="flex items-center gap-2">
+            <RecomputeRequirementsButton clientId={id} planId={planId} />
+            <AddRequirementButton clientId={id} planId={planId} />
+          </div>
         </div>
         <p className="mb-3 text-xs text-ink-soft">
-          Anything needed from the client or the team to fulfil this plan once it&rsquo;s approved.
+          Anything needed from the client or the team to fulfil this plan once it&rsquo;s approved. Production requirements
+          (filming, assets) are computed from the Platform Outputs actually planned below — recompute after adding or
+          changing them by hand.
         </p>
         {!requirements || requirements.length === 0 ? (
           <EmptyState title="No requirements yet" description="Add filming, assets, information or approvals this plan depends on." />
@@ -122,6 +129,15 @@ export default async function MonthlyPlanPage({ params }: { params: Promise<{ id
             ))}
           </div>
         )}
+      </section>
+
+      <section>
+        <h2 className="mb-3 text-sm font-semibold text-ink">Structured export</h2>
+        <p className="mb-3 text-xs text-ink-soft">
+          The Monthly Plan as one JSON document — Client Snapshot, Master Content, Platform Outputs and Requirements. The
+          first PBOS output is this structured data; the client-facing pack is prototyped from it manually, for now.
+        </p>
+        <ExportPlanJsonButton clientId={id} planId={planId} periodLabel={periodMonthLabel(plan.period_month)} />
       </section>
 
       <section>
