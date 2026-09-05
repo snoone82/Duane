@@ -10,6 +10,7 @@ const TABS = [
   { slug: "audiences", label: "Audiences" },
   { slug: "social", label: "Social" },
   { slug: "content", label: "Content" },
+  { slug: "plans", label: "Monthly Plans" },
   { slug: "sales", label: "Sales" },
   { slug: "authority", label: "Authority & Opportunities" },
   { slug: "consultations", label: "Meetings & Consultations" },

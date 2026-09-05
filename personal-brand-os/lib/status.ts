@@ -86,6 +86,57 @@ export const ACTION_VISIBILITY: { value: ActionVisibility; label: string; color:
   { value: "client", label: "Client visible", color: "teal" },
 ];
 
+// --- Monthly Plan (Duane, 5 Sep 2026 — the structured planning layer) ---
+// Check-constrained text columns, not real Postgres enums (see migration
+// 0032), so — like ActionPriority/ActionVisibility above — the literal
+// unions live here rather than as Database["public"]["Enums"] aliases.
+
+export type MonthlyPlanStatus = "planning" | "in_review" | "approved" | "active" | "closed";
+
+export const MONTHLY_PLAN_STATUS: { value: MonthlyPlanStatus; label: string; color: TagColor }[] = [
+  { value: "planning", label: "Planning", color: "slate" },
+  { value: "in_review", label: "In review", color: "amber" },
+  { value: "approved", label: "Approved", color: "blue" },
+  { value: "active", label: "Active", color: "green" },
+  { value: "closed", label: "Closed", color: "purple" },
+];
+
+/** Who proposed a piece of Master Content / a Platform Output — never a
+ * status, purely what badges it as AI-proposed vs. a portal client's own
+ * submission vs. typed in by hand. */
+export type ContentOrigin = "manual" | "client" | "ai_import";
+
+export const CONTENT_ORIGIN: { value: ContentOrigin; label: string; color: TagColor }[] = [
+  { value: "manual", label: "Manual", color: "slate" },
+  { value: "client", label: "Client", color: "teal" },
+  { value: "ai_import", label: "AI import", color: "purple" },
+];
+
+export type RequirementType = "filming" | "asset_upload" | "information" | "decision_approval" | "access" | "other";
+
+export const REQUIREMENT_TYPE: { value: RequirementType; label: string; color: TagColor }[] = [
+  { value: "filming", label: "Filming", color: "cyan" },
+  { value: "asset_upload", label: "Asset upload", color: "blue" },
+  { value: "information", label: "Information", color: "slate" },
+  { value: "decision_approval", label: "Decision / approval", color: "purple" },
+  { value: "access", label: "Access", color: "orange" },
+  { value: "other", label: "Other", color: "slate" },
+];
+
+export type RequirementState = "open" | "needs_confirmation" | "received" | "done";
+
+export const REQUIREMENT_STATE: { value: RequirementState; label: string; color: TagColor }[] = [
+  { value: "open", label: "Open", color: "amber" },
+  { value: "needs_confirmation", label: "Needs confirmation", color: "orange" },
+  { value: "received", label: "Received", color: "blue" },
+  { value: "done", label: "Done", color: "green" },
+];
+
+export const monthlyPlanStatusMeta = (value: string) => lookup(MONTHLY_PLAN_STATUS, value as MonthlyPlanStatus);
+export const contentOriginMeta = (value: string) => lookup(CONTENT_ORIGIN, value as ContentOrigin);
+export const requirementTypeMeta = (value: string) => lookup(REQUIREMENT_TYPE, value as RequirementType);
+export const requirementStateMeta = (value: string) => lookup(REQUIREMENT_STATE, value as RequirementState);
+
 /** Duane's sales pipeline stages, in journey order. Won/lost are terminal. */
 export type SalesStage =
   | "prospect"

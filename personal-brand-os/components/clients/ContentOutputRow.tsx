@@ -19,7 +19,7 @@ import {
   assignOutputAccount,
 } from "@/lib/actions/content";
 import { sendOutputToAyrshare, refreshAyrshareOutput, pullOutputPerformance } from "@/lib/actions/publishing";
-import { outputStatusMeta, type OutputStatus } from "@/lib/status";
+import { outputStatusMeta, contentOriginMeta, type OutputStatus } from "@/lib/status";
 import { OutputMediaSlot } from "@/components/clients/OutputMediaSlot";
 import { formatDateTime } from "@/lib/format";
 import type { Database } from "@/lib/database.types";
@@ -117,7 +117,22 @@ export function ContentOutputRow({
   // Master or override — Duane wants each version to say plainly which it is.
   const media = resolveMedia(output, idea);
   const save = (
-    field: "platform" | "format" | "caption" | "cta" | "hashtags" | "alt_text" | "destination_link" | "media_source_url" | "thumbnail_source_url" | "live_url" | "notes" | "reach" | "engagement" | "views"
+    field:
+      | "platform"
+      | "format"
+      | "caption"
+      | "cta"
+      | "hashtags"
+      | "alt_text"
+      | "destination_link"
+      | "media_source_url"
+      | "thumbnail_source_url"
+      | "live_url"
+      | "notes"
+      | "reach"
+      | "engagement"
+      | "views"
+      | "media_brief"
   ) => (value: string) => updateContentOutputField(clientId, output.id, field, value);
 
   function copyPost() {
@@ -157,6 +172,9 @@ export function ContentOutputRow({
             {(output.social_account_id && accounts.find((a) => a.id === output.social_account_id)?.label) || output.platform}
           </span>
           {output.format && <span className="text-xs text-ink-faint">{output.format}</span>}
+          {output.origin !== "manual" && (
+            <StatusPill label={contentOriginMeta(output.origin).label} color={contentOriginMeta(output.origin).color} />
+          )}
         </div>
         <div className="flex flex-shrink-0 items-center gap-2">
           {output.scheduled_at && output.status !== "published" && (
@@ -270,6 +288,14 @@ export function ContentOutputRow({
           <AutosaveInput id={`out-live-${output.id}`} label="Live post URL" initialValue={output.live_url} onSave={save("live_url")} />
           <AutosaveInput id={`out-alt-${output.id}`} label="Alt text" initialValue={output.alt_text} onSave={save("alt_text")} placeholder="Image description for accessibility" />
         </div>
+        <AutosaveTextarea
+          id={`out-mediabrief-${output.id}`}
+          label="Media brief"
+          helpText="What media this needs, in words, before a real asset is sourced or uploaded."
+          initialValue={output.media_brief}
+          onSave={save("media_brief")}
+          rows={2}
+        />
         {/* What this version will actually publish. */}
         <div className="rounded-md border border-border bg-surface-muted/40 px-3 py-2">
           <p className="text-xs">

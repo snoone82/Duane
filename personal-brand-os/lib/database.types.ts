@@ -861,18 +861,27 @@ export type Database = {
           audience_id: string | null
           body: string
           client_id: string
+          core_message: string
           created_at: string
           created_by: string | null
+          cta: string
+          cta_destination: string
           due_date: string | null
           hook: string
           id: string
+          lead_draft_copy: string
+          lead_platform: string
           media_path: string | null
           media_source_url: string
           media_url: string | null
+          monthly_plan_id: string | null
           notes: string
+          origin: string
           pillar_id: string | null
+          plan_sequence: number | null
           priority: Database["public"]["Enums"]["content_priority"]
           production_due_date: string | null
+          purpose: string
           scheduled_at: string | null
           status: Database["public"]["Enums"]["content_status"]
           target_publish_date: string | null
@@ -889,18 +898,27 @@ export type Database = {
           audience_id?: string | null
           body?: string
           client_id: string
+          core_message?: string
           created_at?: string
           created_by?: string | null
+          cta?: string
+          cta_destination?: string
           due_date?: string | null
           hook?: string
           id?: string
+          lead_draft_copy?: string
+          lead_platform?: string
           media_path?: string | null
           media_source_url?: string
           media_url?: string | null
+          monthly_plan_id?: string | null
           notes?: string
+          origin?: string
           pillar_id?: string | null
+          plan_sequence?: number | null
           priority?: Database["public"]["Enums"]["content_priority"]
           production_due_date?: string | null
+          purpose?: string
           scheduled_at?: string | null
           status?: Database["public"]["Enums"]["content_status"]
           target_publish_date?: string | null
@@ -917,18 +935,27 @@ export type Database = {
           audience_id?: string | null
           body?: string
           client_id?: string
+          core_message?: string
           created_at?: string
           created_by?: string | null
+          cta?: string
+          cta_destination?: string
           due_date?: string | null
           hook?: string
           id?: string
+          lead_draft_copy?: string
+          lead_platform?: string
           media_path?: string | null
           media_source_url?: string
           media_url?: string | null
+          monthly_plan_id?: string | null
           notes?: string
+          origin?: string
           pillar_id?: string | null
+          plan_sequence?: number | null
           priority?: Database["public"]["Enums"]["content_priority"]
           production_due_date?: string | null
+          purpose?: string
           scheduled_at?: string | null
           status?: Database["public"]["Enums"]["content_status"]
           target_publish_date?: string | null
@@ -975,6 +1002,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "content_ideas_monthly_plan_id_fkey"
+            columns: ["monthly_plan_id"]
+            isOneToOne: false
+            referencedRelation: "monthly_plans"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "content_ideas_pillar_id_fkey"
             columns: ["pillar_id"]
             isOneToOne: false
@@ -1002,10 +1036,12 @@ export type Database = {
           id: string
           likes: number | null
           live_url: string
+          media_brief: string
           media_path: string | null
           media_source_url: string
           media_url: string | null
           notes: string
+          origin: string
           platform: string
           publish_error: string
           published_at: string | null
@@ -1039,10 +1075,12 @@ export type Database = {
           id?: string
           likes?: number | null
           live_url?: string
+          media_brief?: string
           media_path?: string | null
           media_source_url?: string
           media_url?: string | null
           notes?: string
+          origin?: string
           platform: string
           publish_error?: string
           published_at?: string | null
@@ -1076,10 +1114,12 @@ export type Database = {
           id?: string
           likes?: number | null
           live_url?: string
+          media_brief?: string
           media_path?: string | null
           media_source_url?: string
           media_url?: string | null
           notes?: string
+          origin?: string
           platform?: string
           publish_error?: string
           published_at?: string | null
@@ -1259,6 +1299,135 @@ export type Database = {
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      monthly_plan_requirements: {
+        Row: {
+          client_id: string
+          created_at: string
+          description: string
+          due_date: string | null
+          id: string
+          monthly_plan_id: string
+          owner_note: string
+          related_content_note: string
+          state: string
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          description?: string
+          due_date?: string | null
+          id?: string
+          monthly_plan_id: string
+          owner_note?: string
+          related_content_note?: string
+          state?: string
+          type?: string
+          updated_at?: string
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          description?: string
+          due_date?: string | null
+          id?: string
+          monthly_plan_id?: string
+          owner_note?: string
+          related_content_note?: string
+          state?: string
+          type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "monthly_plan_requirements_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "monthly_plan_requirements_monthly_plan_id_fkey"
+            columns: ["monthly_plan_id"]
+            isOneToOne: false
+            referencedRelation: "monthly_plans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      monthly_plans: {
+        Row: {
+          avoid_language: string
+          client_id: string
+          created_at: string
+          created_by: string | null
+          cta_priorities: string
+          global_tone_notes: string
+          id: string
+          period_month: string
+          preferred_language: string
+          primary_cta_destination: string
+          primary_objective: string
+          scope_status: string
+          secondary_objectives: string
+          snapshot: Json
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          avoid_language?: string
+          client_id: string
+          created_at?: string
+          created_by?: string | null
+          cta_priorities?: string
+          global_tone_notes?: string
+          id?: string
+          period_month: string
+          preferred_language?: string
+          primary_cta_destination?: string
+          primary_objective?: string
+          scope_status?: string
+          secondary_objectives?: string
+          snapshot?: Json
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          avoid_language?: string
+          client_id?: string
+          created_at?: string
+          created_by?: string | null
+          cta_priorities?: string
+          global_tone_notes?: string
+          id?: string
+          period_month?: string
+          preferred_language?: string
+          primary_cta_destination?: string
+          primary_objective?: string
+          scope_status?: string
+          secondary_objectives?: string
+          snapshot?: Json
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "monthly_plans_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "monthly_plans_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
