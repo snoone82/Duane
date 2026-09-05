@@ -7,6 +7,7 @@ const TABS = [
   { slug: "overview", label: "Overview" },
   { slug: "vision", label: "Vision" },
   { slug: "positioning", label: "Positioning" },
+  { slug: "guidelines", label: "Content Guidelines" },
   { slug: "audiences", label: "Audiences" },
   { slug: "social", label: "Social" },
   { slug: "content", label: "Content" },

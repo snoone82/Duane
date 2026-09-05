@@ -6,7 +6,7 @@ import { UserFacingError } from "@/lib/errors";
 import { runAction, type ActionResult } from "@/lib/action-result";
 import type { Database } from "@/lib/database.types";
 import type { ContentPriority, ContentStatus } from "@/lib/enums";
-import { CONTENT_STATUS, CONTENT_PRIORITY, type OutputStatus } from "@/lib/status";
+import { CONTENT_STATUS, CONTENT_PRIORITY, MEDIA_STATE, type OutputStatus, type MediaState } from "@/lib/status";
 import { fieldPatch } from "@/lib/field-patch";
 import { PRODUCTION_CHECKLIST_STEPS, productionChecklistItemDone } from "@/lib/production-checklist";
 
@@ -334,6 +334,7 @@ const OUTPUT_FIELDS = [
   "hashtags",
   "alt_text",
   "media_brief",
+  "adaptation_note",
   "destination_link",
   // Externally hosted media — kept separate from destination_link, which is
   // the CTA/web destination and must never double as the video asset.
@@ -369,6 +370,17 @@ export async function updateContentOutputField(
       .from("content_outputs")
       .update(fieldPatch<Database["public"]["Tables"]["content_outputs"]["Update"]>(field, patchValue))
       .eq("id", outputId);
+    if (error) throw new Error(error.message);
+    revalidateContent(clientId);
+    return undefined;
+  });
+}
+
+export async function updateContentOutputMediaState(clientId: string, outputId: string, mediaState: MediaState): Promise<ActionResult> {
+  if (!MEDIA_STATE.some((m) => m.value === mediaState)) return { ok: false, message: "Invalid media state." };
+  return runAction(async () => {
+    const supabase = await createClient();
+    const { error } = await supabase.from("content_outputs").update({ media_state: mediaState }).eq("id", outputId);
     if (error) throw new Error(error.message);
     revalidateContent(clientId);
     return undefined;

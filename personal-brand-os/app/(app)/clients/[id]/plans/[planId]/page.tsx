@@ -7,13 +7,15 @@ import { AddPlanContentButton } from "@/components/clients/AddPlanContentButton"
 import { RequirementRow } from "@/components/clients/RequirementRow";
 import { AddRequirementButton } from "@/components/clients/AddRequirementButton";
 import { RecomputeRequirementsButton } from "@/components/clients/RecomputeRequirementsButton";
+import { AssignPublishDatesButton } from "@/components/clients/AssignPublishDatesButton";
 import { AiBriefPanel } from "@/components/clients/AiBriefPanel";
 import { ExportPlanJsonButton } from "@/components/clients/ExportPlanJsonButton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { getApproverOptions } from "@/lib/data/approvers";
 import { socialAccountLabel } from "@/lib/format";
 import { isAyrshareConfigured } from "@/lib/ayrshare";
-import { periodMonthLabel } from "@/lib/monthly-plan-format";
+import { periodMonthLabel, isPlatformExcluded } from "@/lib/monthly-plan-format";
+import { checkMonthlyPlanReadiness } from "@/lib/actions/monthly-plans";
 
 export const metadata = { title: "Monthly Plan" };
 
@@ -30,6 +32,7 @@ export default async function MonthlyPlanPage({ params }: { params: Promise<{ id
     { data: requirements },
     team,
     { data: socialAccounts },
+    readinessResult,
   ] = await Promise.all([
     supabase.from("monthly_plans").select("*").eq("id", planId).eq("client_id", id).maybeSingle(),
     supabase.from("brand_pillars").select("*").eq("client_id", id).order("sort_order"),
@@ -39,6 +42,7 @@ export default async function MonthlyPlanPage({ params }: { params: Promise<{ id
     supabase.from("monthly_plan_requirements").select("*").eq("monthly_plan_id", planId).order("created_at"),
     getApproverOptions(supabase, id),
     supabase.from("social_strategies").select("*").eq("client_id", id).order("is_primary", { ascending: false }).order("sort_order"),
+    checkMonthlyPlanReadiness(id),
   ]);
 
   if (!plan) notFound();
@@ -56,9 +60,15 @@ export default async function MonthlyPlanPage({ params }: { params: Promise<{ id
   }
 
   const allAccounts = socialAccounts ?? [];
+  // Excludes accounts this Monthly Plan can't use (Duane: never offered as a
+  // destination) — the same rule exportAiBrief/importAiOutput enforce.
   const publishingAccounts = allAccounts
-    .filter((account) => account.publishing_enabled && account.account_status !== "inactive")
+    .filter((account) => !isPlatformExcluded(account))
     .map((account) => ({ id: account.id, label: socialAccountLabel(account.platform, account.account_name) }));
+
+  const readiness = readinessResult.ok
+    ? readinessResult.data
+    : { ready: false, blockers: [readinessResult.message], platforms: [] };
 
   return (
     <div className="max-w-4xl space-y-8">
@@ -77,7 +87,10 @@ export default async function MonthlyPlanPage({ params }: { params: Promise<{ id
       <section>
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-ink">Master Content</h2>
-          <AddPlanContentButton clientId={id} planId={planId} pillars={pillarList} audiences={audienceList} />
+          <div className="flex items-center gap-2">
+            <AssignPublishDatesButton clientId={id} planId={planId} />
+            <AddPlanContentButton clientId={id} planId={planId} pillars={pillarList} audiences={audienceList} accounts={publishingAccounts} />
+          </div>
         </div>
         <p className="mb-3 text-xs text-ink-soft">
           The unit of planning and approval. Platform Outputs — the unit of publishing — live nested inside each one below.
@@ -146,7 +159,7 @@ export default async function MonthlyPlanPage({ params }: { params: Promise<{ id
           PBOS owns this plan — Claude is only ever asked to propose structured content into it. No live API connection
           yet: generate a brief, paste it into Claude yourself, then paste the JSON it returns back in below.
         </p>
-        <AiBriefPanel clientId={id} planId={planId} />
+        <AiBriefPanel clientId={id} planId={planId} readiness={readiness} />
       </section>
     </div>
   );

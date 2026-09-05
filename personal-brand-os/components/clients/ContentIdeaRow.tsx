@@ -19,7 +19,7 @@ import {
   requestContentChanges,
   addContentOutput,
 } from "@/lib/actions/content";
-import { updatePlanContentIdeaField } from "@/lib/actions/monthly-plans";
+import { updatePlanContentIdeaField, updatePlanContentLeadPlatform } from "@/lib/actions/monthly-plans";
 import { CONTENT_STATUS, CONTENT_PRIORITY, contentOriginMeta } from "@/lib/status";
 import { planSequenceLabel } from "@/lib/monthly-plan-format";
 import { formatDate, formatDateTime } from "@/lib/format";
@@ -289,12 +289,21 @@ export function ContentIdeaRow({
                 initialValue={idea.cta_destination}
                 onSave={(v) => updatePlanContentIdeaField(clientId, idea.id, "cta_destination", v)}
               />
-              <AutosaveInput
-                id={`idea-leadplatform-${idea.id}`}
-                label="Lead platform"
-                initialValue={idea.lead_platform}
-                onSave={(v) => updatePlanContentIdeaField(clientId, idea.id, "lead_platform", v)}
-              />
+              <div>
+                <Label htmlFor={`idea-leadplatform-${idea.id}`}>Lead platform</Label>
+                <Select
+                  id={`idea-leadplatform-${idea.id}`}
+                  defaultValue={idea.lead_platform_id ?? ""}
+                  onChange={(e) => updatePlanContentLeadPlatform(clientId, idea.id, e.target.value || null)}
+                >
+                  <option value="">No lead platform</option>
+                  {accounts.map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.label}
+                    </option>
+                  ))}
+                </Select>
+              </div>
             </div>
             <AutosaveTextarea
               id={`idea-leaddraft-${idea.id}`}

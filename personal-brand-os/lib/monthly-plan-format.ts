@@ -19,3 +19,16 @@ export function periodMonthLabel(periodMonth: string): string {
 export function planSequenceLabel(n: number | null): string {
   return n === null ? "" : `MC-${String(n).padStart(2, "0")}`;
 }
+
+/** An account this client's own strategy has ruled out — never offered to
+ * the AI as a destination, and a hard validation error on import if one
+ * shows up there anyway. Shared between the export/import logic and the
+ * pages that render a lead-platform picker, so both agree on what "excluded"
+ * means. */
+export function isPlatformExcluded(account: { account_status: string; publishing_enabled: boolean; cross_post_rule: string }): boolean {
+  return account.account_status === "inactive" || !account.publishing_enabled || account.cross_post_rule === "never";
+}
+
+export function platformLabel(account: { platform: string; account_name: string }): string {
+  return account.account_name ? `${account.platform} — ${account.account_name}` : account.platform;
+}
