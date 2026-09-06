@@ -172,6 +172,7 @@ export type Database = {
           created_at: string
           demographics: string
           description: string
+          eligible_for_generation: boolean
           goals: string
           id: string
           name: string
@@ -190,6 +191,7 @@ export type Database = {
           created_at?: string
           demographics?: string
           description?: string
+          eligible_for_generation?: boolean
           goals?: string
           id?: string
           name: string
@@ -208,6 +210,7 @@ export type Database = {
           created_at?: string
           demographics?: string
           description?: string
+          eligible_for_generation?: boolean
           goals?: string
           id?: string
           name?: string
@@ -1107,6 +1110,7 @@ export type Database = {
           social_account_id: string | null
           sort_order: number
           status: string
+          target_publish_date: string | null
           thumbnail_path: string | null
           thumbnail_source_url: string
           thumbnail_url: string | null
@@ -1148,6 +1152,7 @@ export type Database = {
           social_account_id?: string | null
           sort_order?: number
           status?: string
+          target_publish_date?: string | null
           thumbnail_path?: string | null
           thumbnail_source_url?: string
           thumbnail_url?: string | null
@@ -1189,6 +1194,7 @@ export type Database = {
           social_account_id?: string | null
           sort_order?: number
           status?: string
+          target_publish_date?: string | null
           thumbnail_path?: string | null
           thumbnail_source_url?: string
           thumbnail_url?: string | null

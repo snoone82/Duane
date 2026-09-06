@@ -6,7 +6,7 @@ import { runAction, type ActionResult } from "@/lib/action-result";
 import { UserFacingError } from "@/lib/errors";
 import { fieldPatch } from "@/lib/field-patch";
 import { buildAccountResolver, normaliseAccountKey } from "@/lib/social-match";
-import { assessPlatformFit, cadenceStatus, cadenceLabel } from "@/lib/platform-strategy";
+import { assessPlatformFit, cadenceStatus, cadenceLabel, monthlyTarget } from "@/lib/platform-strategy";
 import type { Database } from "@/lib/database.types";
 import {
   MONTHLY_PLAN_STATUS,
@@ -462,20 +462,37 @@ export async function deleteRequirement(clientId: string, requirementId: string)
 
 type DesiredRequirement = { type: RequirementType; description: string; related_content_note: string };
 
+/** Duane, round 3: format is now a constrained value on the generation
+ * pathway (see PLATFORM_FORMATS below), so production requirements can
+ * classify it exactly instead of guessing from free text. `null` means the
+ * format genuinely needs no production requirement (a text post needs no
+ * media). Anything not in this map — legacy or manual-entry data from
+ * before the constraint existed — falls back to the old regex guess. */
+const FORMAT_PRODUCTION_TYPE: Record<string, "filming" | "asset_upload" | null> = {
+  video: "filming",
+  reel: "filming",
+  carousel: "asset_upload",
+  static: "asset_upload",
+  text_image: "asset_upload",
+  text: null,
+};
+
 async function reconcilePlanRequirementsInternal(
   supabase: SupabaseClient,
   clientId: string,
   planId: string
 ): Promise<{ created: number; updated: number; removed: number }> {
-  const [{ data: ideas }, { data: existingReqs }, { data: socials }] = await Promise.all([
+  const [{ data: ideas }, { data: existingReqs }, { data: socials }, { data: pillars }] = await Promise.all([
     supabase
       .from("content_ideas")
-      .select("id,plan_sequence,title,lead_platform,lead_platform_id,cta,cta_destination")
+      .select("id,plan_sequence,title,lead_platform,lead_platform_id,cta,cta_destination,pillar_id")
       .eq("monthly_plan_id", planId),
     supabase.from("monthly_plan_requirements").select("id,generated_key").eq("monthly_plan_id", planId).eq("origin", "system_generated"),
     supabase.from("social_strategies").select("*").eq("client_id", clientId),
+    supabase.from("brand_pillars").select("id,name").eq("client_id", clientId),
   ]);
   const ideaList = ideas ?? [];
+  const pillarNameById = new Map((pillars ?? []).map((p) => [p.id, p.name]));
   const ideaIds = ideaList.map((i) => i.id);
   const { data: outputs } = ideaIds.length
     ? await supabase.from("content_outputs").select("id,content_id,platform,format,social_account_id").in("content_id", ideaIds)
@@ -499,6 +516,7 @@ async function reconcilePlanRequirementsInternal(
     const format = output.format.trim();
     if (!format) continue;
     const key = format.toLowerCase();
+    if (FORMAT_PRODUCTION_TYPE[key] === null) continue; // e.g. "text" — no production requirement at all
     const bucket = byFormat.get(key) ?? { count: 0, seqs: new Set<string>(), labels: new Set<string>() };
     bucket.count += 1;
     const idea = ideaById.get(output.content_id);
@@ -508,11 +526,19 @@ async function reconcilePlanRequirementsInternal(
     byFormat.set(key, bucket);
   }
   for (const [key, bucket] of byFormat) {
-    const isFilming = /film|record|shoot|reel|video|short|clip|live/i.test(key);
-    const isAsset = /image|photo|graphic|carousel|design|thumbnail|banner|infograph|static/i.test(key);
+    const exact = FORMAT_PRODUCTION_TYPE[key];
+    let type: RequirementType;
+    if (exact !== undefined) {
+      type = exact ?? "other"; // exact is never null here — null keys were skipped above
+    } else {
+      // Legacy / manual-entry format text from before the constraint existed.
+      const isFilming = /film|record|shoot|reel|video|short|clip|live/i.test(key);
+      const isAsset = /image|photo|graphic|carousel|design|thumbnail|banner|infograph|static/i.test(key);
+      type = isFilming ? "filming" : isAsset ? "asset_upload" : "other";
+    }
     desired.set(`format:${key}`, {
-      type: isFilming ? "filming" : isAsset ? "asset_upload" : "other",
-      description: `${isFilming ? "Film" : "Source"} ${bucket.count} × ${key} (${[...bucket.labels].sort().join(", ")})`,
+      type,
+      description: `${type === "filming" ? "Film" : "Source"} ${bucket.count} × ${key} (${[...bucket.labels].sort().join(", ")})`,
       related_content_note: [...bucket.seqs].sort().join(", "),
     });
   }
@@ -594,6 +620,27 @@ async function reconcilePlanRequirementsInternal(
     }
   }
 
+  // e) Pillar balance (Duane, round 3): flag concentration, don't block it —
+  // "no more than three from one pillar unless the objective justifies it"
+  // is a judgement call the strategist makes, not something PBOS can decide
+  // on its own.
+  const byPillar = new Map<string, Set<string>>();
+  for (const idea of ideaList) {
+    if (!idea.pillar_id) continue;
+    const seqs = byPillar.get(idea.pillar_id) ?? new Set<string>();
+    seqs.add(planSequenceLabel(idea.plan_sequence));
+    byPillar.set(idea.pillar_id, seqs);
+  }
+  for (const [pillarId, seqs] of byPillar) {
+    if (seqs.size <= 3) continue;
+    const name = pillarNameById.get(pillarId) ?? "(unknown pillar)";
+    desired.set(`pillar_balance:${pillarId}`, {
+      type: "information",
+      description: `${seqs.size} Master Content ideas use the "${name}" pillar this month — confirm this concentration is intentional. Guidance: no more than three from one pillar unless the month's objective clearly justifies it.`,
+      related_content_note: [...seqs].sort().join(", "),
+    });
+  }
+
   // Reconcile: remove what no longer applies, update what changed, create
   // what's new. Never touches a manual or ai_import row.
   const existing = existingReqs ?? [];
@@ -651,11 +698,27 @@ export async function reconcilePlanRequirements(
 // ---------------------------------------------------------------------------
 // Publish-date assignment (Duane: PBOS distributes outputs across the month
 // deterministically once it knows the month, the active platforms and their
-// cadence — not the AI). Spaces each lead platform's Master Content evenly
-// across the plan's calendar month, in plan_sequence order. Idempotent and
-// re-runnable, same as reconcilePlanRequirements — safe to call again after
-// hand-editing Master Content.
+// cadence — not the AI). Round 3: dates are assigned per Platform Output, on
+// the account it actually publishes to, not per Master Content idea — two
+// sibling outputs under one idea (e.g. LinkedIn — Daniel Andrews and
+// LinkedIn — CEG) used to always land on the idea's single date; now each
+// account is spaced evenly across the month on its own, then a second pass
+// nudges same-idea siblings on the same platform family apart if they still
+// land too close together. content_ideas.target_publish_date is kept in
+// sync afterwards, mirroring the lead platform's output, for the existing
+// idea-level displays (cadence view, portal, publishing pack) that read it.
+// Idempotent and re-runnable, same as reconcilePlanRequirements — safe to
+// call again after hand-editing Master Content or Platform Outputs.
 // ---------------------------------------------------------------------------
+
+const SIBLING_MIN_GAP_DAYS = 2;
+
+interface DatableOutput {
+  id: string;
+  content_id: string;
+  social_account_id: string | null;
+  platform: string;
+}
 
 async function assignPlanPublishDatesInternal(
   supabase: SupabaseClient,
@@ -671,33 +734,86 @@ async function assignPlanPublishDatesInternal(
     .eq("monthly_plan_id", planId)
     .order("plan_sequence");
   const ideaList = ideas ?? [];
+  const ideaIds = ideaList.map((i) => i.id);
+  const ideaSeqById = new Map(ideaList.map((i) => [i.id, i.plan_sequence]));
+
+  const { data: outputs } = ideaIds.length
+    ? await supabase.from("content_outputs").select("id,content_id,social_account_id,platform").in("content_id", ideaIds)
+    : { data: [] as DatableOutput[] };
+  const outputList = (outputs ?? []) as DatableOutput[];
 
   const [year, month] = plan.period_month.split("-").map(Number) as [number, number];
   const daysInMonth = new Date(year, month, 0).getDate();
   const yearMonth = plan.period_month.slice(0, 7);
+  const formatDay = (day: number) => `${yearMonth}-${String(Math.min(daysInMonth, Math.max(1, day))).padStart(2, "0")}`;
 
-  const byAccount = new Map<string, typeof ideaList>();
+  // Primary pass: even spacing per publishing account, ordered by the
+  // parent idea's plan_sequence — the idea's position in the month still
+  // comes from its sequence, even though the date now lives on the output.
   let skipped = 0;
-  for (const idea of ideaList) {
-    if (!idea.lead_platform_id) {
+  const byAccount = new Map<string, DatableOutput[]>();
+  for (const output of outputList) {
+    if (!output.social_account_id) {
       skipped += 1;
       continue;
     }
-    const list = byAccount.get(idea.lead_platform_id) ?? [];
-    list.push(idea);
-    byAccount.set(idea.lead_platform_id, list);
+    const list = byAccount.get(output.social_account_id) ?? [];
+    list.push(output);
+    byAccount.set(output.social_account_id, list);
+  }
+
+  const dayFor = new Map<string, number>();
+  for (const group of byAccount.values()) {
+    group.sort((a, b) => (ideaSeqById.get(a.content_id) ?? 0) - (ideaSeqById.get(b.content_id) ?? 0));
+    const step = daysInMonth / group.length;
+    group.forEach((output, i) => {
+      dayFor.set(output.id, Math.min(daysInMonth, Math.max(1, Math.round(step * (i + 0.5)))));
+    });
+  }
+
+  // Sibling-spacing pass: two outputs under the SAME idea, on accounts in
+  // the same platform family (e.g. two LinkedIn accounts), never share a
+  // day — push the later one forward by the minimum gap.
+  const byIdeaFamily = new Map<string, DatableOutput[]>();
+  for (const output of outputList) {
+    if (!dayFor.has(output.id)) continue;
+    const key = `${output.content_id}:${normaliseAccountKey(output.platform)}`;
+    const list = byIdeaFamily.get(key) ?? [];
+    list.push(output);
+    byIdeaFamily.set(key, list);
+  }
+  for (const group of byIdeaFamily.values()) {
+    if (group.length < 2) continue;
+    group.sort((a, b) => dayFor.get(a.id)! - dayFor.get(b.id)!);
+    let prevDay = dayFor.get(group[0]!.id)!;
+    for (let i = 1; i < group.length; i++) {
+      const current = group[i]!;
+      let day = dayFor.get(current.id)!;
+      if (day - prevDay < SIBLING_MIN_GAP_DAYS) day = Math.min(daysInMonth, prevDay + SIBLING_MIN_GAP_DAYS);
+      dayFor.set(current.id, day);
+      prevDay = day;
+    }
   }
 
   let assigned = 0;
-  for (const group of byAccount.values()) {
-    const step = daysInMonth / group.length;
-    for (let i = 0; i < group.length; i++) {
-      const day = Math.min(daysInMonth, Math.max(1, Math.round(step * (i + 0.5))));
-      const date = `${yearMonth}-${String(day).padStart(2, "0")}`;
-      const { error } = await supabase.from("content_ideas").update({ target_publish_date: date }).eq("id", group[i]!.id);
-      if (error) throw new Error(error.message);
-      assigned += 1;
-    }
+  for (const [outputId, day] of dayFor) {
+    const { error } = await supabase.from("content_outputs").update({ target_publish_date: formatDay(day) }).eq("id", outputId);
+    if (error) throw new Error(error.message);
+    assigned += 1;
+  }
+
+  // Keep content_ideas.target_publish_date in sync — mirrors the lead
+  // platform's own output date where one resolved, else the idea's
+  // earliest-dated output. An idea with no dated outputs yet (e.g. just
+  // hand-added, before any Platform Output exists) is left alone rather
+  // than guessing a date for nothing to publish.
+  for (const idea of ideaList) {
+    const ideaOutputs = outputList.filter((o) => o.content_id === idea.id && dayFor.has(o.id));
+    if (ideaOutputs.length === 0) continue;
+    const leadOutput = idea.lead_platform_id ? ideaOutputs.find((o) => o.social_account_id === idea.lead_platform_id) : undefined;
+    const day = leadOutput ? dayFor.get(leadOutput.id)! : Math.min(...ideaOutputs.map((o) => dayFor.get(o.id)!));
+    const { error } = await supabase.from("content_ideas").update({ target_publish_date: formatDay(day) }).eq("id", idea.id);
+    if (error) throw new Error(error.message);
   }
 
   return { assigned, skipped };
@@ -733,11 +849,35 @@ export interface AiBriefResult {
   brief: string;
 }
 
+/** Duane, round 3: format now drives production Requirements directly, so
+ * it can't be free text on the generation pathway — constrained to the
+ * values each platform actually supports. Keyed by normalised platform name
+ * (normaliseAccountKey), not display label, so "LinkedIn" and "linkedin —
+ * daniel andrews" both resolve to the same entry. A platform with no entry
+ * here is unconstrained — only LinkedIn and Instagram have a specified list
+ * so far; a new platform stays open until Duane specifies its own. */
+const PLATFORM_FORMATS: Record<string, string[]> = {
+  linkedin: ["text", "text_image", "carousel", "video"],
+  instagram: ["reel", "carousel", "static"],
+};
+
+function allowedFormatsFor(platform: string): string[] | null {
+  return PLATFORM_FORMATS[normaliseAccountKey(platform)] ?? null;
+}
+
+/** Suggested Master-Content-idea-count range from a total Platform Output
+ * target (Duane, round 3): calibrated so his own test numbers — 39 total
+ * outputs — land on his own stated "14–16 ideas" (39 / 2.6 = 15.0, ±1). Not
+ * a hard rule, just a starting steer for the brief. */
+const AVG_OUTPUTS_PER_IDEA = 2.6;
+
 /** The exact JSON shape importAiOutput expects, embedded in the brief so
  * Claude sees it verbatim rather than a paraphrase of it. Platform Outputs
  * carry an adaptation note, not a finished caption — Master Content is the
  * approval unit and owns the one full draft; hashtags are a post-approval
- * publishing detail, not part of planning. */
+ * publishing detail, not part of planning. Requirements are never part of
+ * this shape (Duane, round 3) — PBOS computes them itself, after import,
+ * from what's actually planned; the AI is never asked for them. */
 const OUTPUT_SCHEMA_EXAMPLE = {
   master_content: [
     {
@@ -758,20 +898,11 @@ const OUTPUT_SCHEMA_EXAMPLE = {
     {
       master_index: "number — 1-based position in master_content above that this output belongs to",
       platform_id: "string — one of the platform ids listed below",
-      format: "string",
+      format: "string — MUST be one of that platform's allowed formats, listed under \"Allowed formats per platform\" below — never freeform, this drives production Requirements",
       adaptation_note:
         "string — how this version should differ from the Master Content lead draft, e.g. \"Shorten for Instagram, make the opening more conversational, use the video hook on screen.\" Not a finished caption — that is written at production time, after approval.",
       media_brief: "string — what media this needs, described in words, before anyone sources or uploads it",
       destination_link: "string — optional, only if genuinely different from the Master Content CTA destination",
-    },
-  ],
-  requirements: [
-    {
-      type: "one of: filming, asset_upload, information, decision_approval, access, other",
-      description: "string",
-      owner_note: "string — who this needs, e.g. \"Client\" or \"Daniel / Charlie\"",
-      due_date: "YYYY-MM-DD — optional",
-      related_content_note: "string — optional, e.g. \"MC-01, MC-02\" or \"All Instagram outputs\"",
     },
   ],
 };
@@ -802,7 +933,11 @@ export async function exportAiBrief(clientId: string, planId: string): Promise<A
         supabase.from("monthly_plans").select("*").eq("id", planId).eq("client_id", clientId).maybeSingle(),
         supabase.from("content_guidelines").select("content_safeguards").eq("client_id", clientId).maybeSingle(),
         supabase.from("brand_pillars").select("id,name").eq("client_id", clientId).order("sort_order"),
-        supabase.from("audiences").select("id,name").eq("client_id", clientId).order("sort_order"),
+        supabase
+          .from("audiences")
+          .select("id,name,description,pain_points,goals,eligible_for_generation")
+          .eq("client_id", clientId)
+          .order("sort_order"),
         supabase.from("social_strategies").select("*").eq("client_id", clientId).order("sort_order"),
         supabase.from("content_ideas").select("plan_sequence,title,core_message").eq("monthly_plan_id", planId).order("plan_sequence"),
       ]);
@@ -811,6 +946,12 @@ export async function exportAiBrief(clientId: string, planId: string): Promise<A
     // Only accounts this plan can actually use — excluded ones are never
     // offered as a destination, by id or by name.
     const activeSocials = (socials ?? []).filter((s) => !isPlatformExcluded(s));
+    // Duane, round 3: an audience can be real and strategic without being
+    // offered as a direct generation target for these commercial channels
+    // (Daniel's "young people requiring confidence..." stays on his profile,
+    // never here) — filtered from live data, not the frozen snapshot, so a
+    // later eligibility change takes effect on the next brief.
+    const eligibleAudiences = (audiences ?? []).filter((a) => a.eligible_for_generation);
 
     const lines: string[] = [];
     lines.push(`# ${client?.name ?? "Client"} — ${periodMonthLabel(plan.period_month)} Monthly Plan: AI Content Brief`);
@@ -842,7 +983,8 @@ export async function exportAiBrief(clientId: string, planId: string): Promise<A
     lines.push("");
 
     lines.push("### Audiences");
-    for (const a of snapshot.audiences ?? []) {
+    lines.push("Only audiences eligible for generation on this plan are listed — others may exist on the client's strategic profile but must not be targeted here.");
+    for (const a of eligibleAudiences) {
       const bits = [a.description, a.pain_points && `Pain points: ${a.pain_points}`, a.goals && `Goals: ${a.goals}`].filter(Boolean);
       lines.push(`- **${a.name}** — ${bits.join(" | ") || "—"}`);
     }
@@ -862,16 +1004,54 @@ export async function exportAiBrief(clientId: string, planId: string): Promise<A
     }
     lines.push("");
 
+    // Duane, round 3: an explicit, PBOS-calculated volume target — not
+    // hardcoded, not left for the AI to guess — from each active account's
+    // real cadence for this month.
+    const accountTargets = activeSocials
+      .map((account) => ({ account, target: monthlyTarget(account) }))
+      .filter((t): t is { account: (typeof activeSocials)[number]; target: number } => t.target !== null);
+    const totalOutputTarget = accountTargets.reduce((sum, t) => sum + t.target, 0);
+    const ideaMid = Math.round(totalOutputTarget / AVG_OUTPUTS_PER_IDEA);
+    lines.push("## Volume target");
+    if (accountTargets.length > 0) {
+      lines.push(`This plan needs roughly ${totalOutputTarget} Platform Outputs this month, from each active account's own cadence:`);
+      for (const { account, target } of accountTargets) lines.push(`- ${platformLabel(account)}: ~${target} (cadence: ${cadenceLabel(account)})`);
+      lines.push(
+        `Aim for roughly ${Math.max(1, ideaMid - 1)}–${ideaMid + 1} Master Content ideas — one idea often produces more than one Platform Output (see the LinkedIn sibling guidance below), so idea count is naturally lower than the output total.`
+      );
+    } else {
+      lines.push("No active platform has a cadence target set — a volume target can't be calculated. Propose a reasonable number of ideas and PBOS will flag the shortfall after import.");
+    }
+    lines.push("These are targets, not hard caps — PBOS checks the actual planned-vs-target cadence after you import.");
+    lines.push("");
+
+    lines.push("## Pillar balance");
+    lines.push(
+      "Use all seven approved content pillars where appropriate across the month's ideas — don't cluster on the two or three easiest themes. No more than three Master Content ideas should come from any single pillar this month, unless the month's objective clearly justifies leaning into it."
+    );
+    lines.push("");
+
+    lines.push("## LinkedIn sibling content");
+    lines.push(
+      "One Master Content idea MAY produce Platform Outputs on both LinkedIn accounts where it's genuinely appropriate — this is expected given the volume target above, not something to avoid. But the two adaptations must differ materially, never the same caption twice:"
+    );
+    lines.push("- LinkedIn — Daniel Andrews: personal authority — his own experience, opinion, leadership.");
+    lines.push("- LinkedIn — CEG: organisational proof — services, outcomes, partnership, professional relevance.");
+    lines.push("Write each adaptation_note to reflect that distinct angle explicitly, not as a lightly reworded copy of the other.");
+    lines.push("");
+
+    lines.push("### Already planned this month — do not duplicate");
     if ((existingIdeas ?? []).length > 0) {
-      lines.push("### Already planned this month — do not duplicate these");
       for (const idea of existingIdeas ?? []) {
         lines.push(`- ${planSequenceLabel(idea.plan_sequence)}: "${idea.title}" — ${idea.core_message || "(no core message set)"}`);
       }
-      lines.push("");
+    } else {
+      lines.push("(nothing planned yet this month)");
     }
+    lines.push("");
 
     lines.push("## What to return");
-    lines.push("Return valid JSON only, matching this exact shape (this is a schema description, not literal values to copy):");
+    lines.push("Return valid JSON only, matching this exact shape (this is a schema description, not literal values to copy). Do not return a requirements array — PBOS computes Requirements itself after import.");
     lines.push("");
     lines.push("```json");
     lines.push(JSON.stringify(OUTPUT_SCHEMA_EXAMPLE, null, 2));
@@ -881,10 +1061,17 @@ export async function exportAiBrief(clientId: string, planId: string): Promise<A
     for (const p of pillars ?? []) lines.push(`- ${p.id} = ${p.name}`);
     lines.push("");
     lines.push("Audience ids available:");
-    for (const a of audiences ?? []) lines.push(`- ${a.id} = ${a.name}`);
+    for (const a of eligibleAudiences) lines.push(`- ${a.id} = ${a.name}`);
     lines.push("");
     lines.push("Platform ids available (use for lead_platform_id and platform_outputs.platform_id — no other platform is valid for this plan):");
     for (const account of activeSocials) lines.push(`- ${account.id} = ${platformLabel(account)}`);
+    lines.push("");
+    lines.push("### Allowed formats per platform");
+    lines.push("Every platform_outputs[].format value must be exactly one of the values listed for that platform's id — never freeform, since format drives production Requirements after import.");
+    for (const account of activeSocials) {
+      const allowed = allowedFormatsFor(account.platform);
+      if (allowed) lines.push(`- ${platformLabel(account)} (id: ${account.id}): ${allowed.join(", ")}`);
+    }
 
     return { brief: lines.join("\n") };
   });
@@ -893,13 +1080,14 @@ export async function exportAiBrief(clientId: string, planId: string): Promise<A
 export interface ImportAiOutputResult {
   masterContentCreated: number;
   platformOutputsCreated: number;
-  requirementsCreated: number;
   /** Production requirements PBOS computed from the plan's actual Master
    * Content / Platform Outputs — aggregate format counts, a missing lead
    * platform output, a missing CTA destination, an excluded or off-cadence
-   * platform. See reconcilePlanRequirements. */
+   * platform, a pillar-balance flag. Requirements are never part of what
+   * the AI returns (Duane, round 3) — this is the only source. See
+   * reconcilePlanRequirements. */
   requirementsAutoGenerated: number;
-  /** Master Content items PBOS assigned a publish date to from cadence. */
+  /** Platform Outputs PBOS assigned a publish date to from cadence. */
   datesAssigned: number;
   warnings: string[];
 }
@@ -925,13 +1113,6 @@ interface RawPlatformOutput {
   destination_link?: unknown;
   media_state?: unknown;
 }
-interface RawRequirement {
-  type?: unknown;
-  description?: unknown;
-  owner_note?: unknown;
-  due_date?: unknown;
-  related_content_note?: unknown;
-}
 
 const str = (value: unknown): string => (typeof value === "string" ? value.trim() : "");
 
@@ -950,7 +1131,9 @@ function normaliseCtaDestination(value: string): string {
  * (never created to fit, and a mismatch fails the whole import rather than
  * silently dropping or guessing), and platform_outputs are linked back to
  * the master_content item they belong to by position in the same JSON, not
- * by guessing.
+ * by guessing. Requirements are never accepted from the AI (Duane, round
+ * 3) — reconcilePlanRequirementsInternal computes them from what was
+ * actually imported, after publish dates are assigned.
  */
 export async function importAiOutput(clientId: string, planId: string, jsonText: string): Promise<ActionResult<ImportAiOutputResult>> {
   let parsed: unknown;
@@ -967,16 +1150,15 @@ export async function importAiOutput(clientId: string, planId: string, jsonText:
     return { ok: false, message: "That isn't valid JSON — paste exactly what Claude returned, nothing else." };
   }
   if (typeof parsed !== "object" || parsed === null) {
-    return { ok: false, message: "Expected a JSON object with master_content / platform_outputs / requirements." };
+    return { ok: false, message: "Expected a JSON object with master_content / platform_outputs." };
   }
 
-  const body = parsed as { master_content?: unknown; platform_outputs?: unknown; requirements?: unknown };
+  const body = parsed as { master_content?: unknown; platform_outputs?: unknown };
   const masterRaw = Array.isArray(body.master_content) ? (body.master_content as RawMasterContent[]) : [];
   const outputsRaw = Array.isArray(body.platform_outputs) ? (body.platform_outputs as RawPlatformOutput[]) : [];
-  const requirementsRaw = Array.isArray(body.requirements) ? (body.requirements as RawRequirement[]) : [];
 
-  if (masterRaw.length === 0 && outputsRaw.length === 0 && requirementsRaw.length === 0) {
-    return { ok: false, message: "Nothing to import — the JSON has no master_content, platform_outputs, or requirements." };
+  if (masterRaw.length === 0 && outputsRaw.length === 0) {
+    return { ok: false, message: "Nothing to import — the JSON has no master_content or platform_outputs." };
   }
 
   const shapeErrors: string[] = [];
@@ -988,13 +1170,6 @@ export async function importAiOutput(clientId: string, planId: string, jsonText:
     if (typeof idx !== "number" || !Number.isInteger(idx) || idx < 1 || idx > masterRaw.length) {
       shapeErrors.push(`platform_outputs[${i}]: master_index must be a whole number from 1 to ${masterRaw.length || "?"}, pointing at a master_content item.`);
     }
-  });
-  requirementsRaw.forEach((item, i) => {
-    const type = str(item.type) || "other";
-    if (!REQUIREMENT_TYPE.some((t) => t.value === type)) {
-      shapeErrors.push(`requirements[${i}]: type "${str(item.type)}" isn't one of ${REQUIREMENT_TYPE.map((t) => t.value).join(", ")}.`);
-    }
-    if (!str(item.description)) shapeErrors.push(`requirements[${i}]: description is required.`);
   });
   if (shapeErrors.length > 0) {
     return { ok: false, message: `Couldn't import — fix these and try again:\n${shapeErrors.join("\n")}` };
@@ -1010,11 +1185,11 @@ export async function importAiOutput(clientId: string, planId: string, jsonText:
 
     const [{ data: pillars }, { data: audiences }, { data: socials }] = await Promise.all([
       supabase.from("brand_pillars").select("id,name").eq("client_id", clientId),
-      supabase.from("audiences").select("id,name").eq("client_id", clientId),
+      supabase.from("audiences").select("id,name,eligible_for_generation").eq("client_id", clientId),
       supabase.from("social_strategies").select("*").eq("client_id", clientId),
     ]);
     const pillarIds = new Set((pillars ?? []).map((p) => p.id));
-    const audienceIds = new Set((audiences ?? []).map((a) => a.id));
+    const audienceById = new Map((audiences ?? []).map((a) => [a.id, a]));
     const socialById = new Map((socials ?? []).map((s) => [s.id, s]));
 
     // Fail visibly rather than silently dropping or guessing (Duane's
@@ -1026,7 +1201,12 @@ export async function importAiOutput(clientId: string, planId: string, jsonText:
       const pillarId = str(item.pillar_id);
       if (pillarId && !pillarIds.has(pillarId)) idErrors.push(`${label}: pillar_id "${pillarId}" doesn't match one of this client's approved pillars.`);
       const audienceId = str(item.audience_id);
-      if (audienceId && !audienceIds.has(audienceId)) idErrors.push(`${label}: audience_id "${audienceId}" doesn't match one of this client's audiences.`);
+      if (audienceId) {
+        const audience = audienceById.get(audienceId);
+        if (!audience) idErrors.push(`${label}: audience_id "${audienceId}" doesn't match one of this client's audiences.`);
+        else if (!audience.eligible_for_generation)
+          idErrors.push(`${label}: audience_id resolves to "${audience.name}", which isn't eligible for generation on this plan.`);
+      }
       const leadPlatformId = str(item.lead_platform_id);
       if (leadPlatformId) {
         const account = socialById.get(leadPlatformId);
@@ -1055,12 +1235,46 @@ export async function importAiOutput(clientId: string, planId: string, jsonText:
       if (mediaState && !MEDIA_STATE.some((m) => m.value === mediaState)) {
         idErrors.push(`${label}: media_state "${mediaState}" isn't one of ${MEDIA_STATE.map((m) => m.value).join(", ")}.`);
       }
+      const format = str(item.format);
+      const allowedFormats = allowedFormatsFor(account.platform);
+      if (allowedFormats && !allowedFormats.includes(format)) {
+        idErrors.push(`${label}: format "${format || "(blank)"}" isn't valid for ${platformLabel(account)} — must be one of ${allowedFormats.join(", ")}.`);
+      }
     });
     if (idErrors.length > 0) {
       throw new UserFacingError(`Couldn't import — fix these and try again:\n${idErrors.join("\n")}`);
     }
 
     const warnings: string[] = [];
+
+    // Duane, round 3: a Master Content idea may legitimately produce
+    // outputs on both LinkedIn accounts, but the two adaptations must
+    // differ materially — warn (don't block) if two sibling outputs under
+    // the same idea, on the same platform family, carry identical
+    // adaptation_note text.
+    const siblingGroups = new Map<string, number[]>();
+    outputsRaw.forEach((item, i) => {
+      const account = socialById.get(str(item.platform_id));
+      if (!account) return;
+      const key = `${item.master_index}:${normaliseAccountKey(account.platform)}`;
+      const list = siblingGroups.get(key) ?? [];
+      list.push(i);
+      siblingGroups.set(key, list);
+    });
+    for (const indices of siblingGroups.values()) {
+      if (indices.length < 2) continue;
+      for (let a = 0; a < indices.length; a++) {
+        for (let b = a + 1; b < indices.length; b++) {
+          const noteA = str(outputsRaw[indices[a]!]!.adaptation_note).toLowerCase();
+          const noteB = str(outputsRaw[indices[b]!]!.adaptation_note).toLowerCase();
+          if (noteA && noteA === noteB) {
+            warnings.push(
+              `platform_outputs[${indices[a]}] and [${indices[b]}] (same Master Content item, same platform family) have identical adaptation_note text — siblings must differ materially.`
+            );
+          }
+        }
+      }
+    }
     let sequence = await nextPlanSequence(supabase, planId);
     const masterIds: string[] = [];
 
@@ -1126,24 +1340,6 @@ export async function importAiOutput(clientId: string, planId: string, jsonText:
         outputsCreated += 1;
       }
 
-      let requirementsCreated = 0;
-      for (const item of requirementsRaw) {
-        const type = (str(item.type) || "other") as RequirementType;
-        const dueDate = str(item.due_date);
-        const { error } = await supabase.from("monthly_plan_requirements").insert({
-          monthly_plan_id: planId,
-          client_id: clientId,
-          type,
-          description: str(item.description),
-          owner_note: str(item.owner_note),
-          due_date: /^\d{4}-\d{2}-\d{2}$/.test(dueDate) ? dueDate : null,
-          related_content_note: str(item.related_content_note),
-          origin: "ai_import",
-        });
-        if (error) throw new Error(`Requirement "${str(item.description)}": ${error.message}`);
-        requirementsCreated += 1;
-      }
-
       // PBOS assigns dates from cadence — best-effort: a hiccup here
       // shouldn't undo an otherwise good import.
       let datesAssigned = 0;
@@ -1171,7 +1367,6 @@ export async function importAiOutput(clientId: string, planId: string, jsonText:
       return {
         masterContentCreated: masterIds.length,
         platformOutputsCreated: outputsCreated,
-        requirementsCreated,
         requirementsAutoGenerated,
         datesAssigned,
         warnings,
@@ -1234,6 +1429,7 @@ export interface MonthlyPlanExport {
       destination_link: string;
       media_brief: string;
       media_state: string;
+      target_publish_date: string | null;
       status: string;
       origin: string;
     }[];
@@ -1318,6 +1514,7 @@ export async function exportMonthlyPlanJson(clientId: string, planId: string): P
           destination_link: output.destination_link,
           media_brief: output.media_brief,
           media_state: output.media_state,
+          target_publish_date: output.target_publish_date,
           status: output.status,
           origin: output.origin,
         })),

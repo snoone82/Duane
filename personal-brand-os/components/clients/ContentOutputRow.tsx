@@ -23,7 +23,7 @@ import { sendOutputToAyrshare, refreshAyrshareOutput, pullOutputPerformance } fr
 import { StatusSelect } from "@/components/ui/StatusSelect";
 import { outputStatusMeta, contentOriginMeta, MEDIA_STATE, type OutputStatus, type MediaState } from "@/lib/status";
 import { OutputMediaSlot } from "@/components/clients/OutputMediaSlot";
-import { formatDateTime } from "@/lib/format";
+import { formatDate, formatDateTime } from "@/lib/format";
 import type { Database } from "@/lib/database.types";
 
 type Output = Database["public"]["Tables"]["content_outputs"]["Row"];
@@ -180,6 +180,14 @@ export function ContentOutputRow({
           )}
         </div>
         <div className="flex flex-shrink-0 items-center gap-2">
+          {/* PBOS-assigned planning-stage date (assignPlanPublishDates), per
+              round 3 — distinct from scheduled_at, which only appears once
+              this version is genuinely on the publishing calendar. */}
+          {output.target_publish_date && !output.scheduled_at && output.status !== "published" && (
+            <span className="text-xs text-ink-faint" title="PBOS-assigned target publish date">
+              Target {formatDate(output.target_publish_date)}
+            </span>
+          )}
           {output.scheduled_at && output.status !== "published" && (
             <span className="text-xs text-ink-faint" title={output.status === "scheduled" ? "Scheduled" : "Time set (from the master schedule or this row) — not on the calendar until it's scheduled"}>
               {output.status === "scheduled" ? "" : "Planned "}
