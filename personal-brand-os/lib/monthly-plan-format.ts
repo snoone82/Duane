@@ -32,3 +32,32 @@ export function isPlatformExcluded(account: { account_status: string; publishing
 export function platformLabel(account: { platform: string; account_name: string }): string {
   return account.account_name ? `${account.platform} — ${account.account_name}` : account.platform;
 }
+
+// ---------------------------------------------------------------------------
+// CTA destination state (Duane, after the first full run): the AI writes the
+// literal "Needs confirmation" rather than inventing a URL, and that is a
+// real state PBOS must keep — "not yet confirmed" is not the same thing as
+// "nobody set one". Stored as the literal in cta_destination so it stays
+// visible wherever the field is shown; read back through this helper.
+// ---------------------------------------------------------------------------
+
+export const CTA_NEEDS_CONFIRMATION = "Needs confirmation";
+
+export type CtaDestinationState = "confirmed" | "needs_confirmation" | "missing" | "no_cta";
+
+export function isCtaNeedsConfirmation(value: string): boolean {
+  return value.trim().toLowerCase() === CTA_NEEDS_CONFIRMATION.toLowerCase();
+}
+
+/** Canonical spelling of the sentinel; anything else passes through. */
+export function normaliseCtaDestination(value: string): string {
+  return isCtaNeedsConfirmation(value) ? CTA_NEEDS_CONFIRMATION : value.trim();
+}
+
+export function ctaDestinationState(idea: { cta: string; cta_destination: string }): CtaDestinationState {
+  if (!idea.cta.trim()) return "no_cta";
+  const destination = idea.cta_destination.trim();
+  if (!destination) return "missing";
+  if (isCtaNeedsConfirmation(destination)) return "needs_confirmation";
+  return "confirmed";
+}

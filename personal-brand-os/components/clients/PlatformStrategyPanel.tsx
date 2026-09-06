@@ -4,8 +4,9 @@ import { useState } from "react";
 import { AutosaveInput } from "@/components/ui/AutosaveInput";
 import { AutosaveTextarea } from "@/components/ui/AutosaveTextarea";
 import { Label, Select } from "@/components/ui/Input";
-import { setSocialCadence, setSocialAudienceLink, updateSocialStrategyField } from "@/lib/actions/social";
+import { setSocialCadence, setSocialAudienceLink, setSocialPostingDays, updateSocialStrategyField } from "@/lib/actions/social";
 import { PLATFORM_ROLES, CROSS_POST_RULES, CADENCE_PERIODS, crossPostRuleMeta } from "@/lib/platform-strategy";
+import { WEEKDAYS, normalisePostingDays } from "@/lib/plan-scheduling";
 import type { Database } from "@/lib/database.types";
 
 type SocialStrategy = Database["public"]["Tables"]["social_strategies"]["Row"];
@@ -34,6 +35,17 @@ export function PlatformStrategyPanel({
   const [cadenceTarget, setCadenceTarget] = useState(strategy.cadence_target);
   const [cadencePeriod, setCadencePeriod] = useState(strategy.cadence_period);
   const [crossPost, setCrossPost] = useState(strategy.cross_post_rule);
+  const [postingDays, setPostingDays] = useState<number[]>(normalisePostingDays(strategy.posting_days));
+
+  const togglePostingDay = (day: number) => {
+    const next = postingDays.includes(day) ? postingDays.filter((d) => d !== day) : [...postingDays, day].sort((a, b) => a - b);
+    if (next.length === 0) {
+      setError("Keep at least one posting day.");
+      return;
+    }
+    setPostingDays(next);
+    setSocialPostingDays(clientId, strategy.id, next).then(report);
+  };
 
   const report = (result: { ok: boolean; message?: string }) => {
     setError(result.ok ? null : (result.message ?? "That didn't save."));
@@ -121,6 +133,36 @@ export function PlatformStrategyPanel({
           </div>
           <p className="mt-1 text-xs text-ink-faint">
             {cadenceTarget > 0 ? "Used for planned-vs-target on the Content tab." : "0 = not tracked."}
+          </p>
+        </div>
+
+        <div className="sm:col-span-2">
+          <Label htmlFor={`ps-days-${strategy.id}`}>Posting days</Label>
+          <div id={`ps-days-${strategy.id}`} role="group" aria-label="Posting days" className="flex flex-wrap gap-1.5">
+            {WEEKDAYS.map((day) => {
+              const on = postingDays.includes(day.value);
+              return (
+                <button
+                  key={day.value}
+                  type="button"
+                  aria-pressed={on}
+                  title={day.long}
+                  onClick={() => togglePostingDay(day.value)}
+                  className={
+                    "rounded-md border px-2.5 py-1 text-xs font-medium transition-colors " +
+                    (on
+                      ? "border-accent bg-accent/15 text-accent-strong"
+                      : "border-border bg-surface text-ink-faint hover:border-accent/50 hover:text-ink-soft")
+                  }
+                >
+                  {day.label}
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-1 text-xs text-ink-faint">
+            Monthly Plan publish dates only land on these days for this account — one post per day. Re-run &ldquo;Assign
+            publish dates&rdquo; on a plan after changing them.
           </p>
         </div>
 

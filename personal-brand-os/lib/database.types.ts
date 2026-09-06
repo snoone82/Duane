@@ -1778,6 +1778,7 @@ export type Database = {
           platform: string
           platform_exclusions: string
           platform_role: string
+          posting_days: number[]
           posting_frequency: string
           preferred_formats: string
           primary_audience_id: string | null
@@ -1817,6 +1818,7 @@ export type Database = {
           platform: string
           platform_exclusions?: string
           platform_role?: string
+          posting_days?: number[]
           posting_frequency?: string
           preferred_formats?: string
           primary_audience_id?: string | null
@@ -1856,6 +1858,7 @@ export type Database = {
           platform?: string
           platform_exclusions?: string
           platform_role?: string
+          posting_days?: number[]
           posting_frequency?: string
           preferred_formats?: string
           primary_audience_id?: string | null

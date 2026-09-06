@@ -16,7 +16,17 @@ import {
   type MonthlyPlanStatus,
   type RequirementType,
 } from "@/lib/status";
-import { periodMonthLabel, planSequenceLabel, isPlatformExcluded, platformLabel } from "@/lib/monthly-plan-format";
+import {
+  periodMonthLabel,
+  planSequenceLabel,
+  isPlatformExcluded,
+  platformLabel,
+  normaliseCtaDestination,
+  ctaDestinationState,
+  CTA_NEEDS_CONFIRMATION,
+  type CtaDestinationState,
+} from "@/lib/monthly-plan-format";
+import { schedulePlanOutputs, normalisePostingDays } from "@/lib/plan-scheduling";
 
 type SupabaseClient = Awaited<ReturnType<typeof createClient>>;
 
@@ -543,9 +553,12 @@ async function reconcilePlanRequirementsInternal(
     });
   }
 
-  // b) A declared lead platform with no matching Platform Output yet.
-  // Prefers the real lead_platform_id link; falls back to text matching for
-  // ideas created before that column existed or added without one resolved.
+  // b) A declared lead platform with no matching Platform Output yet —
+  // grouped into one requirement listing every affected item (Duane: one
+  // "confirm these" row, not one per Master Content). Prefers the real
+  // lead_platform_id link; falls back to text matching for ideas created
+  // before that column existed.
+  const missingLeadOutput: string[] = [];
   for (const idea of ideaList) {
     const leadPlatformText = idea.lead_platform.trim();
     if (!idea.lead_platform_id && !leadPlatformText) continue;
@@ -556,26 +569,41 @@ async function reconcilePlanRequirementsInternal(
       return normaliseAccountKey(o.platform) === normaliseAccountKey(leadPlatformText);
     });
     if (!hasOutput) {
-      const seq = planSequenceLabel(idea.plan_sequence);
       const label = idea.lead_platform_id ? (socialById.get(idea.lead_platform_id) ? platformLabel(socialById.get(idea.lead_platform_id)!) : leadPlatformText) : leadPlatformText;
-      desired.set(`leadplatform:${idea.id}`, {
-        type: "decision_approval",
-        description: `${seq} "${idea.title}" declares lead platform "${label}" but has no Platform Output for it yet.`,
-        related_content_note: seq,
-      });
+      missingLeadOutput.push(`${planSequenceLabel(idea.plan_sequence)} (${label})`);
     }
   }
+  if (missingLeadOutput.length > 0) {
+    desired.set("leadplatform:missing_output", {
+      type: "decision_approval",
+      description: `${missingLeadOutput.length} Master Content item(s) declare a lead platform but have no Platform Output for it yet.`,
+      related_content_note: missingLeadOutput.sort().join(", "),
+    });
+  }
 
-  // c) A CTA with no destination — never invented, always surfaced.
+  // c) CTA destinations — two distinct states, each grouped into one row.
+  // "Needs confirmation" is a state the AI set deliberately instead of
+  // inventing a link; a blank next to a CTA is genuinely missing data.
+  const ctaNeedsConfirmation: string[] = [];
+  const ctaMissing: string[] = [];
   for (const idea of ideaList) {
-    if (idea.cta.trim() && !idea.cta_destination.trim()) {
-      const seq = planSequenceLabel(idea.plan_sequence);
-      desired.set(`ctadest:${idea.id}`, {
-        type: "information",
-        description: `${seq} "${idea.title}" has a CTA but no destination set.`,
-        related_content_note: seq,
-      });
-    }
+    const state = ctaDestinationState(idea);
+    if (state === "needs_confirmation") ctaNeedsConfirmation.push(planSequenceLabel(idea.plan_sequence));
+    else if (state === "missing") ctaMissing.push(planSequenceLabel(idea.plan_sequence));
+  }
+  if (ctaNeedsConfirmation.length > 0) {
+    desired.set("ctadest:needs_confirmation", {
+      type: "information",
+      description: `Confirm CTA destinations for ${ctaNeedsConfirmation.length} Master Content item(s) — flagged "${CTA_NEEDS_CONFIRMATION}" at generation rather than guessing a link.`,
+      related_content_note: ctaNeedsConfirmation.sort().join(", "),
+    });
+  }
+  if (ctaMissing.length > 0) {
+    desired.set("ctadest:missing", {
+      type: "information",
+      description: `${ctaMissing.length} Master Content item(s) have a CTA but no destination set at all.`,
+      related_content_note: ctaMissing.sort().join(", "),
+    });
   }
 
   // d) Outputs planned on no matching account, an account the strategy
@@ -698,102 +726,65 @@ export async function reconcilePlanRequirements(
 // ---------------------------------------------------------------------------
 // Publish-date assignment (Duane: PBOS distributes outputs across the month
 // deterministically once it knows the month, the active platforms and their
-// cadence — not the AI). Round 3: dates are assigned per Platform Output, on
-// the account it actually publishes to, not per Master Content idea — two
-// sibling outputs under one idea (e.g. LinkedIn — Daniel Andrews and
-// LinkedIn — CEG) used to always land on the idea's single date; now each
-// account is spaced evenly across the month on its own, then a second pass
-// nudges same-idea siblings on the same platform family apart if they still
-// land too close together. content_ideas.target_publish_date is kept in
-// sync afterwards, mirroring the lead platform's output, for the existing
-// idea-level displays (cadence view, portal, publishing pack) that read it.
-// Idempotent and re-runnable, same as reconcilePlanRequirements — safe to
-// call again after hand-editing Master Content or Platform Outputs.
+// cadence — not the AI). Dates live on each Platform Output, on the account
+// it actually publishes to. After the first full run landed posts on every
+// Sunday, the rules became account-level (lib/plan-scheduling.ts): spread
+// each account's outputs across ITS posting days, one post per account per
+// day, then keep same-idea siblings on the same platform family apart.
+// content_ideas.target_publish_date is kept in sync afterwards, mirroring the
+// lead platform's output, for the existing idea-level displays (cadence
+// view, portal, publishing pack) that read it. Idempotent and re-runnable,
+// same as reconcilePlanRequirements.
 // ---------------------------------------------------------------------------
 
-const SIBLING_MIN_GAP_DAYS = 2;
-
-interface DatableOutput {
-  id: string;
-  content_id: string;
-  social_account_id: string | null;
-  platform: string;
+export interface AssignDatesResult {
+  assigned: number;
+  /** Outputs with no publishing account — can't be dated. */
+  skipped: number;
+  /** Outputs placed outside their account's posting days (month too full). */
+  offPreferredDays: number;
+  /** Outputs that had to share a day on one account (more outputs than days). */
+  doubledUp: number;
 }
 
-async function assignPlanPublishDatesInternal(
-  supabase: SupabaseClient,
-  clientId: string,
-  planId: string
-): Promise<{ assigned: number; skipped: number }> {
+async function assignPlanPublishDatesInternal(supabase: SupabaseClient, clientId: string, planId: string): Promise<AssignDatesResult> {
   const { data: plan } = await supabase.from("monthly_plans").select("period_month").eq("id", planId).eq("client_id", clientId).maybeSingle();
   if (!plan) throw new UserFacingError("Monthly Plan not found.");
 
-  const { data: ideas } = await supabase
-    .from("content_ideas")
-    .select("id,plan_sequence,lead_platform_id")
-    .eq("monthly_plan_id", planId)
-    .order("plan_sequence");
+  const [{ data: ideas }, { data: socials }] = await Promise.all([
+    supabase.from("content_ideas").select("id,plan_sequence,lead_platform_id").eq("monthly_plan_id", planId).order("plan_sequence"),
+    supabase.from("social_strategies").select("id,platform,posting_days").eq("client_id", clientId),
+  ]);
   const ideaList = ideas ?? [];
   const ideaIds = ideaList.map((i) => i.id);
-  const ideaSeqById = new Map(ideaList.map((i) => [i.id, i.plan_sequence]));
+  const ideaSeqById = new Map(ideaList.map((i) => [i.id, i.plan_sequence ?? 0]));
+  const socialById = new Map((socials ?? []).map((s) => [s.id, s]));
 
   const { data: outputs } = ideaIds.length
     ? await supabase.from("content_outputs").select("id,content_id,social_account_id,platform").in("content_id", ideaIds)
-    : { data: [] as DatableOutput[] };
-  const outputList = (outputs ?? []) as DatableOutput[];
+    : { data: [] };
+  const outputList = outputs ?? [];
 
   const [year, month] = plan.period_month.split("-").map(Number) as [number, number];
-  const daysInMonth = new Date(year, month, 0).getDate();
   const yearMonth = plan.period_month.slice(0, 7);
-  const formatDay = (day: number) => `${yearMonth}-${String(Math.min(daysInMonth, Math.max(1, day))).padStart(2, "0")}`;
+  const formatDay = (day: number) => `${yearMonth}-${String(day).padStart(2, "0")}`;
 
-  // Primary pass: even spacing per publishing account, ordered by the
-  // parent idea's plan_sequence — the idea's position in the month still
-  // comes from its sequence, even though the date now lives on the output.
-  let skipped = 0;
-  const byAccount = new Map<string, DatableOutput[]>();
-  for (const output of outputList) {
-    if (!output.social_account_id) {
-      skipped += 1;
-      continue;
-    }
-    const list = byAccount.get(output.social_account_id) ?? [];
-    list.push(output);
-    byAccount.set(output.social_account_id, list);
-  }
-
-  const dayFor = new Map<string, number>();
-  for (const group of byAccount.values()) {
-    group.sort((a, b) => (ideaSeqById.get(a.content_id) ?? 0) - (ideaSeqById.get(b.content_id) ?? 0));
-    const step = daysInMonth / group.length;
-    group.forEach((output, i) => {
-      dayFor.set(output.id, Math.min(daysInMonth, Math.max(1, Math.round(step * (i + 0.5)))));
-    });
-  }
-
-  // Sibling-spacing pass: two outputs under the SAME idea, on accounts in
-  // the same platform family (e.g. two LinkedIn accounts), never share a
-  // day — push the later one forward by the minimum gap.
-  const byIdeaFamily = new Map<string, DatableOutput[]>();
-  for (const output of outputList) {
-    if (!dayFor.has(output.id)) continue;
-    const key = `${output.content_id}:${normaliseAccountKey(output.platform)}`;
-    const list = byIdeaFamily.get(key) ?? [];
-    list.push(output);
-    byIdeaFamily.set(key, list);
-  }
-  for (const group of byIdeaFamily.values()) {
-    if (group.length < 2) continue;
-    group.sort((a, b) => dayFor.get(a.id)! - dayFor.get(b.id)!);
-    let prevDay = dayFor.get(group[0]!.id)!;
-    for (let i = 1; i < group.length; i++) {
-      const current = group[i]!;
-      let day = dayFor.get(current.id)!;
-      if (day - prevDay < SIBLING_MIN_GAP_DAYS) day = Math.min(daysInMonth, prevDay + SIBLING_MIN_GAP_DAYS);
-      dayFor.set(current.id, day);
-      prevDay = day;
-    }
-  }
+  const result = schedulePlanOutputs({
+    year,
+    month,
+    outputs: outputList.map((o) => {
+      const account = o.social_account_id ? socialById.get(o.social_account_id) : undefined;
+      return {
+        id: o.id,
+        contentId: o.content_id,
+        accountId: account?.id ?? null,
+        family: normaliseAccountKey(account?.platform ?? o.platform),
+        sequence: ideaSeqById.get(o.content_id) ?? 0,
+      };
+    }),
+    postingDaysByAccount: new Map((socials ?? []).map((s) => [s.id, normalisePostingDays(s.posting_days)])),
+  });
+  const dayFor = result.dayByOutput;
 
   let assigned = 0;
   for (const [outputId, day] of dayFor) {
@@ -816,12 +807,13 @@ async function assignPlanPublishDatesInternal(
     if (error) throw new Error(error.message);
   }
 
-  return { assigned, skipped };
+  return { assigned, skipped: result.skipped, offPreferredDays: result.offPreferredDays, doubledUp: result.doubledUp };
 }
 
 /** Manual trigger for the same date-assignment pass importAiOutput runs
- * automatically — for after hand-adding or reassigning Master Content. */
-export async function assignPlanPublishDates(clientId: string, planId: string): Promise<ActionResult<{ assigned: number; skipped: number }>> {
+ * automatically — for after hand-adding or reassigning Master Content, or
+ * after changing an account's posting days. */
+export async function assignPlanPublishDates(clientId: string, planId: string): Promise<ActionResult<AssignDatesResult>> {
   return runAction(async () => {
     const supabase = await createClient();
     const result = await assignPlanPublishDatesInternal(supabase, clientId, planId);
@@ -1116,13 +1108,6 @@ interface RawPlatformOutput {
 
 const str = (value: unknown): string => (typeof value === "string" ? value.trim() : "");
 
-/** Claude was told to write this exact phrase rather than invent a URL — a
- * hard rule, checked here too so an import can never quietly treat it as a
- * real destination. */
-function normaliseCtaDestination(value: string): string {
-  return value.toLowerCase() === "needs confirmation" ? "" : value;
-}
-
 /**
  * Validate and populate a Monthly Plan from Claude's pasted JSON. PBOS owns
  * every row this creates — nothing here is a live AI connection; the JSON is
@@ -1294,6 +1279,8 @@ export async function importAiOutput(clientId: string, planId: string, jsonText:
             purpose: str(item.purpose),
             hook: str(item.hook),
             cta: str(item.cta),
+            // "Needs confirmation" is kept as written (canonical spelling) —
+            // it's a real state, distinct from a blank (Duane, first full run).
             cta_destination: normaliseCtaDestination(str(item.cta_destination)),
             lead_platform_id: leadPlatformId,
             lead_platform: leadAccount ? platformLabel(leadAccount) : "",
@@ -1416,13 +1403,23 @@ export interface MonthlyPlanExport {
     hook: string;
     cta: string;
     cta_destination: string;
+    /** confirmed | needs_confirmation | missing | no_cta — "Needs
+     * confirmation" is a state the AI set deliberately, not missing data. */
+    cta_destination_state: CtaDestinationState;
     lead_platform: string;
+    lead_platform_id: string | null;
     lead_draft_copy: string;
     target_publish_date: string | null;
     status: string;
     origin: string;
     platform_outputs: {
+      /** Platform family only ("LinkedIn"); the account below is what
+       * routing, cadence and the calendar key on. */
       platform: string;
+      /** The specific social account / platform profile this publishes to —
+       * so LinkedIn — Daniel Andrews and LinkedIn — CEG stay distinct. */
+      social_account_id: string | null;
+      account_label: string;
       format: string;
       caption: string;
       adaptation_note: string;
@@ -1449,7 +1446,7 @@ export interface MonthlyPlanExport {
 export async function exportMonthlyPlanJson(clientId: string, planId: string): Promise<ActionResult<{ json: string }>> {
   return runAction(async () => {
     const supabase = await createClient();
-    const [{ data: client }, { data: plan }, { data: pillars }, { data: audiences }, { data: ideas }, { data: requirements }] =
+    const [{ data: client }, { data: plan }, { data: pillars }, { data: audiences }, { data: ideas }, { data: requirements }, { data: socials }] =
       await Promise.all([
         supabase.from("clients").select("id,name").eq("id", clientId).maybeSingle(),
         supabase.from("monthly_plans").select("*").eq("id", planId).eq("client_id", clientId).maybeSingle(),
@@ -1457,8 +1454,10 @@ export async function exportMonthlyPlanJson(clientId: string, planId: string): P
         supabase.from("audiences").select("id,name").eq("client_id", clientId),
         supabase.from("content_ideas").select("*").eq("monthly_plan_id", planId).order("plan_sequence"),
         supabase.from("monthly_plan_requirements").select("*").eq("monthly_plan_id", planId).order("created_at"),
+        supabase.from("social_strategies").select("id,platform,account_name").eq("client_id", clientId),
       ]);
     if (!client || !plan) throw new UserFacingError("Monthly Plan not found.");
+    const socialById = new Map((socials ?? []).map((s) => [s.id, s]));
 
     const ideaList = ideas ?? [];
     const ideaIds = ideaList.map((i) => i.id);
@@ -1501,23 +1500,30 @@ export async function exportMonthlyPlanJson(clientId: string, planId: string): P
         hook: idea.hook,
         cta: idea.cta,
         cta_destination: idea.cta_destination,
+        cta_destination_state: ctaDestinationState(idea),
         lead_platform: idea.lead_platform,
+        lead_platform_id: idea.lead_platform_id,
         lead_draft_copy: idea.lead_draft_copy,
         target_publish_date: idea.target_publish_date,
         status: idea.status,
         origin: idea.origin,
-        platform_outputs: (outputsByIdea.get(idea.id) ?? []).map((output) => ({
-          platform: output.platform,
-          format: output.format,
+        platform_outputs: (outputsByIdea.get(idea.id) ?? []).map((output) => {
+          const account = output.social_account_id ? socialById.get(output.social_account_id) : undefined;
+          return {
+            platform: output.platform,
+            social_account_id: account?.id ?? null,
+            account_label: account ? platformLabel(account) : output.platform,
+            format: output.format,
           caption: output.caption,
           adaptation_note: output.adaptation_note,
           destination_link: output.destination_link,
           media_brief: output.media_brief,
-          media_state: output.media_state,
-          target_publish_date: output.target_publish_date,
-          status: output.status,
-          origin: output.origin,
-        })),
+            media_state: output.media_state,
+            target_publish_date: output.target_publish_date,
+            status: output.status,
+            origin: output.origin,
+          };
+        }),
       })),
       requirements: (requirements ?? []).map((r) => ({
         type: r.type,

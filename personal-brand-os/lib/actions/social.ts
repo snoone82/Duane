@@ -125,6 +125,21 @@ export async function setSocialCadence(
   });
 }
 
+/** Which weekdays this account publishes on (ISO 1 = Mon … 7 = Sun).
+ * assignPlanPublishDates only places this account's outputs on these days,
+ * one per day — so a Sunday only ever gets a post if it's ticked here. */
+export async function setSocialPostingDays(clientId: string, strategyId: string, days: number[]): Promise<ActionResult> {
+  const cleaned = [...new Set(days.filter((d) => Number.isInteger(d) && d >= 1 && d <= 7))].sort((a, b) => a - b);
+  if (cleaned.length === 0) return { ok: false, message: "Pick at least one posting day." };
+  return runAction(async () => {
+    const supabase = await createClient();
+    const { error } = await supabase.from("social_strategies").update({ posting_days: cleaned }).eq("id", strategyId);
+    if (error) throw new Error(error.message);
+    revalidateSocial(clientId);
+    return undefined;
+  });
+}
+
 /** Point an account at one of the client's real audiences, rather than
  * describing it again in prose. */
 export async function setSocialAudienceLink(
