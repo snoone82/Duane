@@ -12,6 +12,7 @@
  */
 
 import { isSectionMode, type SectionMode } from "@/lib/import/record-match";
+import { matchRole, matchCrossPost, parseCadence, parsePostingDays } from "@/lib/import/platform-strategy";
 
 export const NEEDS_CONFIRMATION = "NEEDS_CLIENT_CONFIRMATION";
 export const NOT_APPLICABLE = "NOT_APPLICABLE";
@@ -59,8 +60,20 @@ export interface ParsedClientImport extends ImportIssues {
   vision: Record<string, string>;
   positioning: Record<string, string>;
   sales: Record<string, string>;
+  /** The permanent content direction every Monthly Plan inherits (migration 0034). */
+  contentGuidelines: Record<string, string>;
   audiences: { id: string | null; name: string; fields: Record<string, string> }[];
-  socials: { id: string | null; platform: string; fields: Record<string, string> }[];
+  /** `fields` holds every column as text (numbers and day lists stringified
+   * so the diff against the current row is one comparison); the importer
+   * converts cadence_target / posting_days back to their real types on
+   * write. Audience links arrive as names and are resolved by the importer. */
+  socials: {
+    id: string | null;
+    platform: string;
+    fields: Record<string, string>;
+    primaryAudience: string | null;
+    secondaryAudience: string | null;
+  }[];
   pillars: { id: string | null; name: string; fields: Record<string, string> }[];
   contentIdeas: {
     title: string;
@@ -119,6 +132,24 @@ const AUDIENCE_FIELDS = [
 const SOCIAL_FIELDS = [
   "account_name", "owner_brand", "url", "objective", "audience", "content_types",
   "posting_frequency", "growth_strategy", "engagement_strategy", "cta_strategy",
+];
+/** Platform Strategy prose fields — Duane's JSON key → our column. Same
+ * names the standalone Platform Strategy import uses. */
+const SOCIAL_STRATEGY_TEXT: Record<string, string> = {
+  tone_voice: "tone_voice",
+  preferred_formats: "preferred_formats",
+  typical_length: "content_length",
+  commercial_balance: "commercial_ratio",
+  how_to_open: "hook_guidance",
+  dont_post_here: "platform_exclusions",
+  repurposing_rules: "repurposing_rules",
+  ai_generation_instructions: "ai_instructions",
+};
+const ACCOUNT_TYPES = ["personal", "company", "programme"];
+const ACCOUNT_STATUSES = ["active", "planned", "inactive"];
+const CONTENT_GUIDELINES_FIELDS = [
+  "secondary_objectives", "tone_voice_notes", "preferred_language", "avoid_language",
+  "cta_priorities", "primary_cta_destination", "content_safeguards",
 ];
 const PILLAR_FIELDS = [
   "description", "target_audience", "purpose", "key_messages", "example_topics",
@@ -184,7 +215,7 @@ function date(raw: unknown, label: string, issues: ImportIssues): string | null 
   return value;
 }
 
-function fieldMap(raw: unknown, allowed: string[], sectionLabel: string, issues: ImportIssues): Record<string, string> {
+function fieldMap(raw: unknown, allowed: string[], sectionLabel: string, issues: ImportIssues, alsoKnown: string[] = []): Record<string, string> {
   const out: Record<string, string> = {};
   if (raw === null || raw === undefined) return out;
   if (typeof raw !== "object" || Array.isArray(raw)) {
@@ -197,7 +228,7 @@ function fieldMap(raw: unknown, allowed: string[], sectionLabel: string, issues:
   }
   for (const key of Object.keys(record)) {
     // Identity keys are read separately and must never reach a column patch.
-    if (ID_KEYS.includes(key)) continue;
+    if (ID_KEYS.includes(key) || alsoKnown.includes(key)) continue;
     if (!allowed.includes(key)) issues.warnings.push(`${sectionLabel}: unrecognised field "${key}" ignored.`);
   }
   return out;
@@ -336,11 +367,64 @@ export function parseClientImport(input: string, options?: { requireName?: boole
       issues.warnings.push(`Social strategy ${i + 1} has no platform — skipped.`);
       return [];
     }
+    const accountNameRaw = typeof record.account_name === "string" ? record.account_name.trim() : "";
+    const label = `Social "${platform}${accountNameRaw ? ` — ${accountNameRaw}` : ""}"`;
+    // Strategy keys are read by hand below — tell fieldMap they're known so
+    // they aren't reported as unrecognised.
+    const fields = fieldMap(record, ["platform", ...SOCIAL_FIELDS], label, issues, [
+      ...Object.keys(SOCIAL_STRATEGY_TEXT),
+      "account_type", "account_status", "role_in_strategy", "cross_posting_rule",
+      "target_cadence", "posting_days", "primary_audience", "secondary_audience",
+    ]);
+
+    // --- Platform Strategy (Duane: expose the newer fields here too) ---
+    for (const [jsonKey, column] of Object.entries(SOCIAL_STRATEGY_TEXT)) {
+      const value = text(record[jsonKey], `${label} → ${jsonKey.replace(/_/g, " ")}`, issues);
+      if (value) fields[column] = value;
+    }
+    const accountType = text(record.account_type, `${label} → account type`, issues).toLowerCase();
+    if (accountType) {
+      if (ACCOUNT_TYPES.includes(accountType)) fields.account_type = accountType;
+      else issues.warnings.push(`${label}: account_type "${accountType}" isn't one of ${ACCOUNT_TYPES.join(" | ")} — left unchanged.`);
+    }
+    const accountStatus = text(record.account_status, `${label} → account status`, issues).toLowerCase();
+    if (accountStatus) {
+      if (ACCOUNT_STATUSES.includes(accountStatus)) fields.account_status = accountStatus;
+      else issues.warnings.push(`${label}: account_status "${accountStatus}" isn't one of ${ACCOUNT_STATUSES.join(" | ")} — left unchanged.`);
+    }
+    const roleRaw = text(record.role_in_strategy, `${label} → role`, issues);
+    if (roleRaw) {
+      const role = matchRole(roleRaw);
+      if (role.value) fields.platform_role = role.value;
+      if (role.warning) issues.warnings.push(`${label}: ${role.warning}`);
+    }
+    const ruleRaw = text(record.cross_posting_rule, `${label} → cross-posting rule`, issues);
+    if (ruleRaw) {
+      const rule = matchCrossPost(ruleRaw);
+      if (rule.value) fields.cross_post_rule = rule.value;
+      if (rule.warning) issues.warnings.push(`${label}: ${rule.warning}`);
+    }
+    const cadence = parseCadence(record.target_cadence);
+    if (cadence.value) {
+      fields.cadence_target = String(cadence.value.target);
+      fields.cadence_period = cadence.value.period;
+      issues.resolvedLabels.push(`${label} → target cadence`);
+    }
+    if (cadence.warning) issues.warnings.push(`${label}: ${cadence.warning}`);
+    const postingDays = parsePostingDays(record.posting_days);
+    if (postingDays.value) {
+      fields.posting_days = postingDays.value.join(",");
+      issues.resolvedLabels.push(`${label} → posting days`);
+    }
+    if (postingDays.warning) issues.warnings.push(`${label}: ${postingDays.warning}`);
+
     return [
       {
         id: recordId(record),
         platform,
-        fields: fieldMap(record, ["platform", ...SOCIAL_FIELDS], `Social "${platform}"`, issues),
+        fields,
+        primaryAudience: text(record.primary_audience, `${label} → primary audience`, issues) || null,
+        secondaryAudience: text(record.secondary_audience, `${label} → secondary audience`, issues) || null,
       },
     ];
   });
@@ -542,7 +626,7 @@ export function parseClientImport(input: string, options?: { requireName?: boole
   });
 
   const KNOWN_KEYS = [
-    "pbos_import", "version", "overview", "vision", "positioning", "audiences", "social_strategies",
+    "pbos_import", "version", "overview", "vision", "positioning", "content_guidelines", "audiences", "social_strategies",
     "content_pillars", "content_ideas", "sales", "authority_opportunities", "consultations",
     "actions", "metric_snapshots", "metric_targets", "milestones",
   ];
@@ -557,6 +641,7 @@ export function parseClientImport(input: string, options?: { requireName?: boole
       vision: fieldMap(doc.vision, VISION_FIELDS, "Vision", issues),
       positioning: fieldMap(doc.positioning, POSITIONING_FIELDS, "Positioning", issues),
       sales: fieldMap(doc.sales, SALES_FIELDS, "Sales", issues),
+      contentGuidelines: fieldMap(doc.content_guidelines, CONTENT_GUIDELINES_FIELDS, "Content guidelines", issues),
       audiences,
       socials,
       pillars,
@@ -586,6 +671,7 @@ export function summarizeClientImport(parsed: ParsedClientImport): ImportSection
     { label: "Overview", count: 1, preview: [parsed.overview.name, parsed.overview.north_star && "North Star set"].filter(Boolean) as string[] },
     { label: "Vision", count: filled(parsed.vision) > 0 ? 1 : 0, preview: [`${filled(parsed.vision)} of ${VISION_FIELDS.length} fields`] },
     { label: "Positioning", count: filled(parsed.positioning) > 0 ? 1 : 0, preview: [`${filled(parsed.positioning)} of ${POSITIONING_FIELDS.length} fields`] },
+    { label: "Content guidelines", count: filled(parsed.contentGuidelines) > 0 ? 1 : 0, preview: [`${filled(parsed.contentGuidelines)} of ${CONTENT_GUIDELINES_FIELDS.length} fields`] },
     { label: "Audiences", count: parsed.audiences.length, preview: parsed.audiences.map((a) => a.name) },
     { label: "Social strategies", count: parsed.socials.length, preview: parsed.socials.map((s) => s.platform) },
     { label: "Content pillars", count: parsed.pillars.length, preview: parsed.pillars.map((p) => p.name) },

@@ -10,9 +10,22 @@ import {
 } from "@/lib/import/client-profile";
 import { parseContentImport } from "@/lib/import/content";
 import { buildAccountResolver } from "@/lib/social-match";
-import { buildRecordMatcher, type SectionMode } from "@/lib/import/record-match";
+import { normaliseRecordName, buildRecordMatcher, type SectionMode } from "@/lib/import/record-match";
 import { assessPlatformFit, type MixDecision } from "@/lib/platform-strategy";
 import type { Database } from "@/lib/database.types";
+
+/** Social strategy fields arrive from the parser as text (so one string
+ * comparison decides "changed or not"); cadence_target and posting_days go
+ * back to their real column types here, on write. */
+function socialPatchFromFields(fields: Record<string, string>): Record<string, string | number | number[]> {
+  const out: Record<string, string | number | number[]> = {};
+  for (const [key, value] of Object.entries(fields)) {
+    if (key === "cadence_target") out[key] = Number(value);
+    else if (key === "posting_days") out[key] = value.split(",").map(Number).filter((n) => Number.isInteger(n) && n >= 1 && n <= 7);
+    else out[key] = value;
+  }
+  return out;
+}
 
 // ---------------------------------------------------------------------------
 // Client Profile Import (§1)
@@ -117,6 +130,16 @@ export async function commitClientImport(text: string): Promise<ActionResult<{ c
           if (error) throw new Error(`Sales: ${error.message}`);
         });
       }
+      if (filled(parsed.contentGuidelines)) {
+        await step("Content guidelines", async () => {
+          // The row is provisioned by create_client_defaults(); upsert covers
+          // a client created before migration 0034 all the same.
+          const { error } = await supabase
+            .from("content_guidelines")
+            .upsert({ client_id: clientId, ...parsed.contentGuidelines }, { onConflict: "client_id" });
+          if (error) throw new Error(`Content guidelines: ${error.message}`);
+        });
+      }
 
       const audienceIds = new Map<string, string>();
       if (parsed.audiences.length > 0) {
@@ -154,9 +177,17 @@ export async function commitClientImport(text: string): Promise<ActionResult<{ c
         await step(
           "Social strategies",
           async () => {
-            const { error } = await supabase
-              .from("social_strategies")
-              .insert(parsed.socials.map((s, i) => ({ client_id: clientId, ...s.fields, platform: s.platform, sort_order: i })));
+            const { error } = await supabase.from("social_strategies").insert(
+              parsed.socials.map((s, i) => ({
+                client_id: clientId,
+                ...socialPatchFromFields(s.fields),
+                platform: s.platform,
+                sort_order: i,
+                // Audience links by name → the audiences this same import just created.
+                primary_audience_id: s.primaryAudience ? (audienceIds.get(s.primaryAudience.toLowerCase()) ?? null) : null,
+                secondary_audience_id: s.secondaryAudience ? (audienceIds.get(s.secondaryAudience.toLowerCase()) ?? null) : null,
+              }))
+            );
             if (error) throw new Error(`Social strategies: ${error.message}`);
           },
           parsed.socials.length
@@ -427,6 +458,7 @@ async function buildClientUpdatePlan(
     { data: vision },
     { data: positioning },
     { data: sales },
+    { data: guidelines },
     { data: audiences },
     { data: socials },
     { data: pillars },
@@ -445,6 +477,7 @@ async function buildClientUpdatePlan(
     supabase.from("brand_vision").select("*").eq("client_id", clientId).maybeSingle(),
     supabase.from("positioning").select("*").eq("client_id", clientId).maybeSingle(),
     supabase.from("sales_strategy").select("*").eq("client_id", clientId).maybeSingle(),
+    supabase.from("content_guidelines").select("*").eq("client_id", clientId).maybeSingle(),
     supabase.from("audiences").select("*").eq("client_id", clientId),
     supabase.from("social_strategies").select("*").eq("client_id", clientId),
     supabase.from("brand_pillars").select("*").eq("client_id", clientId),
@@ -506,6 +539,12 @@ async function buildClientUpdatePlan(
   );
   scalarSection("Sales strategy", sales, parsed.sales, (patch) =>
     supabase.from("sales_strategy").update(patch as Tables["sales_strategy"]["Update"]).eq("client_id", clientId)
+  );
+  // Content guidelines (migration 0034) — the permanent content direction
+  // every Monthly Plan inherits. Upsert so a client from before that
+  // migration still gets a row.
+  scalarSection("Content guidelines", guidelines ?? ({} as Record<string, unknown>), parsed.contentGuidelines, (patch) =>
+    supabase.from("content_guidelines").upsert({ client_id: clientId, ...patch } as Tables["content_guidelines"]["Insert"], { onConflict: "client_id" })
   );
 
   // --- Repeatable records (Duane's duplicate-pillar fix) ------------------
@@ -716,10 +755,39 @@ async function buildClientUpdatePlan(
     },
   });
 
+  // Audience links on an account arrive as names. Resolve against the
+  // client's existing audiences now (so the diff sees the change); an
+  // audience being CREATED by this same import resolves at write time.
+  const socialNotes: string[] = [];
+  const socialItems = parsed.socials.map((s) => {
+    const fields = { ...s.fields };
+    const link = (column: "primary_audience_id" | "secondary_audience_id", name: string | null, label: string) => {
+      if (!name) return;
+      const id = resolveLink(audienceLookup, name);
+      if (id) fields[column] = id;
+      else if (!parsed.audiences.some((a) => normaliseRecordName(a.name) === normaliseRecordName(name))) {
+        socialNotes.push(`${s.platform}${s.fields.account_name ? ` — ${s.fields.account_name}` : ""}: ${label} "${name}" doesn't match any audience — link left unchanged.`);
+      }
+    };
+    link("primary_audience_id", s.primaryAudience, "primary audience");
+    link("secondary_audience_id", s.secondaryAudience, "secondary audience");
+    return { ...s, fields };
+  });
+  const lateAudienceLinks = (s: (typeof socialItems)[number]): Record<string, string> => {
+    const out: Record<string, string> = {};
+    for (const [column, name] of [["primary_audience_id", s.primaryAudience], ["secondary_audience_id", s.secondaryAudience]] as const) {
+      if (name && !s.fields[column]) {
+        const id = resolveLink(audienceLookup, name, createdAudiences);
+        if (id) out[column] = id;
+      }
+    }
+    return out;
+  };
+
   repeatable({
     label: "Social strategies",
     mode: modeFor("social_strategies"),
-    items: parsed.socials,
+    items: socialItems,
     // The account's identity is platform + account name together.
     existing: (socials ?? []).map((s) => ({
       id: s.id,
@@ -733,13 +801,21 @@ async function buildClientUpdatePlan(
     removalNote: (row) => linkNote(outputsPerAccount.get(row.id) ?? 0, "published/planned post"),
     current: new Map((socials ?? []).map((s) => [s.id, s as Record<string, unknown>])),
     insert: async (create) => {
-      const { error } = await supabase
-        .from("social_strategies")
-        .insert(create.map((s, i) => ({ client_id: clientId, ...s.fields, platform: s.platform, sort_order: (socials?.length ?? 0) + i })));
+      const { error } = await supabase.from("social_strategies").insert(
+        create.map((s, i) => ({
+          client_id: clientId,
+          ...socialPatchFromFields({ ...s.fields, ...lateAudienceLinks(s) }),
+          platform: s.platform,
+          sort_order: (socials?.length ?? 0) + i,
+        }))
+      );
       if (error) throw fail("Social strategies", error.message);
     },
-    update: async (id, patch) => {
-      const { error } = await supabase.from("social_strategies").update(patch as Tables["social_strategies"]["Update"]).eq("id", id);
+    update: async (id, patch, item) => {
+      const { error } = await supabase
+        .from("social_strategies")
+        .update(socialPatchFromFields({ ...patch, ...lateAudienceLinks(item) }) as Tables["social_strategies"]["Update"])
+        .eq("id", id);
       if (error) throw fail("Social strategies", error.message);
     },
     remove: async (ids) => {
@@ -747,6 +823,14 @@ async function buildClientUpdatePlan(
       if (error) throw fail("Social strategies", error.message);
     },
   });
+  if (socialNotes.length > 0) {
+    const social = sections.find((sec) => sec.label === "Social strategies") ?? (() => {
+      const created = emptySection("Social strategies", modeFor("social_strategies"));
+      sections.push(created);
+      return created;
+    })();
+    social.skips.push(...socialNotes);
+  }
 
   repeatable({
     label: "Content pillars",
