@@ -505,9 +505,17 @@ export function parseClientImport(input: string, options?: { requireName?: boole
       issues.warnings.push(`Metric target ${i + 1} has no platform — skipped.`);
       return [];
     }
+    // Which metric (Duane): free text, normalised to snake_case so
+    // "Profile visits" and "profile_visits" are the same target. Older
+    // documents that don't say default to followers — the only thing a
+    // target could mean before the column existed.
+    const rawMetric = text(record.metric, `Target ${platform} → metric`, issues);
+    const metric = (rawMetric || "followers").trim().toLowerCase().replace(/[\s-]+/g, "_");
+    if (!rawMetric) issues.warnings.push(`Metric target ${i + 1} (${platform}) has no metric — treated as a followers target.`);
     return [
       {
         platform,
+        metric,
         baseline_value: num(record.baseline_value, `Target ${platform} → baseline`, issues),
         target_value: num(record.target_value, `Target ${platform} → target`, issues),
         target_date: date(record.target_date, `Target ${platform} → target date`, issues),

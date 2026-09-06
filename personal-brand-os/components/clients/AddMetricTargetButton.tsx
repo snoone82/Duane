@@ -4,9 +4,9 @@ import { useActionState, useEffect, useState } from "react";
 import { setMetricTarget } from "@/lib/actions/metrics";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
-import { Input, Label } from "@/components/ui/Input";
+import { Input, Label, Select } from "@/components/ui/Input";
 import { Notice } from "@/components/ui/Notice";
-import { PLATFORM_SUGGESTIONS } from "@/lib/metrics";
+import { PLATFORM_SUGGESTIONS, METRIC_TARGET_METRICS } from "@/lib/metrics";
 
 export function AddMetricTargetButton({ clientId }: { clientId: string }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -40,6 +40,16 @@ export function AddMetricTargetButton({ clientId }: { clientId: string }) {
                 ))}
               </datalist>
             </div>
+            <div>
+              <Label htmlFor="target-metric">Metric</Label>
+              <Select id="target-metric" name="metric" defaultValue="followers">
+                {METRIC_TARGET_METRICS.map((m) => (
+                  <option key={m.value} value={m.value}>
+                    {m.label}
+                  </option>
+                ))}
+              </Select>
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label htmlFor="target-baseline">Baseline (optional)</Label>
@@ -54,7 +64,7 @@ export function AddMetricTargetButton({ clientId }: { clientId: string }) {
               <Label htmlFor="target-date">Target date (optional)</Label>
               <Input id="target-date" name="target_date" type="date" />
             </div>
-            <p className="text-xs text-ink-faint">Setting this again for the same platform replaces the previous target.</p>
+            <p className="text-xs text-ink-faint">One target per platform per metric — setting the same platform and metric again replaces the previous target.</p>
             <div className="flex justify-end gap-2 pt-2">
               <Button type="button" variant="ghost" onClick={() => setIsOpen(false)}>
                 Cancel

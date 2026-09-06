@@ -1386,6 +1386,7 @@ export type Database = {
           client_id: string
           created_at: string
           id: string
+          metric: string
           platform: string
           target_date: string | null
           target_value: number | null
@@ -1396,6 +1397,7 @@ export type Database = {
           client_id: string
           created_at?: string
           id?: string
+          metric?: string
           platform: string
           target_date?: string | null
           target_value?: number | null
@@ -1406,6 +1408,7 @@ export type Database = {
           client_id?: string
           created_at?: string
           id?: string
+          metric?: string
           platform?: string
           target_date?: string | null
           target_value?: number | null

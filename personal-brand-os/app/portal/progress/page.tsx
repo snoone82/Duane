@@ -47,7 +47,7 @@ export default async function PortalProgressPage() {
         <PortalCard title="Audience">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {platforms.map((snap) => {
-              const target = (targets ?? []).find((t) => t.platform === snap.platform);
+              const target = (targets ?? []).find((t) => t.platform === snap.platform && t.metric === "followers");
               return (
                 <div key={snap.platform} className="rounded-md border border-border p-3">
                   <p className="text-xs font-medium uppercase tracking-wide text-ink-faint">{snap.platform}</p>
