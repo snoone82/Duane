@@ -24,8 +24,9 @@ export function AssignPublishDatesButton({ clientId, planId }: { clientId: strin
         setMessage(result.message);
         return;
       }
-      const { assigned, skipped, offPreferredDays, doubledUp } = result.data;
+      const { assigned, skipped, offPreferredDays, doubledUp, unspacedSiblingGroups } = result.data;
       const notes = [
+        unspacedSiblingGroups > 0 ? `${unspacedSiblingGroups} sibling group(s) could not be fully spaced within this planning period` : null,
         skipped > 0 ? `${skipped} skipped (no platform account set)` : null,
         offPreferredDays > 0 ? `${offPreferredDays} placed outside an account's posting days (month too full)` : null,
         doubledUp > 0 ? `${doubledUp} sharing a day on one account (more outputs than days)` : null,
