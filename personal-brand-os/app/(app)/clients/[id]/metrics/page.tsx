@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { metricTargetLabel } from "@/lib/metrics";
 import { getPlatformMetrics, getScorecard, getContentMetrics } from "@/lib/data/metrics";
 import { AddMetricSnapshotButton } from "@/components/clients/AddMetricSnapshotButton";
 import { AddMetricTargetButton } from "@/components/clients/AddMetricTargetButton";
@@ -92,6 +93,21 @@ export default async function MetricsPage({ params }: { params: Promise<{ id: st
                     <Td className="text-ink-soft">
                       {formatNumber(metric.target)}
                       {metric.targetDate && <span className="ml-1 text-xs text-ink-faint">by {formatDate(metric.targetDate)}</span>}
+                      {/* Targets are per platform PER METRIC (Duane) — the
+                          column is the followers target; anything else set
+                          on this platform is listed underneath. */}
+                      {metric.targets.filter((t) => t.metric !== "followers").length > 0 && (
+                        <ul className="mt-1 space-y-0.5 text-xs text-ink-faint">
+                          {metric.targets
+                            .filter((t) => t.metric !== "followers")
+                            .map((t) => (
+                              <li key={t.metric}>
+                                {metricTargetLabel(t.metric)}: {formatNumber(t.target)}
+                                {t.targetDate ? ` by ${formatDate(t.targetDate)}` : ""}
+                              </li>
+                            ))}
+                        </ul>
+                      )}
                     </Td>
                     <Td className="text-ink-faint">{formatDate(metric.currentDate)}</Td>
                   </Tr>

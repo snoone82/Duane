@@ -13,6 +13,9 @@ export interface PlatformMetric {
   currentDate: string | null;
   target: number | null;
   targetDate: string | null;
+  /** Every target set on this platform, by metric — the summary columns
+   * above are the followers one. */
+  targets: { metric: string; baseline: number | null; target: number | null; targetDate: string | null }[];
   /** The full most-recent snapshot, for the detail breakdown below the
    * summary table — brief §15 wants ~10 metrics per platform, not just
    * followers. */
@@ -33,14 +36,23 @@ export async function getPlatformMetrics(supabase: Client, clientId: string): Pr
     list.push(snap);
     byPlatform.set(snap.platform, list);
   }
-  const targetsByPlatform = new Map((targets ?? []).map((t) => [t.platform, t]));
-  for (const target of targets ?? []) platforms.add(target.platform);
+  // Targets are per platform PER METRIC; the headline baseline → target
+  // columns are the followers target, since that's what the snapshot's
+  // headline number is.
+  const targetsByPlatform = new Map<string, NonNullable<typeof targets>>();
+  for (const target of targets ?? []) {
+    platforms.add(target.platform);
+    const list = targetsByPlatform.get(target.platform) ?? [];
+    list.push(target);
+    targetsByPlatform.set(target.platform, list);
+  }
 
   return Array.from(platforms)
     .sort()
     .map((platform) => {
       const rows = byPlatform.get(platform) ?? [];
-      const target = targetsByPlatform.get(platform);
+      const platformTargets = targetsByPlatform.get(platform) ?? [];
+      const target = platformTargets.find((t) => t.metric === "followers");
       const first = rows[0];
       const last = rows[rows.length - 1];
       return {
@@ -50,6 +62,9 @@ export async function getPlatformMetrics(supabase: Client, clientId: string): Pr
         currentDate: last?.snapshot_date ?? null,
         target: target?.target_value ?? null,
         targetDate: target?.target_date ?? null,
+        targets: platformTargets
+          .map((t) => ({ metric: t.metric, baseline: t.baseline_value, target: t.target_value, targetDate: t.target_date }))
+          .sort((a, b) => a.metric.localeCompare(b.metric)),
         latestSnapshot: last ?? null,
       };
     });

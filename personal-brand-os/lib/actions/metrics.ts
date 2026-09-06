@@ -54,6 +54,7 @@ export async function addMetricSnapshot(_prev: ActionResult | null, formData: Fo
 export async function setMetricTarget(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
   const clientId = String(formData.get("client_id") ?? "");
   const platform = String(formData.get("platform") ?? "").trim();
+  const metric = (String(formData.get("metric") ?? "").trim() || "followers").toLowerCase().replace(/[\s-]+/g, "_");
   const targetDate = String(formData.get("target_date") ?? "").trim() || null;
   if (!platform) return { ok: false, message: "Platform is required." };
 
@@ -63,11 +64,12 @@ export async function setMetricTarget(_prev: ActionResult | null, formData: Form
       {
         client_id: clientId,
         platform,
+        metric,
         baseline_value: num(formData, "baseline_value"),
         target_value: num(formData, "target_value"),
         target_date: targetDate,
       },
-      { onConflict: "client_id,platform" }
+      { onConflict: "client_id,platform,metric" }
     );
     if (error) throw new Error(error.message);
     revalidatePath(`/clients/${clientId}/metrics`);

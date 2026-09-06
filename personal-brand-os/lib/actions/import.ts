@@ -456,7 +456,7 @@ async function buildClientUpdatePlan(
       .select("id,title,status,owner_name,owner_user_id,due_date,priority,description,visibility,checklist")
       .eq("client_id", clientId),
     supabase.from("metric_snapshots").select("id,platform,snapshot_date").eq("client_id", clientId),
-    supabase.from("metric_targets").select("id,platform").eq("client_id", clientId),
+    supabase.from("metric_targets").select("id,platform,metric").eq("client_id", clientId),
     supabase.from("milestones").select("id,title,milestone_date").eq("client_id", clientId),
     supabase.from("profiles").select("id,full_name,email,role").in("role", ["admin", "member", "contractor"]),
     supabase.from("client_members").select("name,user_id").eq("client_id", clientId),
@@ -640,10 +640,19 @@ async function buildClientUpdatePlan(
   // silently filing the idea with no pillar.
   const pillarLookup = buildRecordMatcher((pillars ?? []).map((p) => ({ id: p.id, name: p.name })));
   const audienceLookup = buildRecordMatcher((audiences ?? []).map((a) => ({ id: a.id, name: a.name })));
-  const resolveLink = (matcher: ReturnType<typeof buildRecordMatcher>, name: string | null): string | null => {
-    if (!name) return null;
+  // Pillars / audiences CREATED by this same import (Duane's rule 6a): an
+  // idea may reference one of those too. Their ids only exist once the
+  // insert has run, so these fill up inside the work queue and the idea
+  // resolves against them at execution time.
+  const createdPillars: { id: string; name: string }[] = [];
+  const createdAudiences: { id: string; name: string }[] = [];
+  const resolveWith = (matcher: ReturnType<typeof buildRecordMatcher>, name: string): string | null => {
     const outcome = matcher.match({ name });
     return outcome.kind === "exact" || outcome.kind === "normalised" || outcome.kind === "id" ? outcome.record.id : null;
+  };
+  const resolveLink = (matcher: ReturnType<typeof buildRecordMatcher>, name: string | null, created: { id: string; name: string }[] = []): string | null => {
+    if (!name) return null;
+    return resolveWith(matcher, name) ?? (created.length > 0 ? resolveWith(buildRecordMatcher(created), name) : null);
   };
 
   // Multi-account social (migration 0017): the natural key is platform +
@@ -690,10 +699,12 @@ async function buildClientUpdatePlan(
     removalNote: (row) => linkNote(ideasPerAudience.get(row.id) ?? 0, "content idea"),
     current: new Map((audiences ?? []).map((a) => [a.id, a as Record<string, unknown>])),
     insert: async (create) => {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from("audiences")
-        .insert(create.map((a, i) => ({ client_id: clientId, ...a.fields, name: a.name, sort_order: (audiences?.length ?? 0) + i })));
+        .insert(create.map((a, i) => ({ client_id: clientId, ...a.fields, name: a.name, sort_order: (audiences?.length ?? 0) + i })))
+        .select("id,name");
       if (error) throw fail("Audiences", error.message);
+      createdAudiences.push(...(data ?? []));
     },
     update: async (id, patch) => {
       const { error } = await supabase.from("audiences").update(patch as Tables["audiences"]["Update"]).eq("id", id);
@@ -749,10 +760,12 @@ async function buildClientUpdatePlan(
     removalNote: (row) => linkNote(ideasPerPillar.get(row.id) ?? 0, "content idea"),
     current: new Map((pillars ?? []).map((p) => [p.id, p as Record<string, unknown>])),
     insert: async (create) => {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from("brand_pillars")
-        .insert(create.map((p, i) => ({ client_id: clientId, ...p.fields, name: p.name, sort_order: (pillars?.length ?? 0) + i })));
+        .insert(create.map((p, i) => ({ client_id: clientId, ...p.fields, name: p.name, sort_order: (pillars?.length ?? 0) + i })))
+        .select("id,name");
       if (error) throw fail("Content pillars", error.message);
+      createdPillars.push(...(data ?? []));
     },
     update: async (id, patch) => {
       const { error } = await supabase.from("brand_pillars").update(patch as Tables["brand_pillars"]["Update"]).eq("id", id);
@@ -788,8 +801,8 @@ async function buildClientUpdatePlan(
               body: idea.body,
               notes: idea.notes,
               priority: idea.priority,
-              pillar_id: resolveLink(pillarLookup, idea.pillar),
-              audience_id: resolveLink(audienceLookup, idea.audience),
+              pillar_id: resolveLink(pillarLookup, idea.pillar, createdPillars),
+              audience_id: resolveLink(audienceLookup, idea.audience, createdAudiences),
               created_by: userId,
             })
             .select("id")
@@ -1117,13 +1130,17 @@ async function buildClientUpdatePlan(
     sections.push(section);
   }
 
-  const targetByPlatform = new Map((targets ?? []).map((t) => [lower(t.platform), t]));
+  // One target per platform PER METRIC (Duane) — LinkedIn followers and
+  // LinkedIn impressions are two different targets.
+  const targetKey = (platform: string, metric: string) => `${lower(platform)}|${lower(metric)}`;
+  const targetByKey = new Map((targets ?? []).map((t) => [targetKey(t.platform, t.metric), t]));
   if (parsed.metricTargets.length > 0) {
     const section = emptySection("Metric targets");
     for (const target of parsed.metricTargets) {
-      const existing = targetByPlatform.get(lower(target.platform));
+      const existing = targetByKey.get(targetKey(target.platform, target.metric));
+      const label = `${target.platform} · ${target.metric}`;
       if (existing) {
-        section.updates.push(target.platform);
+        section.updates.push(label);
         work.push(async () => {
           const patch: Record<string, number | string> = {};
           if (target.baseline_value !== null) patch.baseline_value = target.baseline_value;
@@ -1134,7 +1151,7 @@ async function buildClientUpdatePlan(
           if (error) throw fail("Metric targets", error.message);
         });
       } else {
-        section.creates.push(target.platform);
+        section.creates.push(label);
         work.push(async () => {
           const { error } = await supabase.from("metric_targets").insert({ client_id: clientId, ...target });
           if (error) throw fail("Metric targets", error.message);

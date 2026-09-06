@@ -61,7 +61,7 @@ export default async function ClientUpdateImportPage({ params }: { params: Promi
 
   const template = CLIENT_PROFILE_TEMPLATE.replace(
     "RULES — follow these exactly:",
-    `THIS IS AN UPDATE for the existing client "${client.name}" — include ONLY the sections and fields that are new or have changed. Omit everything unchanged; omitted sections are left completely untouched.
+    `THIS IS AN UPDATE for the existing client "${client.name}" — include ONLY the sections and fields that are new or have changed. Omit everything unchanged; omitted sections are left completely untouched. Exception: identity fields used for matching (overview.name — always include it — a record's "id" / "action_id", and a required name / platform / type / title) may be repeated unchanged; that is matching, not restating.
 
 CRITICAL — USE THE IDs BELOW. Every existing record is listed with its permanent PBOS id. When you are updating one of these records, include its "id" exactly as shown. PBOS then updates that record even if its name has changed. If you leave the id out, PBOS falls back to matching on the name (ignoring numbering, arrows and punctuation) and creates a new record only when it genuinely can't find a match. Never invent an id, and never reuse one record's id for a different record.
 ${recordsBlock}

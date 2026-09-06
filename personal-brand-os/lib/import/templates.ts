@@ -10,11 +10,12 @@ RULES — follow these exactly:
 3. If something genuinely does not apply to this client, use the exact string "NOT_APPLICABLE".
 4. Omit optional list sections entirely if nothing was discussed (or use an empty list []).
 5. Dates must be YYYY-MM-DD. Numbers must be plain numbers (no currency symbols or commas).
-6. content_ideas.pillar and content_ideas.audience must exactly match a name from content_pillars / audiences in this same document — never introduce new ones there.
+6. content_ideas.pillar and content_ideas.audience must exactly match either (a) a name supplied in content_pillars / audiences in this same import, or (b) an existing pillar / audience name listed in the existing-client context above (update imports). Never invent a new pillar or audience name from within content_ideas — if neither list has it, use null.
 7. Write in UK English, in the client's own words where possible.
 8. For UPDATE imports into an existing client: include ONLY the sections and fields that changed. An omitted field always keeps its current value — never restate a field just to include it, and never use blank values to try to clear something. Omitted sections are left completely untouched.
 9. For UPDATE imports, repeatable records (content pillars, audiences, social strategies, authority opportunities, actions) are matched to what already exists — an update never appends a second copy. If the record's PBOS id was given to you, include it as "id" (actions use "action_id"); that is always the safest match. Without an id, PBOS matches on the name, ignoring numbering, arrow style and punctuation, so "Pillar 1 — AI Opportunity → Commercial Decision" is recognised as the existing "AI Opportunity -> Commercial Decision". Never invent an id.
 10. A repeatable section may be wrapped as {"mode": "...", "items": [...]} when the default isn't right: "replace" means the list you supply is definitive (anything missing is offered for deletion), "append" means every record is genuinely new. Plain lists mean "update what matches, add what's new" — the default, and correct almost always.
+11. For UPDATE imports, identity / matching fields may be repeated even when unchanged where the schema marks them REQUIRED. These are: overview.name, a record's permanent "id" / "action_id", and any required record identity field — name (audiences, content pillars), platform (social strategies), type (authority opportunities), title (actions). Repeating an identity field so PBOS can match the record does NOT count as restating unchanged data. overview.name must ALWAYS be included so PBOS can identify the client, even when the name itself has not changed.
 
 {
   "pbos_import": "client_profile",
@@ -38,6 +39,7 @@ RULES — follow these exactly:
   },
   "audiences": [
     {
+      "id": "internal PBOS id — include when updating a known existing record; omit for genuinely new records",
       "name": "REQUIRED", "description": "", "demographics": "", "stage": "",
       "pain_points": "", "goals": "", "content_interests": "",
       "target_belief": "", "target_action": "", "where_they_are": "", "notes": ""
@@ -45,6 +47,7 @@ RULES — follow these exactly:
   ],
   "social_strategies": [
     {
+      "id": "internal PBOS id — include when updating a known existing record; omit for genuinely new records",
       "platform": "REQUIRED e.g. LinkedIn",
       "account_name": "The account/channel name, e.g. Daniel Andrews or CEG Programme",
       "owner_brand": "Who the account belongs to, e.g. Daniel / CEG",
@@ -56,6 +59,7 @@ RULES — follow these exactly:
   ],
   "content_pillars": [
     {
+      "id": "internal PBOS id — include when updating a known existing record; omit for genuinely new records",
       "name": "REQUIRED", "description": "", "target_audience": "", "purpose": "",
       "key_messages": "", "example_topics": "", "associated_stories": "",
       "relevant_expertise": "", "calls_to_action": ""
@@ -63,8 +67,8 @@ RULES — follow these exactly:
   ],
   "content_ideas": [
     {
-      "title": "REQUIRED", "pillar": "name from content_pillars above or null",
-      "audience": "name from audiences above or null", "hook": "", "brief": "",
+      "title": "REQUIRED", "pillar": "name from content_pillars in this import, or an existing pillar name from the context above, or null",
+      "audience": "name from audiences in this import, or an existing audience name from the context above, or null", "hook": "", "brief": "",
       "notes": "", "priority": "low | medium | high",
       "platforms": ["LinkedIn", "Instagram"]
     }
@@ -77,6 +81,7 @@ RULES — follow these exactly:
   },
   "authority_opportunities": [
     {
+      "id": "internal PBOS id — include when updating a known existing record; omit for genuinely new records",
       "type": "REQUIRED e.g. Podcast / Speaking / Article", "host": "",
       "status": "identified | pitched | in_conversation | booked | completed | published",
       "opportunity_date": "YYYY-MM-DD or null", "audience_size": 0,
@@ -111,7 +116,11 @@ RULES — follow these exactly:
     }
   ],
   "metric_targets": [
-    { "platform": "REQUIRED", "baseline_value": 0, "target_value": 0, "target_date": "YYYY-MM-DD or null" }
+    {
+      "platform": "REQUIRED",
+      "metric": "REQUIRED — what is being targeted: followers | impressions | reach | engagement | profile_visits | video_views | enquiries | leads",
+      "baseline_value": 0, "target_value": 0, "target_date": "YYYY-MM-DD or null"
+    }
   ],
   "milestones": [
     { "title": "REQUIRED", "milestone_date": "YYYY-MM-DD", "description": "", "is_highlighted": false }
