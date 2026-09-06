@@ -26,7 +26,7 @@ import {
   CTA_NEEDS_CONFIRMATION,
   type CtaDestinationState,
 } from "@/lib/monthly-plan-format";
-import { schedulePlanOutputs, normalisePostingDays } from "@/lib/plan-scheduling";
+import { schedulePlanOutputs, normalisePostingDays, SIBLING_GAP_DAYS } from "@/lib/plan-scheduling";
 
 type SupabaseClient = Awaited<ReturnType<typeof createClient>>;
 
@@ -505,7 +505,7 @@ async function reconcilePlanRequirementsInternal(
   const pillarNameById = new Map((pillars ?? []).map((p) => [p.id, p.name]));
   const ideaIds = ideaList.map((i) => i.id);
   const { data: outputs } = ideaIds.length
-    ? await supabase.from("content_outputs").select("id,content_id,platform,format,social_account_id").in("content_id", ideaIds)
+    ? await supabase.from("content_outputs").select("id,content_id,platform,format,social_account_id,target_publish_date").in("content_id", ideaIds)
     : { data: [] };
   const outputList = outputs ?? [];
   const socialList = socials ?? [];
@@ -669,6 +669,37 @@ async function reconcilePlanRequirementsInternal(
     });
   }
 
+  // f) Sibling spacing (Duane, second full run): two outputs under one idea
+  // in the same platform family on different accounts closer than the gap.
+  // The scheduler already tries siblings first; if it still couldn't space
+  // a group this stays visible here rather than being silently relaxed.
+  const siblingGroups = new Map<string, { seq: string; days: number[] }>();
+  for (const output of outputList) {
+    if (!output.target_publish_date) continue;
+    const account = accountFor(output);
+    if (!account) continue;
+    const idea = ideaById.get(output.content_id);
+    if (!idea) continue;
+    const key = `${output.content_id}:${normaliseAccountKey(account.platform)}:${account.id}`;
+    const groupKey = key.slice(0, key.lastIndexOf(":"));
+    const group = siblingGroups.get(groupKey) ?? { seq: planSequenceLabel(idea.plan_sequence), days: [] };
+    group.days.push(Number(output.target_publish_date.slice(-2)));
+    siblingGroups.set(groupKey, group);
+  }
+  const unspaced: string[] = [];
+  for (const group of siblingGroups.values()) {
+    if (group.days.length < 2) continue;
+    const days = [...group.days].sort((a, b) => a - b);
+    if (days.some((d, i) => i > 0 && d - days[i - 1]! < SIBLING_GAP_DAYS)) unspaced.push(group.seq);
+  }
+  if (unspaced.length > 0) {
+    desired.set("sibling_spacing", {
+      type: "information",
+      description: `${unspaced.length} sibling group(s) could not be fully spaced within this planning period — same-idea outputs on the same platform land under ${SIBLING_GAP_DAYS} days apart. Adjust posting days or move one by hand.`,
+      related_content_note: [...new Set(unspaced)].sort().join(", "),
+    });
+  }
+
   // Reconcile: remove what no longer applies, update what changed, create
   // what's new. Never touches a manual or ai_import row.
   const existing = existingReqs ?? [];
@@ -745,6 +776,9 @@ export interface AssignDatesResult {
   offPreferredDays: number;
   /** Outputs that had to share a day on one account (more outputs than days). */
   doubledUp: number;
+  /** Sibling groups (same idea, same platform family) that could not be kept
+   * apart within the month — never silently relaxed (Duane). */
+  unspacedSiblingGroups: number;
 }
 
 async function assignPlanPublishDatesInternal(supabase: SupabaseClient, clientId: string, planId: string): Promise<AssignDatesResult> {
@@ -807,7 +841,13 @@ async function assignPlanPublishDatesInternal(supabase: SupabaseClient, clientId
     if (error) throw new Error(error.message);
   }
 
-  return { assigned, skipped: result.skipped, offPreferredDays: result.offPreferredDays, doubledUp: result.doubledUp };
+  return {
+    assigned,
+    skipped: result.skipped,
+    offPreferredDays: result.offPreferredDays,
+    doubledUp: result.doubledUp,
+    unspacedSiblingGroups: result.unspacedSiblingGroups,
+  };
 }
 
 /** Manual trigger for the same date-assignment pass importAiOutput runs
@@ -1333,6 +1373,9 @@ export async function importAiOutput(clientId: string, planId: string, jsonText:
       try {
         const dated = await assignPlanPublishDatesInternal(supabase, clientId, planId);
         datesAssigned = dated.assigned;
+        if (dated.unspacedSiblingGroups > 0) {
+          warnings.push(`${dated.unspacedSiblingGroups} sibling group(s) could not be fully spaced within this planning period.`);
+        }
       } catch (dateError) {
         warnings.push(`Couldn't assign publish dates: ${dateError instanceof Error ? dateError.message : String(dateError)}`);
       }
