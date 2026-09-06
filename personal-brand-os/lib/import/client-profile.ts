@@ -98,7 +98,7 @@ export interface ParsedClientImport extends ImportIssues {
     checklist: { text: string; done: boolean }[];
   }[];
   metricSnapshots: { platform: string; snapshot_date: string; followers: number; extras: Record<string, number | null> }[];
-  metricTargets: { platform: string; baseline_value: number | null; target_value: number | null; target_date: string | null }[];
+  metricTargets: { platform: string; metric: string; baseline_value: number | null; target_value: number | null; target_date: string | null }[];
   milestones: { title: string; milestone_date: string; description: string; is_highlighted: boolean }[];
 }
 
