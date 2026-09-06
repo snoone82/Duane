@@ -17,6 +17,8 @@ import { socialAccountLabel } from "@/lib/format";
 import { isAyrshareConfigured } from "@/lib/ayrshare";
 import { periodMonthLabel, isPlatformExcluded } from "@/lib/monthly-plan-format";
 import { checkMonthlyPlanReadiness } from "@/lib/actions/monthly-plans";
+import { ChangeRequestList, changeRequestIdeaLabel } from "@/components/clients/ChangeRequestPanel";
+import { isPlanLocked } from "@/lib/monthly-plan-format";
 
 export const metadata = { title: "Monthly Plan" };
 
@@ -34,6 +36,7 @@ export default async function MonthlyPlanPage({ params }: { params: Promise<{ id
     team,
     { data: socialAccounts },
     readinessResult,
+    { data: changeRequests },
   ] = await Promise.all([
     supabase.from("monthly_plans").select("*").eq("id", planId).eq("client_id", id).maybeSingle(),
     supabase.from("brand_pillars").select("*").eq("client_id", id).order("sort_order"),
@@ -44,6 +47,7 @@ export default async function MonthlyPlanPage({ params }: { params: Promise<{ id
     getApproverOptions(supabase, id),
     supabase.from("social_strategies").select("*").eq("client_id", id).order("is_primary", { ascending: false }).order("sort_order"),
     checkMonthlyPlanReadiness(id),
+    supabase.from("master_content_change_requests").select("*").eq("monthly_plan_id", planId).order("created_at", { ascending: false }),
   ]);
 
   if (!plan) notFound();
@@ -66,6 +70,11 @@ export default async function MonthlyPlanPage({ params }: { params: Promise<{ id
   const publishingAccounts = allAccounts
     .filter((account) => !isPlatformExcluded(account))
     .map((account) => ({ id: account.id, label: socialAccountLabel(account.platform, account.account_name) }));
+
+  const planLocked = isPlanLocked(plan.status);
+  const requestList = changeRequests ?? [];
+  const openRequests = requestList.filter((r) => r.state === "open").length;
+  const ideaLabels = new Map(ideaList.map((idea) => [idea.id, changeRequestIdeaLabel(idea.plan_sequence, idea.title)]));
 
   const readiness = readinessResult.ok
     ? readinessResult.data
@@ -102,6 +111,9 @@ export default async function MonthlyPlanPage({ params }: { params: Promise<{ id
         </div>
         <p className="mb-3 text-xs text-ink-soft">
           The unit of planning and approval. Platform Outputs — the unit of publishing — live nested inside each one below.
+          {planLocked
+            ? " This plan is approved: its Master Content is locked as the approved version for the month. Changes go through change requests below."
+            : " Edit fields inline, or regenerate one item on its own — the whole month only needs regenerating if the editorial direction is wrong."}
         </p>
         {ideaList.length === 0 ? (
           <EmptyState
@@ -122,11 +134,31 @@ export default async function MonthlyPlanPage({ params }: { params: Promise<{ id
                 team={team}
                 accounts={publishingAccounts}
                 ayrshareEnabled={isAyrshareConfigured()}
+                planId={planId}
+                planLocked={planLocked}
               />
             ))}
           </div>
         )}
       </section>
+
+      {(planLocked || requestList.length > 0) && (
+        <section>
+          <h2 className="mb-3 text-sm font-semibold text-ink">
+            Change requests{openRequests > 0 ? ` (${openRequests} open)` : ""}
+          </h2>
+          <p className="mb-3 text-xs text-ink-soft">
+            Once the client has approved the plan, a change to one Master Content item is raised here — one item, one
+            change, reviewed — and the approved version stays exactly as approved until it&rsquo;s applied. Most client
+            amendments should never need the whole month regenerating.
+          </p>
+          {requestList.length === 0 ? (
+            <EmptyState title="No change requests" description="Use “Request change…” or “Propose regeneration…” on a Master Content item above." />
+          ) : (
+            <ChangeRequestList clientId={id} requests={requestList} ideaLabels={ideaLabels} />
+          )}
+        </section>
+      )}
 
       <section>
         <div className="mb-3 flex items-center justify-between">

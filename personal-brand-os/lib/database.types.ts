@@ -1225,6 +1225,96 @@ export type Database = {
           },
         ]
       }
+      master_content_change_requests: {
+        Row: {
+          client_id: string
+          content_id: string
+          created_at: string
+          field: string
+          id: string
+          kind: string
+          monthly_plan_id: string
+          previous_value: string
+          proposed_value: string
+          reason: string
+          requested_by: string | null
+          resolution_note: string
+          resolved_at: string | null
+          resolved_by: string | null
+          state: string
+        }
+        Insert: {
+          client_id: string
+          content_id: string
+          created_at?: string
+          field?: string
+          id?: string
+          kind: string
+          monthly_plan_id: string
+          previous_value?: string
+          proposed_value?: string
+          reason?: string
+          requested_by?: string | null
+          resolution_note?: string
+          resolved_at?: string | null
+          resolved_by?: string | null
+          state?: string
+        }
+        Update: {
+          client_id?: string
+          content_id?: string
+          created_at?: string
+          field?: string
+          id?: string
+          kind?: string
+          monthly_plan_id?: string
+          previous_value?: string
+          proposed_value?: string
+          reason?: string
+          requested_by?: string | null
+          resolution_note?: string
+          resolved_at?: string | null
+          resolved_by?: string | null
+          state?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "master_content_change_requests_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "master_content_change_requests_content_id_fkey"
+            columns: ["content_id"]
+            isOneToOne: false
+            referencedRelation: "content_ideas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "master_content_change_requests_monthly_plan_id_fkey"
+            columns: ["monthly_plan_id"]
+            isOneToOne: false
+            referencedRelation: "monthly_plans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "master_content_change_requests_requested_by_fkey"
+            columns: ["requested_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "master_content_change_requests_resolved_by_fkey"
+            columns: ["resolved_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       metric_snapshots: {
         Row: {
           client_id: string

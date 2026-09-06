@@ -24,6 +24,8 @@ import {
   normaliseCtaDestination,
   ctaDestinationState,
   CTA_NEEDS_CONFIRMATION,
+  isPlanLocked,
+  CHANGE_REQUEST_FIELDS,
   type CtaDestinationState,
 } from "@/lib/monthly-plan-format";
 import { schedulePlanOutputs, normalisePostingDays, SIBLING_GAP_DAYS } from "@/lib/plan-scheduling";
@@ -441,6 +443,7 @@ export async function updatePlanContentIdeaField(
   if (field === "title" && !value.trim()) return { ok: false, message: "Title can't be empty." };
   return runAction(async () => {
     const supabase = await createClient();
+    await assertIdeaEditable(supabase, ideaId);
     const patchValue: string | null = NULLABLE_PLAN_CONTENT_FIELDS.includes(field) ? value || null : value;
     const { error } = await supabase
       .from("content_ideas")
@@ -458,6 +461,7 @@ export async function updatePlanContentIdeaField(
 export async function updatePlanContentLeadPlatform(clientId: string, ideaId: string, leadPlatformId: string | null): Promise<ActionResult> {
   return runAction(async () => {
     const supabase = await createClient();
+    await assertIdeaEditable(supabase, ideaId);
     let label = "";
     if (leadPlatformId) {
       const { data: account } = await supabase
@@ -477,6 +481,23 @@ export async function updatePlanContentLeadPlatform(clientId: string, ideaId: st
     revalidatePlan(clientId);
     return undefined;
   });
+}
+
+/** The approval lock (Duane): Master Content on an approved / active /
+ * closed plan is that month's approved version. A direct edit is refused and
+ * pointed at change requests — applyChangeRequest is the one sanctioned path
+ * that writes to a locked item. */
+async function planStatusForIdea(supabase: SupabaseClient, ideaId: string): Promise<{ planId: string | null; status: string | null }> {
+  const { data } = await supabase.from("content_ideas").select("monthly_plan_id, plan:monthly_plans(status)").eq("id", ideaId).maybeSingle();
+  const plan = (data?.plan as { status: string } | null | undefined) ?? null;
+  return { planId: data?.monthly_plan_id ?? null, status: plan?.status ?? null };
+}
+
+async function assertIdeaEditable(supabase: SupabaseClient, ideaId: string): Promise<void> {
+  const { status } = await planStatusForIdea(supabase, ideaId);
+  if (status && isPlanLocked(status)) {
+    throw new UserFacingError("This Monthly Plan is approved — the approved version is locked. Raise a change request on this item instead.");
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1032,97 +1053,157 @@ function lastDayOfMonth(periodMonth: string): number {
   return new Date(year, month, 0).getDate();
 }
 
-/** Generate the brief a person pastes into Claude — client context from the
- * Client Snapshot, plus the exact schema importAiOutput will validate
- * against. Refuses to generate off an incomplete profile (checkMonthlyPlanReadiness)
- * rather than let the AI guess. Nothing is written; this only reads. */
+interface BriefContext {
+  clientName: string;
+  plan: Database["public"]["Tables"]["monthly_plans"]["Row"];
+  pillars: { id: string; name: string }[];
+  eligibleAudiences: { id: string; name: string }[];
+  activeSocials: Database["public"]["Tables"]["social_strategies"]["Row"][];
+  existingIdeas: { id: string; plan_sequence: number | null; title: string; core_message: string }[];
+  /** Everything from the title through the active-platform rules. */
+  header: string[];
+}
+
+/** The client context every brief starts with — the full-plan brief and the
+ * single-item briefs share it verbatim so a regenerated item is written
+ * against exactly the same rules as the month it sits in. Refuses on an
+ * incomplete profile (checkReadinessInternal) rather than let the AI guess. */
+async function buildBriefContext(supabase: SupabaseClient, clientId: string, planId: string): Promise<BriefContext> {
+  const readiness = await checkReadinessInternal(supabase, clientId);
+  if (!readiness.ready) {
+    throw new UserFacingError(
+      `Monthly Plan not ready:\n${readiness.blockers.map((b) => `- ${b}`).join("\n")}\n\nComplete these on the client's profile (Content Guidelines / Social tab) before generating.`
+    );
+  }
+
+  const [{ data: client }, { data: plan }, { data: guidelines }, { data: pillars }, { data: audiences }, { data: socials }, { data: existingIdeas }] =
+    await Promise.all([
+      supabase.from("clients").select("name").eq("id", clientId).maybeSingle(),
+      supabase.from("monthly_plans").select("*").eq("id", planId).eq("client_id", clientId).maybeSingle(),
+      supabase.from("content_guidelines").select("content_safeguards").eq("client_id", clientId).maybeSingle(),
+      supabase.from("brand_pillars").select("id,name").eq("client_id", clientId).order("sort_order"),
+      supabase
+        .from("audiences")
+        .select("id,name,description,pain_points,goals,eligible_for_generation")
+        .eq("client_id", clientId)
+        .order("sort_order"),
+      supabase.from("social_strategies").select("*").eq("client_id", clientId).order("sort_order"),
+      supabase.from("content_ideas").select("id,plan_sequence,title,core_message").eq("monthly_plan_id", planId).order("plan_sequence"),
+    ]);
+  if (!plan) throw new UserFacingError("Monthly Plan not found.");
+  const snapshot = (plan.snapshot ?? {}) as unknown as MonthlyPlanSnapshot;
+  // Only accounts this plan can actually use — excluded ones are never
+  // offered as a destination, by id or by name.
+  const activeSocials = (socials ?? []).filter((s) => !isPlatformExcluded(s));
+  // Duane, round 3: an audience can be real and strategic without being
+  // offered as a direct generation target for these commercial channels
+  // (Daniel's "young people requiring confidence..." stays on his profile,
+  // never here) — filtered from live data, not the frozen snapshot, so a
+  // later eligibility change takes effect on the next brief.
+  const eligibleAudiences = (audiences ?? []).filter((a) => a.eligible_for_generation);
+
+  const lines: string[] = [];
+  lines.push(`# ${client?.name ?? "Client"} — ${periodMonthLabel(plan.period_month)} Monthly Plan: AI Content Brief`);
+  lines.push("");
+  lines.push(
+    "You are proposing structured content for this client's Monthly Plan inside PBOS (Personal Brand Operating System). PBOS owns the client record and this plan — you are only being asked to generate proposed structured content for a person to review and import into it. Return ONLY the JSON described at the end of this brief: no commentary, no markdown code fences, nothing before or after it."
+  );
+  lines.push("");
+  lines.push(`## Planning period`);
+  lines.push(`${periodMonthLabel(plan.period_month)}: ${plan.period_month.slice(0, 7)}-01 to ${plan.period_month.slice(0, 7)}-${String(lastDayOfMonth(plan.period_month)).padStart(2, "0")}.`);
+  lines.push("PBOS assigns publish dates after import from cadence — do not propose or mention scheduling or specific dates.");
+  lines.push("");
+
+  if (guidelines?.content_safeguards?.trim()) {
+    lines.push("## Hard constraints — non-negotiable");
+    lines.push(guidelines.content_safeguards.trim());
+    lines.push("");
+  }
+
+  lines.push("## Client Snapshot");
+  lines.push(`Primary objective: ${plan.primary_objective || "(not set)"}`);
+  if (plan.secondary_objectives) lines.push(`Secondary objectives: ${plan.secondary_objectives}`);
+  if (plan.global_tone_notes) lines.push(`Tone / voice notes: ${plan.global_tone_notes}`);
+  if (plan.preferred_language) lines.push(`Preferred language: ${plan.preferred_language}`);
+  if (plan.avoid_language) lines.push(`Avoid: ${plan.avoid_language}`);
+  if (plan.cta_priorities) lines.push(`CTA priorities: ${plan.cta_priorities}`);
+  if (plan.primary_cta_destination) lines.push(`Primary CTA destination: ${plan.primary_cta_destination}`);
+  if (plan.scope_status) lines.push(`Scope / status notes: ${plan.scope_status}`);
+  lines.push("");
+
+  lines.push("### Audiences");
+  lines.push("Only audiences eligible for generation on this plan are listed — others may exist on the client's strategic profile but must not be targeted here.");
+  for (const a of eligibleAudiences) {
+    const bits = [a.description, a.pain_points && `Pain points: ${a.pain_points}`, a.goals && `Goals: ${a.goals}`].filter(Boolean);
+    lines.push(`- **${a.name}** — ${bits.join(" | ") || "—"}`);
+  }
+  lines.push("");
+  lines.push("### Content pillars");
+  for (const p of snapshot.pillars ?? []) {
+    const bits = [p.description, p.purpose && `Purpose: ${p.purpose}`, p.key_messages && `Key messages: ${p.key_messages}`].filter(Boolean);
+    lines.push(`- **${p.name}** — ${bits.join(" | ") || "—"}`);
+  }
+  lines.push("");
+  lines.push("### Active platforms & rules (the only valid destinations)");
+  for (const account of activeSocials) {
+    const cadence = account.cadence_target ? `${account.cadence_target}/${account.cadence_period}` : "—";
+    lines.push(
+      `- **${platformLabel(account)}** — id: ${account.id}; objective: ${account.objective || "—"}; cadence: ${cadence}; tone: ${account.tone_voice || "—"}; CTA: ${account.cta_strategy || "—"}`
+    );
+  }
+  lines.push("");
+
+  return {
+    clientName: client?.name ?? "Client",
+    plan,
+    pillars: pillars ?? [],
+    eligibleAudiences: eligibleAudiences.map((a) => ({ id: a.id, name: a.name })),
+    activeSocials,
+    existingIdeas: existingIdeas ?? [],
+    header: lines,
+  };
+}
+
+function briefSiblingGuidance(): string[] {
+  return [
+    "## LinkedIn sibling content",
+    "One Master Content idea MAY produce Platform Outputs on both LinkedIn accounts where it's genuinely appropriate — this is expected, not something to avoid. But the two adaptations must differ materially, never the same caption twice:",
+    "- LinkedIn — Daniel Andrews: personal authority — his own experience, opinion, leadership.",
+    "- LinkedIn — CEG: organisational proof — services, outcomes, partnership, professional relevance.",
+    "Write each adaptation_note to reflect that distinct angle explicitly, not as a lightly reworded copy of the other.",
+    "",
+  ];
+}
+
+function briefIdLists(ctx: BriefContext): string[] {
+  const lines: string[] = [];
+  lines.push("Pillar ids available:");
+  for (const p of ctx.pillars) lines.push(`- ${p.id} = ${p.name}`);
+  lines.push("");
+  lines.push("Audience ids available:");
+  for (const a of ctx.eligibleAudiences) lines.push(`- ${a.id} = ${a.name}`);
+  lines.push("");
+  lines.push("Platform ids available (use for lead_platform_id and platform_id — no other platform is valid for this plan):");
+  for (const account of ctx.activeSocials) lines.push(`- ${account.id} = ${platformLabel(account)}`);
+  lines.push("");
+  lines.push("### Allowed formats per platform");
+  lines.push("Every format value must be exactly one of the values listed for that platform's id — never freeform, since format drives production Requirements after import.");
+  for (const account of ctx.activeSocials) {
+    const allowed = allowedFormatsFor(account.platform);
+    if (allowed) lines.push(`- ${platformLabel(account)} (id: ${account.id}): ${allowed.join(", ")}`);
+  }
+  return lines;
+}
+
+/** Generate the brief a person pastes into Claude for a whole month —
+ * client context, volume target, balance rules, and the exact schema
+ * importAiOutput will validate against. Nothing is written; this only reads. */
 export async function exportAiBrief(clientId: string, planId: string): Promise<ActionResult<AiBriefResult>> {
   return runAction(async () => {
     const supabase = await createClient();
-
-    const readiness = await checkReadinessInternal(supabase, clientId);
-    if (!readiness.ready) {
-      throw new UserFacingError(
-        `Monthly Plan not ready:\n${readiness.blockers.map((b) => `- ${b}`).join("\n")}\n\nComplete these on the client's profile (Content Guidelines / Social tab) before generating.`
-      );
-    }
-
-    const [{ data: client }, { data: plan }, { data: guidelines }, { data: pillars }, { data: audiences }, { data: socials }, { data: existingIdeas }] =
-      await Promise.all([
-        supabase.from("clients").select("name").eq("id", clientId).maybeSingle(),
-        supabase.from("monthly_plans").select("*").eq("id", planId).eq("client_id", clientId).maybeSingle(),
-        supabase.from("content_guidelines").select("content_safeguards").eq("client_id", clientId).maybeSingle(),
-        supabase.from("brand_pillars").select("id,name").eq("client_id", clientId).order("sort_order"),
-        supabase
-          .from("audiences")
-          .select("id,name,description,pain_points,goals,eligible_for_generation")
-          .eq("client_id", clientId)
-          .order("sort_order"),
-        supabase.from("social_strategies").select("*").eq("client_id", clientId).order("sort_order"),
-        supabase.from("content_ideas").select("plan_sequence,title,core_message").eq("monthly_plan_id", planId).order("plan_sequence"),
-      ]);
-    if (!plan) throw new UserFacingError("Monthly Plan not found.");
-    const snapshot = (plan.snapshot ?? {}) as unknown as MonthlyPlanSnapshot;
-    // Only accounts this plan can actually use — excluded ones are never
-    // offered as a destination, by id or by name.
-    const activeSocials = (socials ?? []).filter((s) => !isPlatformExcluded(s));
-    // Duane, round 3: an audience can be real and strategic without being
-    // offered as a direct generation target for these commercial channels
-    // (Daniel's "young people requiring confidence..." stays on his profile,
-    // never here) — filtered from live data, not the frozen snapshot, so a
-    // later eligibility change takes effect on the next brief.
-    const eligibleAudiences = (audiences ?? []).filter((a) => a.eligible_for_generation);
-
-    const lines: string[] = [];
-    lines.push(`# ${client?.name ?? "Client"} — ${periodMonthLabel(plan.period_month)} Monthly Plan: AI Content Brief`);
-    lines.push("");
-    lines.push(
-      "You are proposing structured content for this client's Monthly Plan inside PBOS (Personal Brand Operating System). PBOS owns the client record and this plan — you are only being asked to generate proposed structured content for a person to review and import into it. Return ONLY the JSON described at the end of this brief: no commentary, no markdown code fences, nothing before or after it."
-    );
-    lines.push("");
-    lines.push(`## Planning period`);
-    lines.push(`${periodMonthLabel(plan.period_month)}: ${plan.period_month.slice(0, 7)}-01 to ${plan.period_month.slice(0, 7)}-${String(lastDayOfMonth(plan.period_month)).padStart(2, "0")}.`);
-    lines.push("PBOS assigns publish dates after import from cadence — do not propose or mention scheduling or specific dates.");
-    lines.push("");
-
-    if (guidelines?.content_safeguards?.trim()) {
-      lines.push("## Hard constraints — non-negotiable");
-      lines.push(guidelines.content_safeguards.trim());
-      lines.push("");
-    }
-
-    lines.push("## Client Snapshot");
-    lines.push(`Primary objective: ${plan.primary_objective || "(not set)"}`);
-    if (plan.secondary_objectives) lines.push(`Secondary objectives: ${plan.secondary_objectives}`);
-    if (plan.global_tone_notes) lines.push(`Tone / voice notes: ${plan.global_tone_notes}`);
-    if (plan.preferred_language) lines.push(`Preferred language: ${plan.preferred_language}`);
-    if (plan.avoid_language) lines.push(`Avoid: ${plan.avoid_language}`);
-    if (plan.cta_priorities) lines.push(`CTA priorities: ${plan.cta_priorities}`);
-    if (plan.primary_cta_destination) lines.push(`Primary CTA destination: ${plan.primary_cta_destination}`);
-    if (plan.scope_status) lines.push(`Scope / status notes: ${plan.scope_status}`);
-    lines.push("");
-
-    lines.push("### Audiences");
-    lines.push("Only audiences eligible for generation on this plan are listed — others may exist on the client's strategic profile but must not be targeted here.");
-    for (const a of eligibleAudiences) {
-      const bits = [a.description, a.pain_points && `Pain points: ${a.pain_points}`, a.goals && `Goals: ${a.goals}`].filter(Boolean);
-      lines.push(`- **${a.name}** — ${bits.join(" | ") || "—"}`);
-    }
-    lines.push("");
-    lines.push("### Content pillars");
-    for (const p of snapshot.pillars ?? []) {
-      const bits = [p.description, p.purpose && `Purpose: ${p.purpose}`, p.key_messages && `Key messages: ${p.key_messages}`].filter(Boolean);
-      lines.push(`- **${p.name}** — ${bits.join(" | ") || "—"}`);
-    }
-    lines.push("");
-    lines.push("### Active platforms & rules (the only valid destinations)");
-    for (const account of activeSocials) {
-      const cadence = account.cadence_target ? `${account.cadence_target}/${account.cadence_period}` : "—";
-      lines.push(
-        `- **${platformLabel(account)}** — id: ${account.id}; objective: ${account.objective || "—"}; cadence: ${cadence}; tone: ${account.tone_voice || "—"}; CTA: ${account.cta_strategy || "—"}`
-      );
-    }
-    lines.push("");
+    const ctx = await buildBriefContext(supabase, clientId, planId);
+    const { activeSocials, existingIdeas } = ctx;
+    const lines = [...ctx.header];
 
     // Duane, round 3: an explicit, PBOS-calculated volume target — not
     // hardcoded, not left for the AI to guess — from each active account's
@@ -1151,18 +1232,11 @@ export async function exportAiBrief(clientId: string, planId: string): Promise<A
     );
     lines.push("");
 
-    lines.push("## LinkedIn sibling content");
-    lines.push(
-      "One Master Content idea MAY produce Platform Outputs on both LinkedIn accounts where it's genuinely appropriate — this is expected given the volume target above, not something to avoid. But the two adaptations must differ materially, never the same caption twice:"
-    );
-    lines.push("- LinkedIn — Daniel Andrews: personal authority — his own experience, opinion, leadership.");
-    lines.push("- LinkedIn — CEG: organisational proof — services, outcomes, partnership, professional relevance.");
-    lines.push("Write each adaptation_note to reflect that distinct angle explicitly, not as a lightly reworded copy of the other.");
-    lines.push("");
+    lines.push(...briefSiblingGuidance());
 
     lines.push("### Already planned this month — do not duplicate");
-    if ((existingIdeas ?? []).length > 0) {
-      for (const idea of existingIdeas ?? []) {
+    if (existingIdeas.length > 0) {
+      for (const idea of existingIdeas) {
         lines.push(`- ${planSequenceLabel(idea.plan_sequence)}: "${idea.title}" — ${idea.core_message || "(no core message set)"}`);
       }
     } else {
@@ -1177,23 +1251,457 @@ export async function exportAiBrief(clientId: string, planId: string): Promise<A
     lines.push(JSON.stringify(OUTPUT_SCHEMA_EXAMPLE, null, 2));
     lines.push("```");
     lines.push("");
-    lines.push("Pillar ids available:");
-    for (const p of pillars ?? []) lines.push(`- ${p.id} = ${p.name}`);
-    lines.push("");
-    lines.push("Audience ids available:");
-    for (const a of eligibleAudiences) lines.push(`- ${a.id} = ${a.name}`);
-    lines.push("");
-    lines.push("Platform ids available (use for lead_platform_id and platform_outputs.platform_id — no other platform is valid for this plan):");
-    for (const account of activeSocials) lines.push(`- ${account.id} = ${platformLabel(account)}`);
-    lines.push("");
-    lines.push("### Allowed formats per platform");
-    lines.push("Every platform_outputs[].format value must be exactly one of the values listed for that platform's id — never freeform, since format drives production Requirements after import.");
-    for (const account of activeSocials) {
-      const allowed = allowedFormatsFor(account.platform);
-      if (allowed) lines.push(`- ${platformLabel(account)} (id: ${account.id}): ${allowed.join(", ")}`);
-    }
+    lines.push(...briefIdLists(ctx));
 
     return { brief: lines.join("\n") };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Level 2 (Duane): regenerate ONE Master Content item, or ONE Platform
+// Output, in place. The record keeps its id, sequence number, publish date,
+// media and every other Platform Output — only the words change. Never a
+// duplicate. On an approved plan the regeneration lands as a change request
+// on that item instead of writing straight through.
+// ---------------------------------------------------------------------------
+
+export type RegenerationTarget = { kind: "master"; ideaId: string } | { kind: "output"; ideaId: string; outputId: string };
+
+const ITEM_MASTER_SCHEMA = {
+  master_content: {
+    title: "string",
+    core_message: "string — the single-sentence takeaway",
+    purpose: "string",
+    pillar_id: "string — one of the pillar ids listed below, or omit to keep the current pillar",
+    audience_id: "string — one of the audience ids listed below, or omit to keep the current audience",
+    hook: "string — the opening line",
+    cta: "string",
+    cta_destination:
+      "string — an actual destination ONLY if you were given one; otherwise return exactly \"Needs confirmation\" — never construct or guess a URL",
+    lead_platform_id: "string — one of the platform ids listed below, or omit to keep the current lead platform",
+    lead_draft_copy: "string — the one full draft of publish-ready copy, for the lead platform",
+  },
+  platform_outputs: [
+    {
+      platform_id: "string — MUST be one of this item's EXISTING platform ids listed below; each updates that existing output in place",
+      format: "string — one of that platform's allowed formats",
+      adaptation_note: "string — how this version should differ from the lead draft; not a finished caption",
+      media_brief: "string — what media this needs, in words",
+      destination_link: "string — optional, only if genuinely different from the Master Content CTA destination",
+    },
+  ],
+};
+
+const ITEM_OUTPUT_SCHEMA = {
+  platform_output: {
+    format: "string — one of this platform's allowed formats",
+    adaptation_note: "string — how this version should differ from the Master Content lead draft; not a finished caption",
+    media_brief: "string — what media this needs, in words",
+    destination_link: "string — optional, only if genuinely different from the Master Content CTA destination",
+  },
+};
+
+/** The brief for regenerating one item — same client context and rules as
+ * the whole-month brief, plus the item as it stands, every other idea this
+ * month (so the replacement doesn't duplicate one), and why it's being
+ * redone. */
+export async function exportItemBrief(
+  clientId: string,
+  planId: string,
+  target: RegenerationTarget,
+  reason: string
+): Promise<ActionResult<AiBriefResult>> {
+  return runAction(async () => {
+    const supabase = await createClient();
+    const ctx = await buildBriefContext(supabase, clientId, planId);
+    const [{ data: idea }, { data: outputs }] = await Promise.all([
+      supabase.from("content_ideas").select("*").eq("id", target.ideaId).eq("monthly_plan_id", planId).maybeSingle(),
+      supabase.from("content_outputs").select("*").eq("content_id", target.ideaId).order("sort_order"),
+    ]);
+    if (!idea) throw new UserFacingError("That Master Content item isn't on this plan.");
+    const socialById = new Map(ctx.activeSocials.map((s) => [s.id, s]));
+    const pillarName = new Map(ctx.pillars.map((p) => [p.id, p.name]));
+    const audienceName = new Map(ctx.eligibleAudiences.map((a) => [a.id, a.name]));
+    const seq = planSequenceLabel(idea.plan_sequence);
+
+    const lines = [...ctx.header, ...briefSiblingGuidance()];
+
+    lines.push("### Other Master Content this month — do not duplicate any of these");
+    const others = ctx.existingIdeas.filter((i) => i.id !== idea.id);
+    if (others.length > 0) {
+      for (const other of others) lines.push(`- ${planSequenceLabel(other.plan_sequence)}: "${other.title}" — ${other.core_message || "(no core message set)"}`);
+    } else {
+      lines.push("(no other Master Content on this plan yet)");
+    }
+    lines.push("");
+
+    const describeIdea = () => {
+      lines.push(`- Title: ${idea.title}`);
+      lines.push(`- Core message: ${idea.core_message || "—"}`);
+      lines.push(`- Purpose: ${idea.purpose || "—"}`);
+      lines.push(`- Pillar: ${idea.pillar_id ? (pillarName.get(idea.pillar_id) ?? "(not an approved pillar)") : "—"}`);
+      lines.push(`- Audience: ${idea.audience_id ? (audienceName.get(idea.audience_id) ?? "(not eligible for generation)") : "—"}`);
+      lines.push(`- Hook: ${idea.hook || "—"}`);
+      lines.push(`- CTA: ${idea.cta || "—"} → ${idea.cta_destination || "—"}`);
+      lines.push(`- Lead platform: ${idea.lead_platform_id ? (socialById.get(idea.lead_platform_id) ? platformLabel(socialById.get(idea.lead_platform_id)!) : idea.lead_platform) : "—"}`);
+      lines.push(`- Lead draft copy: ${idea.lead_draft_copy || "—"}`);
+    };
+
+    if (target.kind === "master") {
+      lines.push(`## Regenerate ONE Master Content item: ${seq}`);
+      lines.push("This item is being regenerated on its own. The rest of the month stays exactly as it is. Keep its place in the plan — same pillar and audience unless the reason below says otherwise — and write a genuinely better idea, not a rewording of this one.");
+      lines.push("");
+      lines.push("### The item as it stands");
+      describeIdea();
+      lines.push("");
+      lines.push("### Its existing Platform Outputs (update each in place — do not add or remove platforms)");
+      for (const output of outputs ?? []) {
+        const account = output.social_account_id ? socialById.get(output.social_account_id) : undefined;
+        lines.push(`- ${account ? platformLabel(account) : output.platform} — platform_id: ${output.social_account_id ?? "(none)"}; format: ${output.format || "—"}; adaptation note: ${output.adaptation_note || "—"}`);
+      }
+      lines.push("");
+      lines.push(`### Why it's being regenerated`);
+      lines.push(reason.trim() || "(no reason given — treat the current idea as too weak and replace it with a stronger one on the same pillar)");
+      lines.push("");
+      lines.push("## What to return");
+      lines.push("Return valid JSON only, matching this exact shape (schema description, not literal values). platform_outputs may only reference this item's existing platform ids above — one entry per output you want updated; omit an output to leave it untouched.");
+      lines.push("");
+      lines.push("```json");
+      lines.push(JSON.stringify(ITEM_MASTER_SCHEMA, null, 2));
+      lines.push("```");
+    } else {
+      const output = (outputs ?? []).find((o) => o.id === target.outputId);
+      if (!output) throw new UserFacingError("That Platform Output isn't on this item.");
+      const account = output.social_account_id ? socialById.get(output.social_account_id) : undefined;
+      const label = account ? platformLabel(account) : output.platform;
+      lines.push(`## Regenerate ONE Platform Output: ${seq} on ${label}`);
+      lines.push("The Master Content idea is fine — only this one platform adaptation is being redone. Every other output on this item, and the idea itself, stay exactly as they are.");
+      lines.push("");
+      lines.push("### The Master Content it belongs to (do not change)");
+      describeIdea();
+      lines.push("");
+      lines.push(`### The output as it stands (${label}${account ? `, platform_id: ${account.id}` : ""})`);
+      lines.push(`- Format: ${output.format || "—"}`);
+      lines.push(`- Adaptation note: ${output.adaptation_note || "—"}`);
+      lines.push(`- Media brief: ${output.media_brief || "—"}`);
+      lines.push(`- Destination link: ${output.destination_link || "—"}`);
+      const siblings = (outputs ?? []).filter((o) => o.id !== output.id && o.social_account_id && normaliseAccountKey(socialById.get(o.social_account_id)?.platform ?? o.platform) === normaliseAccountKey(account?.platform ?? output.platform));
+      if (siblings.length > 0) {
+        lines.push("");
+        lines.push("### Sibling output(s) on the same platform family — this one must differ materially from them");
+        for (const sib of siblings) {
+          const sibAccount = sib.social_account_id ? socialById.get(sib.social_account_id) : undefined;
+          lines.push(`- ${sibAccount ? platformLabel(sibAccount) : sib.platform}: ${sib.adaptation_note || "—"}`);
+        }
+      }
+      lines.push("");
+      lines.push(`### Why it's being regenerated`);
+      lines.push(reason.trim() || "(no reason given — treat the current adaptation as too weak for this platform and write a stronger one)");
+      lines.push("");
+      lines.push("## What to return");
+      lines.push("Return valid JSON only, matching this exact shape (schema description, not literal values):");
+      lines.push("");
+      lines.push("```json");
+      lines.push(JSON.stringify(ITEM_OUTPUT_SCHEMA, null, 2));
+      lines.push("```");
+    }
+    lines.push("");
+    lines.push(...briefIdLists(ctx));
+    return { brief: lines.join("\n") };
+  });
+}
+
+export interface ItemRegenerationResult {
+  /** True when the plan is approved and the regeneration was recorded as a
+   * change request instead of applied. */
+  queuedAsChangeRequest: boolean;
+  outputsUpdated: number;
+  warnings: string[];
+}
+
+interface ParsedItemRegeneration {
+  master?: Partial<Record<"title" | "core_message" | "purpose" | "pillar_id" | "audience_id" | "hook" | "cta" | "cta_destination" | "lead_platform_id" | "lead_draft_copy", string>>;
+  outputs: { outputId: string; format: string; adaptation_note: string; media_brief: string; destination_link: string }[];
+}
+
+/** Validate a single-item regeneration against the client's real records —
+ * the same checks as the whole-month import — and resolve it onto the
+ * EXISTING records. Nothing is written here. */
+async function parseItemRegeneration(
+  supabase: SupabaseClient,
+  clientId: string,
+  planId: string,
+  target: RegenerationTarget,
+  jsonText: string
+): Promise<ParsedItemRegeneration> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(
+      jsonText
+        .trim()
+        .replace(/^```(?:json)?\s*/i, "")
+        .replace(/```\s*$/i, "")
+    );
+  } catch {
+    throw new UserFacingError("That isn't valid JSON — paste exactly what Claude returned, nothing else.");
+  }
+  if (typeof parsed !== "object" || parsed === null) throw new UserFacingError("Expected a JSON object.");
+  const body = parsed as { master_content?: unknown; platform_outputs?: unknown; platform_output?: unknown };
+
+  const [{ data: idea }, { data: outputs }, { data: pillars }, { data: audiences }, { data: socials }] = await Promise.all([
+    supabase.from("content_ideas").select("id").eq("id", target.ideaId).eq("monthly_plan_id", planId).eq("client_id", clientId).maybeSingle(),
+    supabase.from("content_outputs").select("id,social_account_id,platform").eq("content_id", target.ideaId),
+    supabase.from("brand_pillars").select("id").eq("client_id", clientId),
+    supabase.from("audiences").select("id,name,eligible_for_generation").eq("client_id", clientId),
+    supabase.from("social_strategies").select("*").eq("client_id", clientId),
+  ]);
+  if (!idea) throw new UserFacingError("That Master Content item isn't on this plan.");
+  const pillarIds = new Set((pillars ?? []).map((p) => p.id));
+  const audienceById = new Map((audiences ?? []).map((a) => [a.id, a]));
+  const socialById = new Map((socials ?? []).map((s) => [s.id, s]));
+  const outputList = outputs ?? [];
+  const errors: string[] = [];
+
+  const validateOutputFields = (label: string, raw: RawPlatformOutput, platform: string) => {
+    const format = str(raw.format);
+    const allowed = allowedFormatsFor(platform);
+    if (allowed && !allowed.includes(format)) errors.push(`${label}: format "${format || "(blank)"}" isn't valid here — must be one of ${allowed.join(", ")}.`);
+    return { format, adaptation_note: str(raw.adaptation_note), media_brief: str(raw.media_brief), destination_link: str(raw.destination_link) };
+  };
+
+  const result: ParsedItemRegeneration = { outputs: [] };
+
+  if (target.kind === "master") {
+    const raw = (typeof body.master_content === "object" && body.master_content !== null ? body.master_content : null) as RawMasterContent | null;
+    if (!raw) throw new UserFacingError("Expected a master_content object.");
+    if (!str(raw.title)) errors.push("master_content: title is required.");
+    const pillarId = str(raw.pillar_id);
+    if (pillarId && !pillarIds.has(pillarId)) errors.push(`master_content: pillar_id "${pillarId}" doesn't match one of this client's approved pillars.`);
+    const audienceId = str(raw.audience_id);
+    if (audienceId) {
+      const audience = audienceById.get(audienceId);
+      if (!audience) errors.push(`master_content: audience_id "${audienceId}" doesn't match one of this client's audiences.`);
+      else if (!audience.eligible_for_generation) errors.push(`master_content: audience_id resolves to "${audience.name}", which isn't eligible for generation on this plan.`);
+    }
+    const leadPlatformId = str(raw.lead_platform_id);
+    if (leadPlatformId) {
+      const account = socialById.get(leadPlatformId);
+      if (!account) errors.push(`master_content: lead_platform_id "${leadPlatformId}" doesn't match a platform on this client's Social tab.`);
+      else if (isPlatformExcluded(account)) errors.push(`master_content: lead_platform_id resolves to ${platformLabel(account)}, which is excluded for this plan.`);
+    }
+    result.master = {
+      title: str(raw.title),
+      core_message: str(raw.core_message),
+      purpose: str(raw.purpose),
+      hook: str(raw.hook),
+      cta: str(raw.cta),
+      cta_destination: normaliseCtaDestination(str(raw.cta_destination)),
+      lead_draft_copy: str(raw.lead_draft_copy),
+      ...(pillarId ? { pillar_id: pillarId } : {}),
+      ...(audienceId ? { audience_id: audienceId } : {}),
+      ...(leadPlatformId ? { lead_platform_id: leadPlatformId } : {}),
+    };
+    const rawOutputs = Array.isArray(body.platform_outputs) ? (body.platform_outputs as RawPlatformOutput[]) : [];
+    const seen = new Set<string>();
+    rawOutputs.forEach((item, i) => {
+      const label = `platform_outputs[${i}]`;
+      const platformId = str(item.platform_id);
+      const existing = outputList.find((o) => o.social_account_id === platformId);
+      if (!platformId || !existing) {
+        errors.push(`${label}: platform_id "${platformId || "(blank)"}" isn't one of this item's existing outputs — a regeneration never adds platforms.`);
+        return;
+      }
+      if (seen.has(platformId)) {
+        errors.push(`${label}: duplicate entry for the same platform.`);
+        return;
+      }
+      seen.add(platformId);
+      const account = socialById.get(platformId);
+      result.outputs.push({ outputId: existing.id, ...validateOutputFields(label, item, account?.platform ?? existing.platform) });
+    });
+  } else {
+    const existing = outputList.find((o) => o.id === target.outputId);
+    if (!existing) throw new UserFacingError("That Platform Output isn't on this item.");
+    const raw = (typeof body.platform_output === "object" && body.platform_output !== null ? body.platform_output : null) as RawPlatformOutput | null;
+    if (!raw) throw new UserFacingError("Expected a platform_output object.");
+    const account = existing.social_account_id ? socialById.get(existing.social_account_id) : undefined;
+    result.outputs.push({ outputId: existing.id, ...validateOutputFields("platform_output", raw, account?.platform ?? existing.platform) });
+  }
+
+  if (errors.length > 0) throw new UserFacingError(`Couldn't apply — fix these and try again:\n${errors.join("\n")}`);
+  return result;
+}
+
+/** Write a parsed regeneration onto the existing records. Shared by the
+ * direct path (draft plan) and applyChangeRequest (approved plan). */
+async function applyItemRegenerationInternal(
+  supabase: SupabaseClient,
+  clientId: string,
+  planId: string,
+  target: RegenerationTarget,
+  parsed: ParsedItemRegeneration
+): Promise<{ outputsUpdated: number; warnings: string[] }> {
+  const warnings: string[] = [];
+  if (parsed.master) {
+    const patch: Database["public"]["Tables"]["content_ideas"]["Update"] = { ...parsed.master };
+    if (parsed.master.lead_platform_id) {
+      const { data: account } = await supabase.from("social_strategies").select("platform,account_name").eq("id", parsed.master.lead_platform_id).maybeSingle();
+      patch.lead_platform = account ? platformLabel(account) : "";
+    }
+    const { error } = await supabase.from("content_ideas").update(patch).eq("id", target.ideaId).eq("monthly_plan_id", planId);
+    if (error) throw new Error(error.message);
+  }
+  let outputsUpdated = 0;
+  for (const output of parsed.outputs) {
+    const { error } = await supabase
+      .from("content_outputs")
+      .update({ format: output.format, adaptation_note: output.adaptation_note, media_brief: output.media_brief, destination_link: output.destination_link })
+      .eq("id", output.outputId)
+      .eq("content_id", target.ideaId);
+    if (error) throw new Error(error.message);
+    outputsUpdated += 1;
+  }
+  // Production requirements follow the content — best effort, as on import.
+  try {
+    await reconcilePlanRequirementsInternal(supabase, clientId, planId);
+  } catch (reconcileError) {
+    warnings.push(`Couldn't recompute requirements: ${reconcileError instanceof Error ? reconcileError.message : String(reconcileError)}`);
+  }
+  return { outputsUpdated, warnings };
+}
+
+/** Apply (or, on an approved plan, queue) a single-item regeneration. */
+export async function importItemRegeneration(
+  clientId: string,
+  planId: string,
+  target: RegenerationTarget,
+  jsonText: string,
+  reason: string
+): Promise<ActionResult<ItemRegenerationResult>> {
+  return runAction(async () => {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    const { data: plan } = await supabase.from("monthly_plans").select("status").eq("id", planId).eq("client_id", clientId).maybeSingle();
+    if (!plan) throw new UserFacingError("Monthly Plan not found.");
+    const parsed = await parseItemRegeneration(supabase, clientId, planId, target, jsonText);
+
+    if (isPlanLocked(plan.status)) {
+      if (plan.status === "closed") throw new UserFacingError("This Monthly Plan is closed — reopen it before requesting changes.");
+      const { error } = await supabase.from("master_content_change_requests").insert({
+        client_id: clientId,
+        monthly_plan_id: planId,
+        content_id: target.ideaId,
+        kind: "regeneration",
+        field: target.kind === "master" ? "master_content" : "platform_output",
+        proposed_value: JSON.stringify({ target, parsed }),
+        reason: reason.trim(),
+        requested_by: user?.id ?? null,
+      });
+      if (error) throw new Error(error.message);
+      revalidatePlan(clientId, planId);
+      return { queuedAsChangeRequest: true, outputsUpdated: 0, warnings: [] };
+    }
+
+    const applied = await applyItemRegenerationInternal(supabase, clientId, planId, target, parsed);
+    revalidatePlan(clientId, planId);
+    return { queuedAsChangeRequest: false, ...applied };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Change requests on an approved plan (Duane): one item, one change, reviewed
+// then applied — the approved version stays exactly as approved until then.
+// ---------------------------------------------------------------------------
+
+export async function requestPlanContentChange(
+  clientId: string,
+  planId: string,
+  ideaId: string,
+  field: string,
+  proposedValue: string,
+  reason: string
+): Promise<ActionResult<{ id: string }>> {
+  if (!CHANGE_REQUEST_FIELDS.some((f) => f.value === field)) return { ok: false, message: "That field can't be changed through a change request." };
+  if (field === "title" && !proposedValue.trim()) return { ok: false, message: "Title can't be empty." };
+  return runAction(async () => {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    const { data: idea } = await supabase.from("content_ideas").select("*").eq("id", ideaId).eq("monthly_plan_id", planId).eq("client_id", clientId).maybeSingle();
+    if (!idea) throw new UserFacingError("That Master Content item isn't on this plan.");
+    const previous = String((idea as Record<string, unknown>)[field] ?? "");
+    const { data, error } = await supabase
+      .from("master_content_change_requests")
+      .insert({
+        client_id: clientId,
+        monthly_plan_id: planId,
+        content_id: ideaId,
+        kind: "field",
+        field,
+        previous_value: previous,
+        proposed_value: proposedValue,
+        reason: reason.trim(),
+        requested_by: user?.id ?? null,
+      })
+      .select("id")
+      .single();
+    if (error) throw new Error(error.message);
+    revalidatePlan(clientId, planId);
+    return { id: data.id };
+  });
+}
+
+export async function applyChangeRequest(clientId: string, requestId: string, note = ""): Promise<ActionResult> {
+  return runAction(async () => {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    const { data: request } = await supabase.from("master_content_change_requests").select("*").eq("id", requestId).eq("client_id", clientId).maybeSingle();
+    if (!request) throw new UserFacingError("Change request not found.");
+    if (request.state !== "open") throw new UserFacingError("This change request has already been resolved.");
+
+    if (request.kind === "field") {
+      if (!CHANGE_REQUEST_FIELDS.some((f) => f.value === request.field)) throw new UserFacingError("Unknown field on this change request.");
+      const { error } = await supabase
+        .from("content_ideas")
+        .update(fieldPatch<Database["public"]["Tables"]["content_ideas"]["Update"]>(request.field as PlanContentField, request.proposed_value))
+        .eq("id", request.content_id);
+      if (error) throw new Error(error.message);
+    } else {
+      const payload = JSON.parse(request.proposed_value) as { target: RegenerationTarget; parsed: ParsedItemRegeneration };
+      await applyItemRegenerationInternal(supabase, clientId, request.monthly_plan_id, payload.target, payload.parsed);
+    }
+
+    const { error } = await supabase
+      .from("master_content_change_requests")
+      .update({ state: "applied", resolved_by: user?.id ?? null, resolved_at: new Date().toISOString(), resolution_note: note.trim() })
+      .eq("id", requestId);
+    if (error) throw new Error(error.message);
+    revalidatePlan(clientId, request.monthly_plan_id);
+    return undefined;
+  });
+}
+
+export async function declineChangeRequest(clientId: string, requestId: string, note = ""): Promise<ActionResult> {
+  return runAction(async () => {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    const { data: request } = await supabase.from("master_content_change_requests").select("id,state,monthly_plan_id").eq("id", requestId).eq("client_id", clientId).maybeSingle();
+    if (!request) throw new UserFacingError("Change request not found.");
+    if (request.state !== "open") throw new UserFacingError("This change request has already been resolved.");
+    const { error } = await supabase
+      .from("master_content_change_requests")
+      .update({ state: "declined", resolved_by: user?.id ?? null, resolved_at: new Date().toISOString(), resolution_note: note.trim() })
+      .eq("id", requestId);
+    if (error) throw new Error(error.message);
+    revalidatePlan(clientId, request.monthly_plan_id);
+    return undefined;
   });
 }
 
