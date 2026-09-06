@@ -33,9 +33,13 @@ import { schedulePlanOutputs, normalisePostingDays, SIBLING_GAP_DAYS } from "@/l
 type SupabaseClient = Awaited<ReturnType<typeof createClient>>;
 
 function revalidatePlan(clientId: string, planId?: string) {
-  revalidatePath(`/clients/${clientId}/plans`);
+  // Plan list and every plan page under it — the same Master Content record
+  // is shown on the Content page too (two views, one record), so that
+  // refreshes as well, plus the calendar which reads publish dates.
+  revalidatePath(`/clients/${clientId}/plans`, "layout");
   if (planId) revalidatePath(`/clients/${clientId}/plans/${planId}`);
   revalidatePath(`/clients/${clientId}/content`);
+  revalidatePath("/calendar");
   revalidatePath("/");
 }
 

@@ -13,6 +13,9 @@ import { PRODUCTION_CHECKLIST_STEPS, productionChecklistItemDone } from "@/lib/p
 
 function revalidateContent(clientId: string) {
   revalidatePath(`/clients/${clientId}/content`);
+  // The Monthly Plan and the Content page are two views of the same Master
+  // Content record (Duane) — a save on either must show on both at once.
+  revalidatePath(`/clients/${clientId}/plans`, "layout");
   revalidatePath(`/clients/${clientId}/actions`);
   revalidatePath("/calendar");
   revalidatePath("/");
