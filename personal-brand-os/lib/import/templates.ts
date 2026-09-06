@@ -15,6 +15,8 @@ RULES — follow these exactly:
 8. For UPDATE imports into an existing client: include ONLY the sections and fields that changed. An omitted field always keeps its current value — never restate a field just to include it, and never use blank values to try to clear something. Omitted sections are left completely untouched.
 9. For UPDATE imports, repeatable records (content pillars, audiences, social strategies, authority opportunities, actions) are matched to what already exists — an update never appends a second copy. If the record's PBOS id was given to you, include it as "id" (actions use "action_id"); that is always the safest match. Without an id, PBOS matches on the name, ignoring numbering, arrow style and punctuation, so "Pillar 1 — AI Opportunity → Commercial Decision" is recognised as the existing "AI Opportunity -> Commercial Decision". Never invent an id.
 10. A repeatable section may be wrapped as {"mode": "...", "items": [...]} when the default isn't right: "replace" means the list you supply is definitive (anything missing is offered for deletion), "append" means every record is genuinely new. Plain lists mean "update what matches, add what's new" — the default, and correct almost always.
+12. content_guidelines is the client's permanent content direction (tone, language, CTA priorities, hard constraints) that every Monthly Plan inherits. content_safeguards is a HARD constraint the AI must always obey — only fill it when the client actually stated one (safeguarding, legal, regulatory); never invent one.
+13. social_strategies now carries each account's Platform Strategy. role_in_strategy is one of: authority, discovery, community, conversion, commentary, long-form education, secondary distribution. cross_posting_rule is one of: allow | adapt | selective | never. target_cadence is {"value": 3, "period": "week"} (or "month"). posting_days lists the days the account publishes on, e.g. ["Mon", "Tue", "Wed", "Thu", "Fri"]. primary_audience / secondary_audience must exactly match an audience name in this import or in the existing-client context — omit if unsure. account_status is one of: active | planned | inactive; account_type is one of: personal | company | programme.
 11. For UPDATE imports, identity / matching fields may be repeated even when unchanged where the schema marks them REQUIRED. These are: overview.name, a record's permanent "id" / "action_id", and any required record identity field — name (audiences, content pillars), platform (social strategies), type (authority opportunities), title (actions). Repeating an identity field so PBOS can match the record does NOT count as restating unchanged data. overview.name must ALWAYS be included so PBOS can identify the client, even when the name itself has not changed.
 
 {
@@ -37,6 +39,15 @@ RULES — follow these exactly:
     "expertise": "", "unique_story": "", "differentiators": "",
     "core_beliefs": "", "contrarian_opinions": ""
   },
+  "content_guidelines": {
+    "secondary_objectives": "What content should achieve beyond the North Star this period",
+    "tone_voice_notes": "How the client sounds — permanent tone / voice guidance every plan inherits",
+    "preferred_language": "Words, phrases and framing to use",
+    "avoid_language": "Words, phrases and framing never to use",
+    "cta_priorities": "Which calls to action matter most, in order",
+    "primary_cta_destination": "The default place a CTA sends people (URL, booking link, DM, etc.)",
+    "content_safeguards": "HARD constraint the AI must always obey — only if the client stated one; otherwise omit"
+  },
   "audiences": [
     {
       "id": "internal PBOS id — include when updating a known existing record; omit for genuinely new records",
@@ -52,9 +63,20 @@ RULES — follow these exactly:
       "account_name": "The account/channel name, e.g. Daniel Andrews or CEG Programme",
       "owner_brand": "Who the account belongs to, e.g. Daniel / CEG",
       "url": "The account URL — social URLs live HERE, never in overview",
+      "account_type": "personal | company | programme",
+      "account_status": "active | planned | inactive",
       "objective": "", "audience": "",
       "content_types": "", "posting_frequency": "", "growth_strategy": "",
-      "engagement_strategy": "", "cta_strategy": ""
+      "engagement_strategy": "", "cta_strategy": "",
+      "role_in_strategy": "authority | discovery | community | conversion | commentary | long-form education | secondary distribution",
+      "target_cadence": { "value": 3, "period": "week" },
+      "posting_days": ["Mon", "Tue", "Wed", "Thu", "Fri"],
+      "primary_audience": "exact audience name (this import or existing context), or omit",
+      "secondary_audience": "exact audience name (this import or existing context), or omit",
+      "cross_posting_rule": "allow | adapt | selective | never",
+      "tone_voice": "", "preferred_formats": "", "typical_length": "",
+      "commercial_balance": "", "how_to_open": "", "dont_post_here": "",
+      "repurposing_rules": "", "ai_generation_instructions": ""
     }
   ],
   "content_pillars": [

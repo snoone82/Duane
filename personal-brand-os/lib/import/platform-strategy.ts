@@ -15,6 +15,7 @@
 
 import { normaliseRecordName } from "@/lib/import/record-match";
 import { PLATFORM_ROLES, CROSS_POST_RULES } from "@/lib/platform-strategy";
+import { WEEKDAYS } from "@/lib/plan-scheduling";
 
 export interface ParsedStrategyAccount {
   /** Everything needed to find the account this belongs to. */
@@ -93,7 +94,7 @@ const ROLE_KEYWORDS: [string, string[]][] = [
   ["secondary", ["secondary", "supporting", "lighter", "additional distribution"]],
 ];
 
-function matchRole(raw: string): { value: string | null; warning?: string } {
+export function matchRole(raw: string): { value: string | null; warning?: string } {
   const text = raw.trim().toLowerCase();
   if (!text) return { value: null };
   // An exact enum value always wins.
@@ -128,7 +129,7 @@ function matchRole(raw: string): { value: string | null; warning?: string } {
   return { value: null, warning: `Role "${raw}" didn't match a known role — left unchanged.` };
 }
 
-function matchCrossPost(raw: string): { value: string | null; warning?: string } {
+export function matchCrossPost(raw: string): { value: string | null; warning?: string } {
   const text = raw.trim().toLowerCase();
   if (!text) return { value: null };
   const exact = CROSS_POST_RULES.find((r) => r.value === text || r.short.toLowerCase() === text);
@@ -144,6 +145,71 @@ function text(raw: unknown): string {
   if (raw === null || raw === undefined) return "";
   if (typeof raw === "number") return String(raw);
   return typeof raw === "string" ? raw.trim() : "";
+}
+
+/** Cadence as {value, period}, a bare number, or "3 per week". Shared with
+ * the client-profile importer so both read it the same way. */
+export function parseCadence(raw: unknown): { value: { target: number; period: "week" | "month" } | null; warning?: string } {
+  if (raw === null || raw === undefined || raw === "") return { value: null };
+  let value: number | null = null;
+  let period: "week" | "month" | null = null;
+  if (typeof raw === "object" && !Array.isArray(raw)) {
+    const c = raw as Record<string, unknown>;
+    const n = Number(c.value);
+    if (Number.isFinite(n)) value = n;
+    const p = text(c.period).toLowerCase();
+    if (p.startsWith("week")) period = "week";
+    else if (p.startsWith("month")) period = "month";
+  } else {
+    const s = text(raw);
+    const n = Number(s.match(/\d+(\.\d+)?/)?.[0]);
+    if (Number.isFinite(n)) value = n;
+    if (/month/i.test(s)) period = "month";
+    else if (/week/i.test(s)) period = "week";
+  }
+  if (value === null || value < 0) return { value: null, warning: "Target cadence wasn't a number — left unchanged." };
+  return {
+    value: { target: Math.round(value), period: period ?? "week" },
+    warning: period ? undefined : "Cadence period wasn't stated — read as per week.",
+  };
+}
+
+/** Posting days as ISO numbers [1..7], day names ("Mon", "Monday"), or a
+ * comma-separated string of either. Unknown tokens are reported, never
+ * guessed. */
+export function parsePostingDays(raw: unknown): { value: number[] | null; warning?: string } {
+  if (raw === null || raw === undefined || raw === "") return { value: null };
+  const tokens: unknown[] = Array.isArray(raw) ? raw : text(raw).split(/[,;/|]+/);
+  const days = new Set<number>();
+  const unknown: string[] = [];
+  for (const token of tokens) {
+    if (typeof token === "number" && Number.isInteger(token) && token >= 1 && token <= 7) {
+      days.add(token);
+      continue;
+    }
+    const t = text(token).toLowerCase();
+    if (!t) continue;
+    if (/^[1-7]$/.test(t)) {
+      days.add(Number(t));
+      continue;
+    }
+    if (t === "weekdays" || t === "mon-fri" || t === "monday-friday") {
+      [1, 2, 3, 4, 5].forEach((d) => days.add(d));
+      continue;
+    }
+    if (t === "every day" || t === "daily" || t === "all") {
+      [1, 2, 3, 4, 5, 6, 7].forEach((d) => days.add(d));
+      continue;
+    }
+    const day = WEEKDAYS.find((d) => d.label.toLowerCase() === t || d.long.toLowerCase() === t || d.long.toLowerCase().startsWith(t));
+    if (day) days.add(day.value);
+    else unknown.push(String(token));
+  }
+  if (days.size === 0) return { value: null, warning: `Posting days "${text(raw) || JSON.stringify(raw)}" weren't recognised — left unchanged.` };
+  return {
+    value: [...days].sort((a, b) => a - b),
+    warning: unknown.length ? `Posting days: ignored unrecognised "${unknown.join('", "')}".` : undefined,
+  };
 }
 
 function stripFences(input: string): string {
@@ -219,32 +285,12 @@ export function parsePlatformStrategyImport(input: string): StrategyParseResult 
     }
 
     // Cadence: {value, period}, or a bare number, or "3 per week".
-    const cadence = record.target_cadence;
-    if (cadence !== null && cadence !== undefined && cadence !== "") {
-      let value: number | null = null;
-      let period: string | null = null;
-      if (typeof cadence === "object" && !Array.isArray(cadence)) {
-        const c = cadence as Record<string, unknown>;
-        const n = Number(c.value);
-        if (Number.isFinite(n)) value = n;
-        const p = text(c.period).toLowerCase();
-        if (p.startsWith("week")) period = "week";
-        else if (p.startsWith("month")) period = "month";
-      } else {
-        const s = text(cadence);
-        const n = Number(s.match(/\d+(\.\d+)?/)?.[0]);
-        if (Number.isFinite(n)) value = n;
-        if (/month/i.test(s)) period = "month";
-        else if (/week/i.test(s)) period = "week";
-      }
-      if (value !== null && value >= 0) {
-        entry.fields.cadence_target = Math.round(value);
-        entry.fields.cadence_period = period ?? "week";
-        if (!period) entry.warnings.push("Cadence period wasn't stated — read as per week.");
-      } else {
-        entry.warnings.push("Target cadence wasn't a number — left unchanged.");
-      }
+    const cadence = parseCadence(record.target_cadence);
+    if (cadence.value) {
+      entry.fields.cadence_target = cadence.value.target;
+      entry.fields.cadence_period = cadence.value.period;
     }
+    if (cadence.warning) entry.warnings.push(cadence.warning);
 
     const known = new Set([
       "account_id", "platform", "account_name", "role_in_strategy", "target_cadence",
