@@ -23,6 +23,7 @@ import { sendOutputToAyrshare, refreshAyrshareOutput, pullOutputPerformance } fr
 import { StatusSelect } from "@/components/ui/StatusSelect";
 import { outputStatusMeta, contentOriginMeta, MEDIA_STATE, type OutputStatus, type MediaState } from "@/lib/status";
 import { OutputMediaSlot } from "@/components/clients/OutputMediaSlot";
+import { RegenerateItemDialog } from "@/components/clients/RegenerateItemDialog";
 import { formatDate, formatDateTime } from "@/lib/format";
 import type { Database } from "@/lib/database.types";
 
@@ -36,6 +37,8 @@ export function ContentOutputRow({
   idea,
   accounts = [],
   ayrshareEnabled = false,
+  planId,
+  planLocked = false,
 }: {
   clientId: string;
   output: Output;
@@ -43,8 +46,13 @@ export function ContentOutputRow({
   idea?: { media_path: string | null; media_url: string | null; media_source_url: string; thumbnail_path: string | null; thumbnail_url: string | null; thumbnail_source_url: string };
   accounts?: PublishingAccount[];
   ayrshareEnabled?: boolean;
+  /** Set when rendered inside a Monthly Plan — enables regenerating just
+   * this platform adaptation (Duane's level 2). */
+  planId?: string;
+  planLocked?: boolean;
 }) {
   const [isBusy, startTransition] = useTransition();
+  const [showRegenerate, setShowRegenerate] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [showSchedule, setShowSchedule] = useState(false);
@@ -259,6 +267,11 @@ export function ContentOutputRow({
           <Button variant="ghost" size="sm" onClick={copyPost}>
             {copied ? "Copied ✓" : "Copy post"}
           </Button>
+          {planId && (
+            <Button variant="ghost" size="sm" onClick={() => setShowRegenerate(true)}>
+              {planLocked ? "Propose regeneration…" : "Regenerate this version…"}
+            </Button>
+          )}
           <a
             href={`/api/publishing-pack/${output.id}`}
             className="text-xs text-accent underline-offset-2 hover:underline"
@@ -434,6 +447,16 @@ export function ContentOutputRow({
       )}
       {showPublish && (
         <PublishModal clientId={clientId} output={output} onClose={() => setShowPublish(false)} />
+      )}
+      {showRegenerate && planId && (
+        <RegenerateItemDialog
+          clientId={clientId}
+          planId={planId}
+          target={{ kind: "output", ideaId: output.content_id, outputId: output.id }}
+          label={(output.social_account_id && accounts.find((a) => a.id === output.social_account_id)?.label) || output.platform}
+          planLocked={planLocked}
+          onClose={() => setShowRegenerate(false)}
+        />
       )}
     </details>
   );

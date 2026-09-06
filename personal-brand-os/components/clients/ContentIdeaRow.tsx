@@ -24,6 +24,8 @@ import { CONTENT_STATUS, CONTENT_PRIORITY, contentOriginMeta } from "@/lib/statu
 import { planSequenceLabel } from "@/lib/monthly-plan-format";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { ContentOutputRow } from "@/components/clients/ContentOutputRow";
+import { RegenerateItemDialog } from "@/components/clients/RegenerateItemDialog";
+import { RequestChangeButton } from "@/components/clients/ChangeRequestPanel";
 import { MasterMediaSlot } from "@/components/clients/MasterMediaSlot";
 import { MasterScheduleField } from "@/components/clients/MasterScheduleField";
 import { resolveMedia } from "@/lib/media-source";
@@ -72,6 +74,8 @@ export function ContentIdeaRow({
   history = [],
   defaultOpen = false,
   ayrshareEnabled = false,
+  planId,
+  planLocked = false,
 }: {
   clientId: string;
   idea: Idea;
@@ -84,8 +88,15 @@ export function ContentIdeaRow({
   history?: HistoryEntry[];
   defaultOpen?: boolean;
   ayrshareEnabled?: boolean;
+  /** Set when rendered inside a Monthly Plan — enables single-item
+   * regeneration (Duane's level 2). */
+  planId?: string;
+  /** The plan is approved: this is the approved version. Direct edits are
+   * refused server-side; changes go through change requests. */
+  planLocked?: boolean;
 }) {
   const [isDeleting, startDelete] = useTransition();
+  const [showRegenerate, setShowRegenerate] = useState(false);
   const [isTransitioning, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [showApprove, setShowApprove] = useState(false);
@@ -260,7 +271,41 @@ export function ContentIdeaRow({
             content ideas outside one. */}
         {idea.monthly_plan_id && (
           <div className="space-y-3 rounded-md border border-border bg-surface-muted/30 p-3">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ink-faint">Monthly Plan fields</p>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ink-faint">Monthly Plan fields</p>
+              {planId && (
+                <div className="flex items-center gap-2">
+                  {planLocked && (
+                    <RequestChangeButton
+                      clientId={clientId}
+                      planId={planId}
+                      ideaId={idea.id}
+                      ideaTitle={idea.title}
+                      currentValues={{
+                        title: idea.title,
+                        hook: idea.hook,
+                        core_message: idea.core_message,
+                        purpose: idea.purpose,
+                        cta: idea.cta,
+                        cta_destination: idea.cta_destination,
+                        lead_draft_copy: idea.lead_draft_copy,
+                        body: idea.body,
+                        notes: idea.notes,
+                      }}
+                    />
+                  )}
+                  <Button variant="ghost" size="sm" onClick={() => setShowRegenerate(true)}>
+                    {planLocked ? "Propose regeneration…" : "Regenerate this item…"}
+                  </Button>
+                </div>
+              )}
+            </div>
+            {planLocked && (
+              <p className="rounded bg-amber-500/10 px-2 py-1 text-xs text-ink-soft">
+                Locked — this is the approved version for the month. Edits below will be refused; use Request change so the
+                approved version stays intact until the change is applied.
+              </p>
+            )}
             <AutosaveTextarea
               id={`idea-core-${idea.id}`}
               label="Core message"
@@ -358,7 +403,16 @@ export function ContentIdeaRow({
           ) : (
             <div className="space-y-2">
               {outputs.map((output) => (
-                <ContentOutputRow key={output.id} clientId={clientId} output={output} idea={idea} accounts={accounts} ayrshareEnabled={ayrshareEnabled} />
+                <ContentOutputRow
+                  key={output.id}
+                  clientId={clientId}
+                  output={output}
+                  idea={idea}
+                  accounts={accounts}
+                  ayrshareEnabled={ayrshareEnabled}
+                  planId={planId}
+                  planLocked={planLocked}
+                />
               ))}
             </div>
           )}
@@ -401,6 +455,16 @@ export function ContentIdeaRow({
           clientId={clientId}
           ideaId={idea.id}
           onClose={() => setShowChanges(false)}
+        />
+      )}
+      {showRegenerate && planId && (
+        <RegenerateItemDialog
+          clientId={clientId}
+          planId={planId}
+          target={{ kind: "master", ideaId: idea.id }}
+          label={`${idea.plan_sequence !== null ? planSequenceLabel(idea.plan_sequence) + " · " : ""}${idea.title}`}
+          planLocked={planLocked}
+          onClose={() => setShowRegenerate(false)}
         />
       )}
     </details>

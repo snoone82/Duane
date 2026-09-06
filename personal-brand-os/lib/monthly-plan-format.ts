@@ -61,3 +61,29 @@ export function ctaDestinationState(idea: { cta: string; cta_destination: string
   if (isCtaNeedsConfirmation(destination)) return "needs_confirmation";
   return "confirmed";
 }
+
+// ---------------------------------------------------------------------------
+// Approval lock (Duane's three edit levels). Once a plan is approved its
+// Master Content is the approved version of that month: direct edits and
+// single-item regenerations become change requests on that item, and a whole
+// -month regeneration becomes a numbered revision — never a silent overwrite.
+// ---------------------------------------------------------------------------
+
+export const LOCKED_PLAN_STATUSES = ["approved", "active", "closed"] as const;
+
+export function isPlanLocked(status: string): boolean {
+  return (LOCKED_PLAN_STATUSES as readonly string[]).includes(status);
+}
+
+/** Master Content fields a change request may target. */
+export const CHANGE_REQUEST_FIELDS: { value: string; label: string; multiline: boolean }[] = [
+  { value: "title", label: "Title", multiline: false },
+  { value: "hook", label: "Hook", multiline: false },
+  { value: "core_message", label: "Core message", multiline: true },
+  { value: "purpose", label: "Purpose", multiline: true },
+  { value: "cta", label: "CTA", multiline: false },
+  { value: "cta_destination", label: "CTA destination", multiline: false },
+  { value: "lead_draft_copy", label: "Lead draft copy", multiline: true },
+  { value: "body", label: "Brief / body", multiline: true },
+  { value: "notes", label: "Notes", multiline: true },
+];

@@ -8,10 +8,14 @@ import type { Database } from "@/lib/database.types";
 import type { ContentPriority, ContentStatus } from "@/lib/enums";
 import { CONTENT_STATUS, CONTENT_PRIORITY, MEDIA_STATE, type OutputStatus, type MediaState } from "@/lib/status";
 import { fieldPatch } from "@/lib/field-patch";
+import { isPlanLocked } from "@/lib/monthly-plan-format";
 import { PRODUCTION_CHECKLIST_STEPS, productionChecklistItemDone } from "@/lib/production-checklist";
 
 function revalidateContent(clientId: string) {
   revalidatePath(`/clients/${clientId}/content`);
+  // The Monthly Plan and the Content page are two views of the same Master
+  // Content record (Duane) — a save on either must show on both at once.
+  revalidatePath(`/clients/${clientId}/plans`, "layout");
   revalidatePath(`/clients/${clientId}/actions`);
   revalidatePath("/calendar");
   revalidatePath("/");
@@ -106,6 +110,14 @@ export async function updateContentIdeaField(
 
   return runAction(async () => {
     const supabase = await createClient();
+    {
+      // Approved Monthly Plan → the approved version is locked (Duane).
+      const { data: row } = await supabase.from("content_ideas").select("plan:monthly_plans(status)").eq("id", ideaId).maybeSingle();
+      const planStatus = (row?.plan as { status: string } | null | undefined)?.status;
+      if (planStatus && isPlanLocked(planStatus)) {
+        throw new UserFacingError("This Monthly Plan is approved — the approved version is locked. Raise a change request on this item instead.");
+      }
+    }
     const patchValue: string | null = NULLABLE_FIELDS.includes(field) ? value || null : value;
     const { error } = await supabase
       .from("content_ideas")
@@ -347,6 +359,9 @@ const OUTPUT_FIELDS = [
   "views",
 ] as const;
 type OutputField = (typeof OUTPUT_FIELDS)[number];
+/** The fields that describe WHAT an output is (planning), as opposed to how
+ * it's produced — these are what an approved plan locks. */
+const OUTPUT_PLANNING_FIELDS: OutputField[] = ["platform", "format", "adaptation_note", "media_brief", "destination_link"];
 const OUTPUT_NUMERIC: OutputField[] = ["reach", "engagement", "views"];
 
 export async function updateContentOutputField(
@@ -363,6 +378,21 @@ export async function updateContentOutputField(
 
   return runAction(async () => {
     const supabase = await createClient();
+    // Planning fields on an output belonging to an approved Monthly Plan are
+    // locked (Duane): the approved version stays until a change request on
+    // its Master Content is applied. Production fields — caption, hashtags,
+    // media, metrics — stay editable, since production happens after approval.
+    if (OUTPUT_PLANNING_FIELDS.includes(field)) {
+      const { data: output } = await supabase
+        .from("content_outputs")
+        .select("content:content_ideas(monthly_plan_id, plan:monthly_plans(status))")
+        .eq("id", outputId)
+        .maybeSingle();
+      const planStatus = (output?.content as { plan?: { status: string } | null } | null)?.plan?.status;
+      if (planStatus && isPlanLocked(planStatus)) {
+        throw new UserFacingError("This Monthly Plan is approved — the approved version is locked. Raise a change request on the Master Content item instead.");
+      }
+    }
     const patchValue: string | number | null = OUTPUT_NUMERIC.includes(field)
       ? (value.trim() ? Number(value) : null)
       : value;
