@@ -1432,6 +1432,64 @@ export type Database = {
           },
         ]
       }
+      monthly_plan_revisions: {
+        Row: {
+          client_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          monthly_plan_id: string
+          note: string
+          revision: number
+          snapshot: Json
+          status_at_snapshot: string
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          monthly_plan_id: string
+          note?: string
+          revision: number
+          snapshot: Json
+          status_at_snapshot: string
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          monthly_plan_id?: string
+          note?: string
+          revision?: number
+          snapshot?: Json
+          status_at_snapshot?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "monthly_plan_revisions_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "monthly_plan_revisions_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "monthly_plan_revisions_monthly_plan_id_fkey"
+            columns: ["monthly_plan_id"]
+            isOneToOne: false
+            referencedRelation: "monthly_plans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       monthly_plans: {
         Row: {
           avoid_language: string
@@ -1445,6 +1503,7 @@ export type Database = {
           preferred_language: string
           primary_cta_destination: string
           primary_objective: string
+          revision: number
           scope_status: string
           secondary_objectives: string
           snapshot: Json
@@ -1463,6 +1522,7 @@ export type Database = {
           preferred_language?: string
           primary_cta_destination?: string
           primary_objective?: string
+          revision?: number
           scope_status?: string
           secondary_objectives?: string
           snapshot?: Json
@@ -1481,6 +1541,7 @@ export type Database = {
           preferred_language?: string
           primary_cta_destination?: string
           primary_objective?: string
+          revision?: number
           scope_status?: string
           secondary_objectives?: string
           snapshot?: Json

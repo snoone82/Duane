@@ -47,7 +47,10 @@ export default async function MonthlyPlansPage({ params }: { params: Promise<{ i
                 href={`/clients/${id}/plans/${plan.id}`}
                 className="flex items-center justify-between gap-2 rounded-lg border border-border bg-surface px-4 py-3 transition-colors hover:bg-surface-muted"
               >
-                <span className="text-sm font-medium text-ink">{periodMonthLabel(plan.period_month)}</span>
+                <span className="text-sm font-medium text-ink">
+                  {periodMonthLabel(plan.period_month)}
+                  {plan.revision > 1 && <span className="ml-2 text-xs font-normal text-ink-faint">rev {plan.revision}</span>}
+                </span>
                 <span className="flex items-center gap-3">
                   <span className="text-xs text-ink-faint">{contentCount.get(plan.id) ?? 0} Master Content</span>
                   <StatusPill label={meta.label} color={meta.color} />

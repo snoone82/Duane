@@ -258,13 +258,101 @@ export async function refreshMonthlyPlanSnapshot(clientId: string, planId: strin
   });
 }
 
-export async function deleteMonthlyPlan(clientId: string, planId: string): Promise<ActionResult> {
+/** Deleting a plan takes its own draft AI-imported content with it (Duane:
+ * three deleted-and-recreated Septembers left 32 orphaned ideas on the
+ * Content page — content_ideas.monthly_plan_id is `on delete set null`).
+ * Hand-added content, and anything approved, scheduled or published, is
+ * kept and simply unlinked, exactly as before. */
+export async function deleteMonthlyPlan(clientId: string, planId: string): Promise<ActionResult<{ removed: number; kept: number }>> {
   return runAction(async () => {
     const supabase = await createClient();
+    const content = await classifyPlanContent(supabase, planId);
+    if (content.replaceableIds.length > 0) {
+      const { error } = await supabase.from("content_ideas").delete().in("id", content.replaceableIds);
+      if (error) throw new Error(error.message);
+    }
     const { error } = await supabase.from("monthly_plans").delete().eq("id", planId).eq("client_id", clientId);
     if (error) throw new Error(error.message);
     revalidatePlan(clientId);
-    return undefined;
+    return { removed: content.replaceableIds.length, kept: content.locked + content.manual };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Import scope & revisions (Duane, after regenerating September three times
+// stacked 48 ideas on the Content page). An import into a plan that already
+// holds AI-imported content is a deliberate choice — replace the plan's own
+// draft content, or add alongside it — never a silent append. "Replace" only
+// ever removes Master Content that is (a) linked to THIS plan, (b) AI-
+// imported, (c) still a draft, and (d) has nothing scheduled or published;
+// another month's content, hand-added content and approved content are
+// never touched. Once a plan is approved or active, replacing is no longer
+// silent either: the current plan is snapshotted as a numbered revision, the
+// revision counter moves on, and the plan drops back to In review.
+// ---------------------------------------------------------------------------
+
+export type ImportMode = "replace" | "add";
+
+export interface PlanImportState {
+  planStatus: MonthlyPlanStatus;
+  revision: number;
+  /** AI-imported Master Content still in draft — what "Replace" removes. */
+  replaceable: number;
+  /** AI-imported Master Content past draft, or with a scheduled/published
+   * output — never replaced. */
+  locked: number;
+  /** Hand-added Master Content — never touched by an import. */
+  manual: number;
+  /** Approved/active plan: a replace snapshots the current plan as a
+   * revision first. */
+  requiresRevision: boolean;
+  closed: boolean;
+}
+
+const REVISION_STATUSES: MonthlyPlanStatus[] = ["approved", "active"];
+
+async function classifyPlanContent(
+  supabase: SupabaseClient,
+  planId: string
+): Promise<{ replaceableIds: string[]; locked: number; manual: number }> {
+  const { data: ideas } = await supabase.from("content_ideas").select("id,origin,status").eq("monthly_plan_id", planId);
+  const ideaList = ideas ?? [];
+  const ideaIds = ideaList.map((i) => i.id);
+  const { data: outputs } = ideaIds.length
+    ? await supabase.from("content_outputs").select("content_id,status,ayrshare_post_id").in("content_id", ideaIds)
+    : { data: [] };
+  const lockedByOutput = new Set(
+    (outputs ?? []).filter((o) => o.status === "scheduled" || o.status === "published" || o.ayrshare_post_id !== "").map((o) => o.content_id)
+  );
+  const replaceableIds: string[] = [];
+  let locked = 0;
+  let manual = 0;
+  for (const idea of ideaList) {
+    if (idea.origin !== "ai_import") manual += 1;
+    else if (idea.status !== "idea" || lockedByOutput.has(idea.id)) locked += 1;
+    else replaceableIds.push(idea.id);
+  }
+  return { replaceableIds, locked, manual };
+}
+
+/** What an import into this plan would do — read by the import panel to
+ * decide whether to ask Replace / Add / Cancel first. */
+export async function getPlanImportState(clientId: string, planId: string): Promise<ActionResult<PlanImportState>> {
+  return runAction(async () => {
+    const supabase = await createClient();
+    const { data: plan } = await supabase.from("monthly_plans").select("status,revision").eq("id", planId).eq("client_id", clientId).maybeSingle();
+    if (!plan) throw new UserFacingError("Monthly Plan not found.");
+    const content = await classifyPlanContent(supabase, planId);
+    const status = plan.status as MonthlyPlanStatus;
+    return {
+      planStatus: status,
+      revision: plan.revision,
+      replaceable: content.replaceableIds.length,
+      locked: content.locked,
+      manual: content.manual,
+      requiresRevision: REVISION_STATUSES.includes(status),
+      closed: status === "closed",
+    };
   });
 }
 
@@ -1110,6 +1198,15 @@ export async function exportAiBrief(clientId: string, planId: string): Promise<A
 }
 
 export interface ImportAiOutputResult {
+  mode: ImportMode;
+  /** Draft AI-imported Master Content removed by a "replace" import. */
+  replaced: number;
+  /** Master Content on this plan left untouched (hand-added, approved,
+   * scheduled or published). */
+  kept: number;
+  /** The revision number the previous plan state was saved as, when an
+   * approved/active plan was replaced. */
+  revisionCreated: number | null;
   masterContentCreated: number;
   platformOutputsCreated: number;
   /** Production requirements PBOS computed from the plan's actual Master
@@ -1160,7 +1257,13 @@ const str = (value: unknown): string => (typeof value === "string" ? value.trim(
  * 3) — reconcilePlanRequirementsInternal computes them from what was
  * actually imported, after publish dates are assigned.
  */
-export async function importAiOutput(clientId: string, planId: string, jsonText: string): Promise<ActionResult<ImportAiOutputResult>> {
+export async function importAiOutput(
+  clientId: string,
+  planId: string,
+  jsonText: string,
+  mode: ImportMode = "add"
+): Promise<ActionResult<ImportAiOutputResult>> {
+  if (mode !== "replace" && mode !== "add") return { ok: false, message: "Unknown import mode." };
   let parsed: unknown;
   try {
     // Claude sometimes wraps its JSON in a ```json fence despite being asked
@@ -1205,8 +1308,12 @@ export async function importAiOutput(clientId: string, planId: string, jsonText:
     const {
       data: { user },
     } = await supabase.auth.getUser();
-    const { data: plan } = await supabase.from("monthly_plans").select("id").eq("id", planId).eq("client_id", clientId).maybeSingle();
+    const { data: plan } = await supabase.from("monthly_plans").select("id,status,revision").eq("id", planId).eq("client_id", clientId).maybeSingle();
     if (!plan) throw new UserFacingError("Monthly Plan not found.");
+    const planStatus = plan.status as MonthlyPlanStatus;
+    if (planStatus === "closed") throw new UserFacingError("This Monthly Plan is closed — set it back to Planning or In review before importing.");
+    const existing = await classifyPlanContent(supabase, planId);
+    const kept = existing.locked + existing.manual;
 
     const [{ data: pillars }, { data: audiences }, { data: socials }] = await Promise.all([
       supabase.from("brand_pillars").select("id,name").eq("client_id", clientId),
@@ -1300,6 +1407,37 @@ export async function importAiOutput(clientId: string, planId: string, jsonText:
         }
       }
     }
+    // Scope the import (validation above has passed — nothing is removed for
+    // an import that would then be rejected).
+    let replaced = 0;
+    let revisionCreated: number | null = null;
+    if (mode === "replace" && existing.replaceableIds.length > 0) {
+      if (REVISION_STATUSES.includes(planStatus)) {
+        // Never silently replace an approved plan: keep what was approved as
+        // a numbered revision, then move the plan back into review.
+        const doc = await buildPlanExportInternal(supabase, clientId, planId);
+        const { error: revisionError } = await supabase.from("monthly_plan_revisions").insert({
+          monthly_plan_id: planId,
+          client_id: clientId,
+          revision: plan.revision,
+          status_at_snapshot: planStatus,
+          snapshot: doc as unknown as Database["public"]["Tables"]["monthly_plan_revisions"]["Insert"]["snapshot"],
+          note: `Superseded by a new AI import (${existing.replaceableIds.length} draft item(s) replaced).`,
+          created_by: user?.id ?? null,
+        });
+        if (revisionError) throw new Error(revisionError.message);
+        const { error: bumpError } = await supabase
+          .from("monthly_plans")
+          .update({ revision: plan.revision + 1, status: "in_review" })
+          .eq("id", planId);
+        if (bumpError) throw new Error(bumpError.message);
+        revisionCreated = plan.revision;
+      }
+      const { error: removeError } = await supabase.from("content_ideas").delete().in("id", existing.replaceableIds);
+      if (removeError) throw new Error(removeError.message);
+      replaced = existing.replaceableIds.length;
+    }
+
     let sequence = await nextPlanSequence(supabase, planId);
     const masterIds: string[] = [];
 
@@ -1395,6 +1533,10 @@ export async function importAiOutput(clientId: string, planId: string, jsonText:
 
       revalidatePlan(clientId, planId);
       return {
+        mode,
+        replaced,
+        kept,
+        revisionCreated,
         masterContentCreated: masterIds.length,
         platformOutputsCreated: outputsCreated,
         requirementsAutoGenerated,
@@ -1425,6 +1567,7 @@ export interface MonthlyPlanExport {
   period_month: string;
   period_label: string;
   status: string;
+  revision: number;
   client_snapshot: {
     primary_objective: string;
     secondary_objectives: string;
@@ -1486,9 +1629,8 @@ export interface MonthlyPlanExport {
   generated_at: string;
 }
 
-export async function exportMonthlyPlanJson(clientId: string, planId: string): Promise<ActionResult<{ json: string }>> {
-  return runAction(async () => {
-    const supabase = await createClient();
+async function buildPlanExportInternal(supabase: SupabaseClient, clientId: string, planId: string): Promise<MonthlyPlanExport> {
+  {
     const [{ data: client }, { data: plan }, { data: pillars }, { data: audiences }, { data: ideas }, { data: requirements }, { data: socials }] =
       await Promise.all([
         supabase.from("clients").select("id,name").eq("id", clientId).maybeSingle(),
@@ -1522,6 +1664,7 @@ export async function exportMonthlyPlanJson(clientId: string, planId: string): P
       period_month: plan.period_month,
       period_label: periodMonthLabel(plan.period_month),
       status: plan.status,
+      revision: plan.revision,
       client_snapshot: {
         primary_objective: plan.primary_objective,
         secondary_objectives: plan.secondary_objectives,
@@ -1580,6 +1723,14 @@ export async function exportMonthlyPlanJson(clientId: string, planId: string): P
       generated_at: new Date().toISOString(),
     };
 
+    return doc;
+  }
+}
+
+export async function exportMonthlyPlanJson(clientId: string, planId: string): Promise<ActionResult<{ json: string }>> {
+  return runAction(async () => {
+    const supabase = await createClient();
+    const doc = await buildPlanExportInternal(supabase, clientId, planId);
     return { json: JSON.stringify(doc, null, 2) };
   });
 }

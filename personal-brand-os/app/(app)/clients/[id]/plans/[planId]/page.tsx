@@ -11,6 +11,7 @@ import { AssignPublishDatesButton } from "@/components/clients/AssignPublishDate
 import { AiBriefPanel } from "@/components/clients/AiBriefPanel";
 import { ExportPlanJsonButton } from "@/components/clients/ExportPlanJsonButton";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { StatusPill } from "@/components/ui/StatusPill";
 import { getApproverOptions } from "@/lib/data/approvers";
 import { socialAccountLabel } from "@/lib/format";
 import { isAyrshareConfigured } from "@/lib/ayrshare";
@@ -76,7 +77,14 @@ export default async function MonthlyPlanPage({ params }: { params: Promise<{ id
         <Link href={`/clients/${id}/plans`} className="text-xs text-accent underline-offset-2 hover:underline">
           ← All Monthly Plans
         </Link>
-        <h1 className="mt-1 text-lg font-semibold text-ink">{periodMonthLabel(plan.period_month)}</h1>
+        <div className="mt-1 flex items-center gap-2">
+          <h1 className="text-lg font-semibold text-ink">{periodMonthLabel(plan.period_month)}</h1>
+          {plan.revision > 1 && (
+            <span title="Earlier versions of this plan were saved as revisions when their approved content was replaced.">
+              <StatusPill label={`Revision ${plan.revision}`} color="slate" />
+            </span>
+          )}
+        </div>
       </div>
 
       <section>
@@ -159,7 +167,7 @@ export default async function MonthlyPlanPage({ params }: { params: Promise<{ id
           PBOS owns this plan — Claude is only ever asked to propose structured content into it. No live API connection
           yet: generate a brief, paste it into Claude yourself, then paste the JSON it returns back in below.
         </p>
-        <AiBriefPanel clientId={id} planId={planId} readiness={readiness} />
+        <AiBriefPanel clientId={id} planId={planId} periodMonth={plan.period_month} readiness={readiness} />
       </section>
     </div>
   );

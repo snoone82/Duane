@@ -46,7 +46,7 @@ export function ClientSnapshotPanel({ clientId, plan }: { clientId: string; plan
   }
 
   function handleDelete() {
-    if (!window.confirm("Delete this Monthly Plan? Master Content and Platform Outputs created inside it are kept, unlinked from any plan. This can't be undone.")) return;
+    if (!window.confirm("Delete this Monthly Plan? Its draft AI-imported Master Content and Platform Outputs are deleted with it. Hand-added content, and anything approved, scheduled or published, is kept and unlinked from any plan. This can't be undone.")) return;
     startDelete(async () => {
       const result = await deleteMonthlyPlan(clientId, plan.id);
       if (!result.ok) setError(result.message);
