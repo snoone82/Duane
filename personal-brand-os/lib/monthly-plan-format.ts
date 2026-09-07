@@ -86,6 +86,9 @@ export const CHANGE_REQUEST_FIELDS: { value: string; label: string; multiline: b
   { value: "lead_draft_copy", label: "Lead draft copy", multiline: true },
   { value: "body", label: "Brief / body", multiline: true },
   { value: "notes", label: "Notes", multiline: true },
+  { value: "why_now", label: "Why now", multiline: true },
+  { value: "source_evidence", label: "Source evidence", multiline: true },
+  { value: "client_requirements", label: "Client requirements", multiline: true },
 ];
 
 /** "MC-03 · Title" — how a change request names its Master Content item.
@@ -94,4 +97,94 @@ export const CHANGE_REQUEST_FIELDS: { value: string; label: string; multiline: b
  * rendered as a component or passed as a prop, never invoked on the server. */
 export function changeRequestIdeaLabel(seq: number | null, title: string): string {
   return `${planSequenceLabel(seq)} · ${title}`;
+}
+
+// ---------------------------------------------------------------------------
+// Platform families & approved formats (Duane's second real run): every
+// active account the brief offers must come with an exact allowed-format
+// list — a platform the map doesn't know gets a generic list rather than
+// nothing, because "nothing" is what made the model invent formats.
+// Families are matched on words in the platform name, so a custom platform
+// such as "Podcast / YouTube / Long-form Video" is recognised as both.
+// ---------------------------------------------------------------------------
+
+export const PLATFORM_FORMATS: Record<string, string[]> = {
+  linkedin: ["text", "text_image", "carousel", "video"],
+  instagram: ["reel", "carousel", "static"],
+  youtube: ["video", "short", "live"],
+  podcast: ["episode", "clip", "trailer"],
+  tiktok: ["video"],
+  facebook: ["text", "text_image", "carousel", "video", "reel"],
+  x: ["text", "text_image", "video", "thread"],
+  threads: ["text", "text_image"],
+  newsletter: ["issue"],
+  blog: ["article"],
+};
+
+/** Used when no family matches — always a real, validated list. */
+export const DEFAULT_FORMATS = ["text", "image", "video"];
+
+const FAMILY_MATCHERS: [string, RegExp][] = [
+  ["linkedin", /linkedin/],
+  ["instagram", /instagram|\big\b|insta/],
+  ["youtube", /youtube|\byt\b/],
+  ["podcast", /podcast|long[\s-]*form/],
+  ["tiktok", /tiktok/],
+  ["facebook", /facebook|\bfb\b/],
+  ["x", /\bx\b|twitter/],
+  ["threads", /threads/],
+  ["newsletter", /newsletter|email/],
+  ["blog", /blog|article|website/],
+];
+
+/** Every family a platform name belongs to, in map order; empty for an
+ * unrecognised platform. */
+export function platformFamilies(platform: string): string[] {
+  const key = platform.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  return FAMILY_MATCHERS.filter(([, re]) => re.test(key)).map(([family]) => family);
+}
+
+/** The one key sibling grouping uses: the first matched family, or the
+ * normalised platform name itself when nothing matches. */
+export function platformFamilyKey(platform: string): string {
+  return platformFamilies(platform)[0] ?? platform.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+/** The approved formats for a platform — union across matched families,
+ * DEFAULT_FORMATS when none match. Never empty, never null. */
+export function allowedFormatsFor(platform: string): string[] {
+  const families = platformFamilies(platform);
+  if (families.length === 0) return [...DEFAULT_FORMATS];
+  const out: string[] = [];
+  for (const family of families) for (const f of PLATFORM_FORMATS[family] ?? []) if (!out.includes(f)) out.push(f);
+  return out.length > 0 ? out : [...DEFAULT_FORMATS];
+}
+
+// ---------------------------------------------------------------------------
+// Client Source Library (Duane): the consultation is where the person
+// lives. Extracted items are typed so generation can be told what each is.
+// ---------------------------------------------------------------------------
+
+export const SOURCE_ITEM_KINDS: { value: string; label: string; plural: string; hint: string }[] = [
+  { value: "story", label: "Story", plural: "Stories", hint: "A real experience the client is comfortable using publicly" },
+  { value: "belief", label: "Belief", plural: "Beliefs", hint: "A clearly stated view or principle" },
+  { value: "voice", label: "Voice", plural: "Voice — phrases they actually use", hint: "An exact phrase or way of putting things" },
+  { value: "avoid", label: "Avoid", plural: "Phrases / styles to avoid", hint: "Language or a style the client does not want" },
+  { value: "rejected_view", label: "Rejects", plural: "Views they explicitly reject", hint: "Something the client has said they do not believe" },
+  { value: "priority", label: "Priority", plural: "Current priorities", hint: "What matters to them right now" },
+  { value: "opportunity", label: "Opportunity", plural: "Content opportunities", hint: "A theme or angle worth making content about" },
+  { value: "update", label: "Update", plural: "Recent updates", hint: "A recent personal or business development" },
+];
+
+export function sourceItemKindMeta(kind: string) {
+  return SOURCE_ITEM_KINDS.find((k) => k.value === kind) ?? SOURCE_ITEM_KINDS[0]!;
+}
+
+/** The AI's answer when an idea would benefit from personal evidence that
+ * the profile, source library and monthly update don't contain. Never
+ * fabricate — flag. */
+export const PERSONAL_INPUT_REQUIRED = "PERSONAL_INPUT_REQUIRED";
+
+export function needsPersonalInput(value: string): boolean {
+  return value.toUpperCase().includes(PERSONAL_INPUT_REQUIRED);
 }

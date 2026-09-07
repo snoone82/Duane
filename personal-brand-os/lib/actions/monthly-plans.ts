@@ -26,6 +26,11 @@ import {
   CTA_NEEDS_CONFIRMATION,
   isPlanLocked,
   CHANGE_REQUEST_FIELDS,
+  allowedFormatsFor,
+  platformFamilyKey,
+  SOURCE_ITEM_KINDS,
+  PERSONAL_INPUT_REQUIRED,
+  needsPersonalInput,
   type CtaDestinationState,
 } from "@/lib/monthly-plan-format";
 import { schedulePlanOutputs, normalisePostingDays, SIBLING_GAP_DAYS } from "@/lib/plan-scheduling";
@@ -212,6 +217,7 @@ const PLAN_TEXT_FIELDS = [
   "cta_priorities",
   "primary_cta_destination",
   "scope_status",
+  "monthly_update",
 ] as const;
 type PlanTextField = (typeof PLAN_TEXT_FIELDS)[number];
 
@@ -433,6 +439,9 @@ const PLAN_CONTENT_FIELDS = [
   "notes",
   "pillar_id",
   "audience_id",
+  "source_evidence",
+  "why_now",
+  "client_requirements",
 ] as const;
 type PlanContentField = (typeof PLAN_CONTENT_FIELDS)[number];
 const NULLABLE_PLAN_CONTENT_FIELDS: PlanContentField[] = ["pillar_id", "audience_id"];
@@ -608,7 +617,7 @@ async function reconcilePlanRequirementsInternal(
   const [{ data: ideas }, { data: existingReqs }, { data: socials }, { data: pillars }] = await Promise.all([
     supabase
       .from("content_ideas")
-      .select("id,plan_sequence,title,lead_platform,lead_platform_id,cta,cta_destination,pillar_id")
+      .select("id,plan_sequence,title,lead_platform,lead_platform_id,cta,cta_destination,pillar_id,source_evidence,client_requirements")
       .eq("monthly_plan_id", planId),
     supabase.from("monthly_plan_requirements").select("id,generated_key").eq("monthly_plan_id", planId).eq("origin", "system_generated"),
     supabase.from("social_strategies").select("*").eq("client_id", clientId),
@@ -672,7 +681,9 @@ async function reconcilePlanRequirementsInternal(
   // lead_platform_id link; falls back to text matching for ideas created
   // before that column existed.
   const missingLeadOutput: string[] = [];
-  for (const idea of ideaList) {
+  // Two-stage generation: until Platform Outputs exist at all, a lead
+  // platform with no output is the expected state, not a gap.
+  for (const idea of outputList.length > 0 ? ideaList : []) {
     const leadPlatformText = idea.lead_platform.trim();
     if (!idea.lead_platform_id && !leadPlatformText) continue;
     const hasOutput = outputList.some((o) => {
@@ -782,6 +793,31 @@ async function reconcilePlanRequirementsInternal(
     });
   }
 
+  // g) Personal input required (Duane's provenance rule): the AI flagged
+  // that an idea would benefit from personal evidence it doesn't have —
+  // grouped into one requirement rather than fabricated.
+  const personalInput = ideaList.filter((i) => needsPersonalInput(i.source_evidence)).map((i) => planSequenceLabel(i.plan_sequence));
+  if (personalInput.length > 0) {
+    desired.set("personal_input_required", {
+      type: "information",
+      description: `Personal input required for ${personalInput.length} Master Content item(s) — a real story, view or experience from the client is needed; nothing has been invented.`,
+      related_content_note: personalInput.sort().join(", "),
+    });
+  }
+
+  // h) Client requirements captured at Master Content stage, rolled up into
+  // one "Client input needed" requirement listing each item's ask.
+  const clientAsks = ideaList
+    .filter((i) => i.client_requirements.trim())
+    .map((i) => `${planSequenceLabel(i.plan_sequence)}: ${i.client_requirements.trim()}`);
+  if (clientAsks.length > 0) {
+    desired.set("client_input_needed", {
+      type: "information",
+      description: `Client input needed for ${clientAsks.length} Master Content item(s).`,
+      related_content_note: clientAsks.join(" · "),
+    });
+  }
+
   // f) Sibling spacing (Duane, second full run): two outputs under one idea
   // in the same platform family on different accounts closer than the gap.
   // The scheduler already tries siblings first; if it still couldn't space
@@ -793,7 +829,7 @@ async function reconcilePlanRequirementsInternal(
     if (!account) continue;
     const idea = ideaById.get(output.content_id);
     if (!idea) continue;
-    const key = `${output.content_id}:${normaliseAccountKey(account.platform)}:${account.id}`;
+    const key = `${output.content_id}:${platformFamilyKey(account.platform)}:${account.id}`;
     const groupKey = key.slice(0, key.lastIndexOf(":"));
     const group = siblingGroups.get(groupKey) ?? { seq: planSequenceLabel(idea.plan_sequence), days: [] };
     group.days.push(Number(output.target_publish_date.slice(-2)));
@@ -925,7 +961,7 @@ async function assignPlanPublishDatesInternal(supabase: SupabaseClient, clientId
         id: o.id,
         contentId: o.content_id,
         accountId: account?.id ?? null,
-        family: normaliseAccountKey(account?.platform ?? o.platform),
+        family: platformFamilyKey(account?.platform ?? o.platform),
         sequence: ideaSeqById.get(o.content_id) ?? 0,
       };
     }),
@@ -994,58 +1030,49 @@ export interface AiBriefResult {
   brief: string;
 }
 
-/** Duane, round 3: format now drives production Requirements directly, so
- * it can't be free text on the generation pathway — constrained to the
- * values each platform actually supports. Keyed by normalised platform name
- * (normaliseAccountKey), not display label, so "LinkedIn" and "linkedin —
- * daniel andrews" both resolve to the same entry. A platform with no entry
- * here is unconstrained — only LinkedIn and Instagram have a specified list
- * so far; a new platform stays open until Duane specifies its own. */
-const PLATFORM_FORMATS: Record<string, string[]> = {
-  linkedin: ["text", "text_image", "carousel", "video"],
-  instagram: ["reel", "carousel", "static"],
-};
-
-function allowedFormatsFor(platform: string): string[] | null {
-  return PLATFORM_FORMATS[normaliseAccountKey(platform)] ?? null;
-}
-
 /** Suggested Master-Content-idea-count range from a total Platform Output
  * target (Duane, round 3): calibrated so his own test numbers — 39 total
  * outputs — land on his own stated "14–16 ideas" (39 / 2.6 = 15.0, ±1). Not
  * a hard rule, just a starting steer for the brief. */
 const AVG_OUTPUTS_PER_IDEA = 2.6;
 
-/** The exact JSON shape importAiOutput expects, embedded in the brief so
- * Claude sees it verbatim rather than a paraphrase of it. Platform Outputs
- * carry an adaptation note, not a finished caption — Master Content is the
- * approval unit and owns the one full draft; hashtags are a post-approval
- * publishing detail, not part of planning. Requirements are never part of
- * this shape (Duane, round 3) — PBOS computes them itself, after import,
- * from what's actually planned; the AI is never asked for them. */
-const OUTPUT_SCHEMA_EXAMPLE = {
+export type BriefStage = "master" | "outputs";
+
+/** Stage 1 (Duane): the month's Master Content plan ONLY — no finished copy,
+ * no platform adaptations. Every idea must say what evidence it rests on. */
+const MASTER_STAGE_SCHEMA = {
   master_content: [
     {
       title: "string — the piece's working title",
-      core_message: "string — the single-sentence takeaway",
-      purpose: "string — why this piece exists",
-      pillar_id: "string — one of the pillar ids listed below, or omit",
-      audience_id: "string — one of the audience ids listed below, or omit",
       hook: "string — the opening line",
-      cta: "string",
+      core_message: "string — the single-sentence takeaway (what we're saying)",
+      purpose: "string — why we're saying it",
+      pillar_id: "string — one of the pillar ids listed below",
+      audience_id: "string — one of the audience ids listed below",
+      why_now: "string — why this matters this month (from the monthly update or the profile)",
+      source_evidence:
+        "string — REQUIRED. Which profile field, Source Library item (quote it) or monthly-update statement this idea rests on. If the idea needs personal evidence that none of them contain, return exactly \"PERSONAL_INPUT_REQUIRED\" — never invent a belief, story or experience.",
+      personal_story_available: "boolean — true only if the Source Library or monthly update contains a real story that fits",
+      lead_platform_id: "string — one of the platform ids listed below (the platform this idea leads on)",
+      platform_ids: ["string — every platform id this idea should run on, lead platform included"],
+      cta: "string — the desired outcome / call to action",
       cta_destination:
         "string — an actual destination ONLY if you were given one below; otherwise return exactly \"Needs confirmation\" — never construct or guess a URL",
-      lead_platform_id: "string — one of the platform ids listed below",
-      lead_draft_copy: "string — the one full draft of publish-ready copy, for the lead platform",
+      client_requirements: "string — what we need from the client for this idea (a story on camera, a photo, a decision, a confirmation), or omit",
     },
   ],
+};
+
+/** Stage 2: Platform Outputs for Master Content that already exists on the
+ * plan — keyed by the real master_id, never by position. */
+const OUTPUTS_STAGE_SCHEMA = {
   platform_outputs: [
     {
-      master_index: "number — 1-based position in master_content above that this output belongs to",
-      platform_id: "string — one of the platform ids listed below",
-      format: "string — MUST be one of that platform's allowed formats, listed under \"Allowed formats per platform\" below — never freeform, this drives production Requirements",
+      master_id: "string — the Master Content id exactly as listed below",
+      platform_id: "string — one of that item's intended platform ids listed below",
+      format: "string — MUST be one of that platform's allowed formats listed below — never freeform",
       adaptation_note:
-        "string — how this version should differ from the Master Content lead draft, e.g. \"Shorten for Instagram, make the opening more conversational, use the video hook on screen.\" Not a finished caption — that is written at production time, after approval.",
+        "string — how this version should differ from the Master Content core message for this platform and this account's strategy. Not a finished caption — that is written at production time, after approval.",
       media_brief: "string — what media this needs, described in words, before anyone sources or uploads it",
       destination_link: "string — optional, only if genuinely different from the Master Content CTA destination",
     },
@@ -1057,21 +1084,34 @@ function lastDayOfMonth(periodMonth: string): number {
   return new Date(year, month, 0).getDate();
 }
 
+type SocialRow = Database["public"]["Tables"]["social_strategies"]["Row"];
+
 interface BriefContext {
   clientName: string;
   plan: Database["public"]["Tables"]["monthly_plans"]["Row"];
   pillars: { id: string; name: string }[];
   eligibleAudiences: { id: string; name: string }[];
-  activeSocials: Database["public"]["Tables"]["social_strategies"]["Row"][];
+  audienceNameById: Map<string, string>;
+  activeSocials: SocialRow[];
   existingIdeas: { id: string; plan_sequence: number | null; title: string; core_message: string }[];
-  /** Everything from the title through the active-platform rules. */
+  /** Everything from the title through the source layer and platform rules. */
   header: string[];
 }
 
-/** The client context every brief starts with — the full-plan brief and the
+const SOURCE_LIBRARY_CAP = 80;
+
+/**
+ * The client context every brief starts with — the full-plan brief and the
  * single-item briefs share it verbatim so a regenerated item is written
- * against exactly the same rules as the month it sits in. Refuses on an
- * incomplete profile (checkReadinessInternal) rather than let the AI guess. */
+ * against exactly the same rules as the month it sits in.
+ *
+ * Generator principle (Duane, after his own first run): the template holds
+ * logic and generic instructions only; every client-specific fact — names,
+ * counts, accounts, angles — comes from the current client's payload. And
+ * the payload is three layers, not one: the profile (what the brand is),
+ * the Source Library and consultations (who the person is), and this
+ * month's update (what is happening now).
+ */
 async function buildBriefContext(supabase: SupabaseClient, clientId: string, planId: string): Promise<BriefContext> {
   const readiness = await checkReadinessInternal(supabase, clientId);
   if (!readiness.ready) {
@@ -1080,34 +1120,55 @@ async function buildBriefContext(supabase: SupabaseClient, clientId: string, pla
     );
   }
 
-  const [{ data: client }, { data: plan }, { data: guidelines }, { data: pillars }, { data: audiences }, { data: socials }, { data: existingIdeas }] =
-    await Promise.all([
-      supabase.from("clients").select("name").eq("id", clientId).maybeSingle(),
-      supabase.from("monthly_plans").select("*").eq("id", planId).eq("client_id", clientId).maybeSingle(),
-      supabase.from("content_guidelines").select("content_safeguards").eq("client_id", clientId).maybeSingle(),
-      supabase.from("brand_pillars").select("id,name").eq("client_id", clientId).order("sort_order"),
-      supabase
-        .from("audiences")
-        .select("id,name,description,pain_points,goals,eligible_for_generation")
-        .eq("client_id", clientId)
-        .order("sort_order"),
-      supabase.from("social_strategies").select("*").eq("client_id", clientId).order("sort_order"),
-      supabase.from("content_ideas").select("id,plan_sequence,title,core_message").eq("monthly_plan_id", planId).order("plan_sequence"),
-    ]);
+  const [
+    { data: client },
+    { data: plan },
+    { data: guidelines },
+    { data: positioning },
+    { data: vision },
+    { data: pillars },
+    { data: audiences },
+    { data: socials },
+    { data: existingIdeas },
+    { data: sourceItems },
+    { data: consultations },
+  ] = await Promise.all([
+    supabase.from("clients").select("name").eq("id", clientId).maybeSingle(),
+    supabase.from("monthly_plans").select("*").eq("id", planId).eq("client_id", clientId).maybeSingle(),
+    supabase.from("content_guidelines").select("content_safeguards").eq("client_id", clientId).maybeSingle(),
+    supabase.from("positioning").select("*").eq("client_id", clientId).maybeSingle(),
+    supabase.from("brand_vision").select("*").eq("client_id", clientId).maybeSingle(),
+    supabase.from("brand_pillars").select("id,name").eq("client_id", clientId).order("sort_order"),
+    supabase
+      .from("audiences")
+      .select("id,name,description,pain_points,goals,eligible_for_generation")
+      .eq("client_id", clientId)
+      .order("sort_order"),
+    supabase.from("social_strategies").select("*").eq("client_id", clientId).order("sort_order"),
+    supabase.from("content_ideas").select("id,plan_sequence,title,core_message").eq("monthly_plan_id", planId).order("plan_sequence"),
+    supabase
+      .from("client_source_items")
+      .select("kind,text,source_quote,source_date,pillar_id,sensitivity")
+      .eq("client_id", clientId)
+      .eq("sensitivity", "public")
+      .order("source_date", { ascending: false, nullsFirst: false })
+      .order("created_at", { ascending: false })
+      .limit(SOURCE_LIBRARY_CAP),
+    supabase.from("consultations").select("meeting_date,meeting_type,summary").eq("client_id", clientId).order("meeting_date", { ascending: false }).limit(3),
+  ]);
   if (!plan) throw new UserFacingError("Monthly Plan not found.");
   const snapshot = (plan.snapshot ?? {}) as unknown as MonthlyPlanSnapshot;
   // Only accounts this plan can actually use — excluded ones are never
-  // offered as a destination, by id or by name.
+  // offered as a destination, by id or by name. Everything below reads
+  // persisted column values only — never a UI placeholder.
   const activeSocials = (socials ?? []).filter((s) => !isPlatformExcluded(s));
-  // Duane, round 3: an audience can be real and strategic without being
-  // offered as a direct generation target for these commercial channels
-  // (Daniel's "young people requiring confidence..." stays on his profile,
-  // never here) — filtered from live data, not the frozen snapshot, so a
-  // later eligibility change takes effect on the next brief.
   const eligibleAudiences = (audiences ?? []).filter((a) => a.eligible_for_generation);
+  const audienceNameById = new Map((audiences ?? []).map((a) => [a.id, a.name]));
+  const pillarNameById = new Map((pillars ?? []).map((p) => [p.id, p.name]));
+  const clientName = client?.name ?? "Client";
 
   const lines: string[] = [];
-  lines.push(`# ${client?.name ?? "Client"} — ${periodMonthLabel(plan.period_month)} Monthly Plan: AI Content Brief`);
+  lines.push(`# ${clientName} — ${periodMonthLabel(plan.period_month)} Monthly Plan: AI Content Brief`);
   lines.push("");
   lines.push(
     "You are proposing structured content for this client's Monthly Plan inside PBOS (Personal Brand Operating System). PBOS owns the client record and this plan — you are only being asked to generate proposed structured content for a person to review and import into it. Return ONLY the JSON described at the end of this brief: no commentary, no markdown code fences, nothing before or after it."
@@ -1118,12 +1179,19 @@ async function buildBriefContext(supabase: SupabaseClient, clientId: string, pla
   lines.push("PBOS assigns publish dates after import from cadence — do not propose or mention scheduling or specific dates.");
   lines.push("");
 
+  // --- Hard rules first: safeguards, then provenance. ---
   if (guidelines?.content_safeguards?.trim()) {
     lines.push("## Hard constraints — non-negotiable");
     lines.push(guidelines.content_safeguards.trim());
     lines.push("");
   }
+  lines.push("## Provenance rule — non-negotiable");
+  lines.push(
+    `Never invent a first-person belief, personal opinion, autobiographical detail, personal experience or turning point for ${clientName}. Any first-person claim must be supported by the Client Profile below, the Client Source Library, or this month's update. You may improve wording and write hooks, but you must not change the underlying belief or create an experience the client did not provide. Creative language is fine; inventing the client is not. If an idea would benefit from personal evidence that is not available here, return exactly ${PERSONAL_INPUT_REQUIRED} in source_evidence rather than fabricating it.`
+  );
+  lines.push("");
 
+  // --- Layer 1: the profile (what the brand is) ---
   lines.push("## Client Snapshot");
   lines.push(`Primary objective: ${plan.primary_objective || "(not set)"}`);
   if (plan.secondary_objectives) lines.push(`Secondary objectives: ${plan.secondary_objectives}`);
@@ -1135,6 +1203,74 @@ async function buildBriefContext(supabase: SupabaseClient, clientId: string, pla
   if (plan.scope_status) lines.push(`Scope / status notes: ${plan.scope_status}`);
   lines.push("");
 
+  // --- Layer 2a: who the person is — the positioning and vision fields the
+  // generator had never read before (Duane: "the generator isn't reading
+  // that profile field"). ---
+  const person: [string, string | null | undefined][] = [
+    ["Positioning statement", positioning?.positioning_statement],
+    ["Current positioning", positioning?.current_positioning],
+    ["Desired positioning", positioning?.desired_positioning],
+    ["Expertise", positioning?.expertise],
+    ["Unique story", positioning?.unique_story],
+    ["Differentiators", positioning?.differentiators],
+    ["Core beliefs", positioning?.core_beliefs],
+    ["Contrarian opinions", positioning?.contrarian_opinions],
+    ["Long-term goal", vision?.long_term_goal],
+    ["Authority goal", vision?.authority_goal],
+    ["Commercial goal", vision?.commercial_goal],
+    ["Impact goal", vision?.impact_goal],
+    ["Legacy / contribution", vision?.legacy_contribution],
+  ];
+  const personLines = person.filter(([, v]) => v && v.trim());
+  lines.push("## Who this person is (from the profile — citable as source_evidence)");
+  if (personLines.length > 0) {
+    for (const [label, value] of personLines) lines.push(`### ${label}\n${value!.trim()}`);
+  } else {
+    lines.push("(no positioning or vision recorded yet — do not fill the gap with invention)");
+  }
+  lines.push("");
+
+  // --- Layer 2b: the Source Library — the client's own stories, beliefs
+  // and words, newest first, each citable. Sensitive items never reach
+  // here (filtered in the query). ---
+  lines.push("## Client Source Library (citable as source_evidence — the client's own material)");
+  const items = sourceItems ?? [];
+  if (items.length === 0) {
+    lines.push("(empty — no consultation material has been extracted yet; treat any personal claim as PERSONAL_INPUT_REQUIRED unless the profile above supports it)");
+  } else {
+    for (const kind of SOURCE_ITEM_KINDS) {
+      const ofKind = items.filter((i) => i.kind === kind.value);
+      if (ofKind.length === 0) continue;
+      lines.push(`### ${kind.plural}`);
+      for (const item of ofKind) {
+        const bits = [
+          item.source_quote ? `client's words: "${item.source_quote}"` : null,
+          item.source_date ? `source: ${item.source_date}` : null,
+          item.pillar_id && pillarNameById.get(item.pillar_id) ? `pillar: ${pillarNameById.get(item.pillar_id)}` : null,
+        ].filter(Boolean);
+        lines.push(`- ${item.text}${bits.length ? ` (${bits.join("; ")})` : ""}`);
+      }
+    }
+    if (items.length >= SOURCE_LIBRARY_CAP) lines.push(`(showing the ${SOURCE_LIBRARY_CAP} most recent items)`);
+  }
+  lines.push("");
+
+  // --- Layer 3: what is happening now ---
+  lines.push("## This month's update (current source material — citable as source_evidence)");
+  if (plan.monthly_update.trim()) {
+    lines.push(plan.monthly_update.trim());
+  } else {
+    lines.push("(no monthly update recorded — nothing new has been said since the profile and Source Library above)");
+  }
+  const recent = (consultations ?? []).filter((c) => c.summary.trim());
+  if (recent.length > 0) {
+    lines.push("");
+    lines.push("Recent consultation summaries (context, newest first):");
+    for (const c of recent) lines.push(`- ${c.meeting_date}${c.meeting_type ? ` (${c.meeting_type})` : ""}: ${c.summary.trim()}`);
+  }
+  lines.push("");
+
+  // --- Audiences, pillars, platforms ---
   lines.push("### Audiences");
   lines.push("Only audiences eligible for generation on this plan are listed — others may exist on the client's strategic profile but must not be targeted here.");
   for (const a of eligibleAudiences) {
@@ -1142,7 +1278,7 @@ async function buildBriefContext(supabase: SupabaseClient, clientId: string, pla
     lines.push(`- **${a.name}** — ${bits.join(" | ") || "—"}`);
   }
   lines.push("");
-  lines.push("### Content pillars");
+  lines.push(`### Content pillars (${(pillars ?? []).length} approved)`);
   for (const p of snapshot.pillars ?? []) {
     const bits = [p.description, p.purpose && `Purpose: ${p.purpose}`, p.key_messages && `Key messages: ${p.key_messages}`].filter(Boolean);
     lines.push(`- **${p.name}** — ${bits.join(" | ") || "—"}`);
@@ -1151,32 +1287,75 @@ async function buildBriefContext(supabase: SupabaseClient, clientId: string, pla
   lines.push("### Active platforms & rules (the only valid destinations)");
   for (const account of activeSocials) {
     const cadence = account.cadence_target ? `${account.cadence_target}/${account.cadence_period}` : "—";
-    lines.push(
-      `- **${platformLabel(account)}** — id: ${account.id}; objective: ${account.objective || "—"}; cadence: ${cadence}; tone: ${account.tone_voice || "—"}; CTA: ${account.cta_strategy || "—"}`
-    );
+    const bits = [
+      `id: ${account.id}`,
+      `role: ${account.platform_role || "—"}`,
+      `objective: ${account.objective || "—"}`,
+      `cadence: ${cadence}`,
+      `audience: ${[account.primary_audience_id && audienceNameById.get(account.primary_audience_id), account.secondary_audience_id && audienceNameById.get(account.secondary_audience_id)].filter(Boolean).join(" / ") || account.audience || "—"}`,
+      `tone: ${account.tone_voice || "—"}`,
+      `formats in use: ${account.preferred_formats || account.content_types || "—"}`,
+      `CTA: ${account.cta_strategy || "—"}`,
+      account.commercial_ratio ? `commercial balance: ${account.commercial_ratio}` : null,
+      account.platform_exclusions ? `never here: ${account.platform_exclusions}` : null,
+      account.ai_instructions ? `instructions: ${account.ai_instructions}` : null,
+    ].filter(Boolean);
+    lines.push(`- **${platformLabel(account)}** — ${bits.join("; ")}`);
   }
   lines.push("");
 
   return {
-    clientName: client?.name ?? "Client",
+    clientName,
     plan,
     pillars: pillars ?? [],
     eligibleAudiences: eligibleAudiences.map((a) => ({ id: a.id, name: a.name })),
+    audienceNameById,
     activeSocials,
     existingIdeas: existingIdeas ?? [],
     header: lines,
   };
 }
 
-function briefSiblingGuidance(): string[] {
-  return [
-    "## LinkedIn sibling content",
-    "One Master Content idea MAY produce Platform Outputs on both LinkedIn accounts where it's genuinely appropriate — this is expected, not something to avoid. But the two adaptations must differ materially, never the same caption twice:",
-    "- LinkedIn — Daniel Andrews: personal authority — his own experience, opinion, leadership.",
-    "- LinkedIn — CEG: organisational proof — services, outcomes, partnership, professional relevance.",
-    "Write each adaptation_note to reflect that distinct angle explicitly, not as a lightly reworded copy of the other.",
-    "",
-  ];
+/**
+ * Sibling guidance — derived, never written into the template (Duane's
+ * grouping rule): group the client's active accounts by platform family;
+ * two or more on one family → render a block built from THOSE accounts'
+ * own strategy fields; one → nothing. No dedicated "sibling angle" field:
+ * role, objective, audience, tone, commercial balance, exclusions and AI
+ * instructions are what should express the distinction.
+ */
+function briefSiblingGuidance(ctx: BriefContext): string[] {
+  const byFamily = new Map<string, SocialRow[]>();
+  for (const account of ctx.activeSocials) {
+    const key = platformFamilyKey(account.platform);
+    const list = byFamily.get(key) ?? [];
+    list.push(account);
+    byFamily.set(key, list);
+  }
+  const lines: string[] = [];
+  for (const [family, accounts] of byFamily) {
+    if (accounts.length < 2) continue;
+    const familyLabel = accounts[0]!.platform;
+    lines.push(`## Sibling accounts on ${familyLabel}`);
+    lines.push(
+      `This client has ${accounts.length} accounts in the ${family} family. One Master Content idea MAY produce a Platform Output on more than one of them where that is genuinely appropriate — expected, not something to avoid. But each adaptation must differ materially, never the same caption twice, along the lines of each account's own strategy:`
+    );
+    for (const account of accounts) {
+      const angle = [
+        account.platform_role ? `role: ${account.platform_role}` : null,
+        account.objective ? `objective: ${account.objective}` : null,
+        account.primary_audience_id && ctx.audienceNameById.get(account.primary_audience_id) ? `speaks to: ${ctx.audienceNameById.get(account.primary_audience_id)}` : account.audience ? `speaks to: ${account.audience}` : null,
+        account.tone_voice ? `tone: ${account.tone_voice}` : null,
+        account.commercial_ratio ? `commercial balance: ${account.commercial_ratio}` : null,
+        account.platform_exclusions ? `never: ${account.platform_exclusions}` : null,
+        account.ai_instructions ? `instructions: ${account.ai_instructions}` : null,
+      ].filter(Boolean);
+      lines.push(`- **${platformLabel(account)}** (id: ${account.id}) — ${angle.join("; ") || "no strategy fields set — treat as a distinct account and keep its adaptation distinct"}`);
+    }
+    lines.push("Write each adaptation_note to reflect that account's own angle explicitly, not as a lightly reworded copy of a sibling's.");
+    lines.push("");
+  }
+  return lines;
 }
 
 function briefIdLists(ctx: BriefContext): string[] {
@@ -1187,76 +1366,138 @@ function briefIdLists(ctx: BriefContext): string[] {
   lines.push("Audience ids available:");
   for (const a of ctx.eligibleAudiences) lines.push(`- ${a.id} = ${a.name}`);
   lines.push("");
-  lines.push("Platform ids available (use for lead_platform_id and platform_id — no other platform is valid for this plan):");
+  lines.push("Platform ids available (the only valid platform_id / lead_platform_id values for this plan):");
   for (const account of ctx.activeSocials) lines.push(`- ${account.id} = ${platformLabel(account)}`);
   lines.push("");
   lines.push("### Allowed formats per platform");
-  lines.push("Every format value must be exactly one of the values listed for that platform's id — never freeform, since format drives production Requirements after import.");
+  lines.push("Every format value must be exactly one of the values listed for that platform's id — never freeform, since format drives production Requirements after import. Every platform above has a list.");
   for (const account of ctx.activeSocials) {
-    const allowed = allowedFormatsFor(account.platform);
-    if (allowed) lines.push(`- ${platformLabel(account)} (id: ${account.id}): ${allowed.join(", ")}`);
+    lines.push(`- ${platformLabel(account)} (id: ${account.id}): ${allowedFormatsFor(account.platform).join(", ")}`);
   }
   return lines;
 }
 
-/** Generate the brief a person pastes into Claude for a whole month —
- * client context, volume target, balance rules, and the exact schema
- * importAiOutput will validate against. Nothing is written; this only reads. */
-export async function exportAiBrief(clientId: string, planId: string): Promise<ActionResult<AiBriefResult>> {
+/**
+ * The brief a person pastes into Claude. Two stages (Duane): "master" asks
+ * for the month's Master Content plan only — ideas with provenance, no
+ * finished copy; "outputs" asks for Platform Outputs against the Master
+ * Content already on the plan, once it has been reviewed. Nothing is
+ * written; this only reads.
+ */
+export async function exportAiBrief(clientId: string, planId: string, stage: BriefStage = "master"): Promise<ActionResult<AiBriefResult>> {
   return runAction(async () => {
     const supabase = await createClient();
     const ctx = await buildBriefContext(supabase, clientId, planId);
-    const { activeSocials, existingIdeas } = ctx;
+    const { activeSocials, existingIdeas, pillars } = ctx;
     const lines = [...ctx.header];
 
-    // Duane, round 3: an explicit, PBOS-calculated volume target — not
-    // hardcoded, not left for the AI to guess — from each active account's
-    // real cadence for this month.
-    const accountTargets = activeSocials
-      .map((account) => ({ account, target: monthlyTarget(account) }))
-      .filter((t): t is { account: (typeof activeSocials)[number]; target: number } => t.target !== null);
-    const totalOutputTarget = accountTargets.reduce((sum, t) => sum + t.target, 0);
-    const ideaMid = Math.round(totalOutputTarget / AVG_OUTPUTS_PER_IDEA);
-    lines.push("## Volume target");
-    if (accountTargets.length > 0) {
-      lines.push(`This plan needs roughly ${totalOutputTarget} Platform Outputs this month, from each active account's own cadence:`);
-      for (const { account, target } of accountTargets) lines.push(`- ${platformLabel(account)}: ~${target} (cadence: ${cadenceLabel(account)})`);
-      lines.push(
-        `Aim for roughly ${Math.max(1, ideaMid - 1)}–${ideaMid + 1} Master Content ideas — one idea often produces more than one Platform Output (see the LinkedIn sibling guidance below), so idea count is naturally lower than the output total.`
-      );
-    } else {
-      lines.push("No active platform has a cadence target set — a volume target can't be calculated. Propose a reasonable number of ideas and PBOS will flag the shortfall after import.");
-    }
-    lines.push("These are targets, not hard caps — PBOS checks the actual planned-vs-target cadence after you import.");
-    lines.push("");
-
-    lines.push("## Pillar balance");
-    lines.push(
-      "Use all seven approved content pillars where appropriate across the month's ideas — don't cluster on the two or three easiest themes. No more than three Master Content ideas should come from any single pillar this month, unless the month's objective clearly justifies leaning into it."
-    );
-    lines.push("");
-
-    lines.push(...briefSiblingGuidance());
-
-    lines.push("### Already planned this month — do not duplicate");
-    if (existingIdeas.length > 0) {
-      for (const idea of existingIdeas) {
-        lines.push(`- ${planSequenceLabel(idea.plan_sequence)}: "${idea.title}" — ${idea.core_message || "(no core message set)"}`);
+    if (stage === "master") {
+      // Duane, round 3: an explicit, PBOS-calculated volume target — not
+      // hardcoded, not left for the AI to guess — from each active
+      // account's real cadence for this month.
+      const accountTargets = activeSocials
+        .map((account) => ({ account, target: monthlyTarget(account) }))
+        .filter((t): t is { account: SocialRow; target: number } => t.target !== null);
+      const totalOutputTarget = accountTargets.reduce((sum, t) => sum + t.target, 0);
+      const ideaMid = Math.round(totalOutputTarget / AVG_OUTPUTS_PER_IDEA);
+      lines.push("## Volume target");
+      if (accountTargets.length > 0) {
+        lines.push(`Across the month this client needs roughly ${totalOutputTarget} Platform Outputs, from each active account's own cadence:`);
+        for (const { account, target } of accountTargets) lines.push(`- ${platformLabel(account)}: ~${target} (cadence: ${cadenceLabel(account)})`);
+        lines.push(
+          `So aim for roughly ${Math.max(1, ideaMid - 1)}–${ideaMid + 1} Master Content ideas — one idea usually runs on more than one platform (list them all in platform_ids), so idea count is naturally lower than the output total. Platform Outputs themselves are generated in a second step once these ideas are reviewed.`
+        );
+      } else {
+        lines.push("No active platform has a cadence target set — propose a reasonable number of ideas and PBOS will flag the shortfall after import.");
       }
-    } else {
-      lines.push("(nothing planned yet this month)");
-    }
-    lines.push("");
+      lines.push("");
 
-    lines.push("## What to return");
-    lines.push("Return valid JSON only, matching this exact shape (this is a schema description, not literal values to copy). Do not return a requirements array — PBOS computes Requirements itself after import.");
+      lines.push("## Pillar balance");
+      lines.push(
+        `Use all ${pillars.length} approved content pillars where appropriate across the month's ideas — don't cluster on the two or three easiest themes. No more than three Master Content ideas should come from any single pillar this month, unless the month's objective clearly justifies leaning into it.`
+      );
+      lines.push("");
+
+      lines.push(...briefSiblingGuidance(ctx));
+
+      lines.push("### Already planned this month — do not duplicate");
+      if (existingIdeas.length > 0) {
+        for (const idea of existingIdeas) lines.push(`- ${planSequenceLabel(idea.plan_sequence)}: "${idea.title}" — ${idea.core_message || "(no core message set)"}`);
+      } else {
+        lines.push("(nothing planned yet this month)");
+      }
+      lines.push("");
+
+      lines.push("## What to return — Stage 1: Master Content only");
+      lines.push(
+        "Return valid JSON only, matching this exact shape (a schema description, not literal values to copy). This stage is the month's plan of ideas — do NOT write finished copy, captions, scripts or platform adaptations; those are generated in Stage 2 after the ideas are reviewed. Do not return a requirements array — PBOS computes Requirements itself. Every idea's source_evidence must cite something from the profile, Source Library or monthly update above, or be exactly PERSONAL_INPUT_REQUIRED."
+      );
+      lines.push("");
+      lines.push("```json");
+      lines.push(JSON.stringify(MASTER_STAGE_SCHEMA, null, 2));
+      lines.push("```");
+      lines.push("");
+      lines.push(...briefIdLists(ctx));
+      return { brief: lines.join("\n") };
+    }
+
+    // --- Stage 2: Platform Outputs for the Master Content already here ---
+    const [{ data: ideas }, { data: outputs }] = await Promise.all([
+      supabase
+        .from("content_ideas")
+        .select("id,plan_sequence,title,hook,core_message,purpose,why_now,source_evidence,cta,cta_destination,lead_platform_id,intended_platforms,status")
+        .eq("monthly_plan_id", planId)
+        .order("plan_sequence"),
+      supabase.from("content_outputs").select("content_id,social_account_id").eq("client_id", clientId),
+    ]);
+    const ideaList = ideas ?? [];
+    if (ideaList.length === 0) throw new UserFacingError("This plan has no Master Content yet — run Stage 1 first.");
+    const socialById = new Map(activeSocials.map((s) => [s.id, s]));
+    const existingByIdea = new Map<string, Set<string>>();
+    for (const o of outputs ?? []) {
+      if (!o.social_account_id) continue;
+      const set = existingByIdea.get(o.content_id) ?? new Set<string>();
+      set.add(o.social_account_id);
+      existingByIdea.set(o.content_id, set);
+    }
+
+    lines.push(...briefSiblingGuidance(ctx));
+    lines.push("## Master Content on this plan — generate Platform Outputs for these");
+    lines.push("Each item lists the platforms it is intended to run on. Return one platform_output per (master_id, platform_id) pair that does not already exist. Never add a platform that isn't listed for the item, never return a pair marked as existing, and never change the idea itself.");
+    lines.push("");
+    let wanted = 0;
+    for (const idea of ideaList) {
+      const seq = planSequenceLabel(idea.plan_sequence);
+      const intended = (idea.intended_platforms.length > 0 ? idea.intended_platforms : idea.lead_platform_id ? [idea.lead_platform_id] : []).filter((id) => socialById.has(id));
+      lines.push(`### ${seq} — ${idea.title} (master_id: ${idea.id})`);
+      lines.push(`- Hook: ${idea.hook || "—"}`);
+      lines.push(`- Core message: ${idea.core_message || "—"}`);
+      lines.push(`- Purpose: ${idea.purpose || "—"}`);
+      if (idea.why_now) lines.push(`- Why now: ${idea.why_now}`);
+      lines.push(`- Source evidence: ${idea.source_evidence || "—"}`);
+      lines.push(`- CTA: ${idea.cta || "—"} → ${idea.cta_destination || "—"}`);
+      lines.push(`- Lead platform: ${idea.lead_platform_id && socialById.get(idea.lead_platform_id) ? platformLabel(socialById.get(idea.lead_platform_id)!) : "—"}`);
+      if (intended.length === 0) {
+        lines.push("- Intended platforms: (none recorded — skip this item)");
+      } else {
+        lines.push("- Intended platforms:");
+        for (const platformId of intended) {
+          const account = socialById.get(platformId)!;
+          const exists = existingByIdea.get(idea.id)?.has(platformId) ?? false;
+          if (!exists) wanted += 1;
+          lines.push(`  - ${platformLabel(account)} — platform_id: ${platformId}${exists ? " — EXISTS, do not return" : ""}`);
+        }
+      }
+      lines.push("");
+    }
+    lines.push(`## What to return — Stage 2: Platform Outputs only (${wanted} expected)`);
+    lines.push("Return valid JSON only, matching this exact shape (a schema description, not literal values to copy). Do not return master_content and do not return a requirements array.");
     lines.push("");
     lines.push("```json");
-    lines.push(JSON.stringify(OUTPUT_SCHEMA_EXAMPLE, null, 2));
+    lines.push(JSON.stringify(OUTPUTS_STAGE_SCHEMA, null, 2));
     lines.push("```");
     lines.push("");
     lines.push(...briefIdLists(ctx));
-
     return { brief: lines.join("\n") };
   });
 }
@@ -1328,7 +1569,7 @@ export async function exportItemBrief(
     const audienceName = new Map(ctx.eligibleAudiences.map((a) => [a.id, a.name]));
     const seq = planSequenceLabel(idea.plan_sequence);
 
-    const lines = [...ctx.header, ...briefSiblingGuidance()];
+    const lines = [...ctx.header, ...briefSiblingGuidance(ctx)];
 
     lines.push("### Other Master Content this month — do not duplicate any of these");
     const others = ctx.existingIdeas.filter((i) => i.id !== idea.id);
@@ -1469,7 +1710,7 @@ async function parseItemRegeneration(
   const validateOutputFields = (label: string, raw: RawPlatformOutput, platform: string) => {
     const format = str(raw.format);
     const allowed = allowedFormatsFor(platform);
-    if (allowed && !allowed.includes(format)) errors.push(`${label}: format "${format || "(blank)"}" isn't valid here — must be one of ${allowed.join(", ")}.`);
+    if (!allowed.includes(format)) errors.push(`${label}: format "${format || "(blank)"}" isn't valid here — must be one of ${allowed.join(", ")}.`);
     return { format, adaptation_note: str(raw.adaptation_note), media_brief: str(raw.media_brief), destination_link: str(raw.destination_link) };
   };
 
@@ -1710,6 +1951,8 @@ export async function declineChangeRequest(clientId: string, requestId: string, 
 }
 
 export interface ImportAiOutputResult {
+  /** "master" (Stage 1: ideas) or "outputs" (Stage 2: Platform Outputs for existing ideas). */
+  stage: BriefStage;
   mode: ImportMode;
   /** Draft AI-imported Master Content removed by a "replace" import. */
   replaced: number;
@@ -1744,9 +1987,16 @@ interface RawMasterContent {
   cta_destination?: unknown;
   lead_platform_id?: unknown;
   lead_draft_copy?: unknown;
+  why_now?: unknown;
+  source_evidence?: unknown;
+  personal_story_available?: unknown;
+  platform_ids?: unknown;
+  client_requirements?: unknown;
 }
 interface RawPlatformOutput {
   master_index?: unknown;
+  /** Stage 2: the existing Master Content id. */
+  master_id?: unknown;
   platform_id?: unknown;
   format?: unknown;
   adaptation_note?: unknown;
@@ -1800,12 +2050,20 @@ export async function importAiOutput(
   if (masterRaw.length === 0 && outputsRaw.length === 0) {
     return { ok: false, message: "Nothing to import — the JSON has no master_content or platform_outputs." };
   }
+  // Stage 2 (Duane's two-step generation): outputs keyed by the real
+  // master_id against Master Content already on the plan.
+  const stage: BriefStage = masterRaw.length === 0 && outputsRaw.some((o) => typeof o.master_id === "string") ? "outputs" : "master";
 
   const shapeErrors: string[] = [];
   masterRaw.forEach((item, i) => {
     if (!str(item.title)) shapeErrors.push(`master_content[${i}]: title is required.`);
+    if (!str(item.source_evidence)) shapeErrors.push(`master_content[${i}] "${str(item.title)}": source_evidence is required — cite the profile, Source Library or monthly update, or return ${PERSONAL_INPUT_REQUIRED}.`);
   });
   outputsRaw.forEach((item, i) => {
+    if (stage === "outputs") {
+      if (!str(item.master_id)) shapeErrors.push(`platform_outputs[${i}]: master_id is required.`);
+      return;
+    }
     const idx = item.master_index;
     if (typeof idx !== "number" || !Number.isInteger(idx) || idx < 1 || idx > masterRaw.length) {
       shapeErrors.push(`platform_outputs[${i}]: master_index must be a whole number from 1 to ${masterRaw.length || "?"}, pointing at a master_content item.`);
@@ -1857,10 +2115,26 @@ export async function importAiOutput(
         if (!account) idErrors.push(`${label}: lead_platform_id "${leadPlatformId}" doesn't match a platform on this client's Social tab.`);
         else if (isPlatformExcluded(account)) idErrors.push(`${label}: lead_platform_id resolves to ${platformLabel(account)}, which is excluded for this plan.`);
       }
+      const platformIds = Array.isArray(item.platform_ids) ? item.platform_ids.map((p) => str(p)).filter(Boolean) : [];
+      for (const platformId of platformIds) {
+        const account = socialById.get(platformId);
+        if (!account) idErrors.push(`${label}: platform_ids contains "${platformId}", which doesn't match a platform on this client's Social tab.`);
+        else if (isPlatformExcluded(account)) idErrors.push(`${label}: platform_ids includes ${platformLabel(account)}, which is excluded for this plan.`);
+      }
     });
+    // Stage 2: every master_id must be Master Content on THIS plan.
+    const planIdeaById = new Map<string, { id: string; plan_sequence: number | null; intended_platforms: string[]; lead_platform_id: string | null }>();
+    if (stage === "outputs") {
+      const { data: planIdeas } = await supabase.from("content_ideas").select("id,plan_sequence,intended_platforms,lead_platform_id").eq("monthly_plan_id", planId);
+      for (const idea of planIdeas ?? []) planIdeaById.set(idea.id, idea);
+    }
     const seenOutputKeys = new Set<string>();
     outputsRaw.forEach((item, i) => {
       const label = `platform_outputs[${i}]`;
+      if (stage === "outputs" && !planIdeaById.has(str(item.master_id))) {
+        idErrors.push(`${label}: master_id "${str(item.master_id)}" isn't Master Content on this plan.`);
+        return;
+      }
       const platformId = str(item.platform_id);
       if (!platformId) {
         idErrors.push(`${label}: platform_id is required.`);
@@ -1872,7 +2146,7 @@ export async function importAiOutput(
         return;
       }
       if (isPlatformExcluded(account)) idErrors.push(`${label}: ${platformLabel(account)} is excluded for this plan — it must not be offered as a destination.`);
-      const dupeKey = `${item.master_index}:${platformId}`;
+      const dupeKey = `${stage === "outputs" ? str(item.master_id) : item.master_index}:${platformId}`;
       if (seenOutputKeys.has(dupeKey)) idErrors.push(`${label}: duplicate output for the same Master Content item and platform.`);
       seenOutputKeys.add(dupeKey);
       const mediaState = str(item.media_state);
@@ -1881,7 +2155,7 @@ export async function importAiOutput(
       }
       const format = str(item.format);
       const allowedFormats = allowedFormatsFor(account.platform);
-      if (allowedFormats && !allowedFormats.includes(format)) {
+      if (!allowedFormats.includes(format)) {
         idErrors.push(`${label}: format "${format || "(blank)"}" isn't valid for ${platformLabel(account)} — must be one of ${allowedFormats.join(", ")}.`);
       }
     });
@@ -1900,7 +2174,7 @@ export async function importAiOutput(
     outputsRaw.forEach((item, i) => {
       const account = socialById.get(str(item.platform_id));
       if (!account) return;
-      const key = `${item.master_index}:${normaliseAccountKey(account.platform)}`;
+      const key = `${stage === "outputs" ? str(item.master_id) : item.master_index}:${platformFamilyKey(account.platform)}`;
       const list = siblingGroups.get(key) ?? [];
       list.push(i);
       siblingGroups.set(key, list);
@@ -1919,6 +2193,57 @@ export async function importAiOutput(
         }
       }
     }
+    // ---- Stage 2: outputs for existing Master Content — never touches the ideas. ----
+    if (stage === "outputs") {
+      const { data: existingOutputs } = await supabase
+        .from("content_outputs")
+        .select("content_id,social_account_id")
+        .in("content_id", [...planIdeaById.keys()]);
+      const have = new Set((existingOutputs ?? []).map((o) => `${o.content_id}:${o.social_account_id ?? ""}`));
+      let outputsCreated = 0;
+      for (const item of outputsRaw) {
+        const masterId = str(item.master_id);
+        const account = socialById.get(str(item.platform_id))!;
+        if (have.has(`${masterId}:${account.id}`)) {
+          warnings.push(`${planSequenceLabel(planIdeaById.get(masterId)?.plan_sequence ?? null)} on ${platformLabel(account)} already has a Platform Output — skipped, never duplicated.`);
+          continue;
+        }
+        const verdict = assessPlatformFit(account);
+        if (verdict.decision === "review") warnings.push(`${planSequenceLabel(planIdeaById.get(masterId)?.plan_sequence ?? null)} on ${platformLabel(account)}: ${verdict.reason}`);
+        const { error } = await supabase.from("content_outputs").insert({
+          content_id: masterId,
+          client_id: clientId,
+          platform: account.platform,
+          social_account_id: account.id,
+          format: str(item.format),
+          adaptation_note: str(item.adaptation_note),
+          media_brief: str(item.media_brief),
+          destination_link: str(item.destination_link),
+          media_state: str(item.media_state) || "concept",
+          origin: "ai_import",
+        });
+        if (error) throw new Error(`Platform output for ${masterId}: ${error.message}`);
+        have.add(`${masterId}:${account.id}`);
+        outputsCreated += 1;
+      }
+      let datesAssigned = 0;
+      try {
+        const dated = await assignPlanPublishDatesInternal(supabase, clientId, planId);
+        datesAssigned = dated.assigned;
+        if (dated.unspacedSiblingGroups > 0) warnings.push(`${dated.unspacedSiblingGroups} sibling group(s) could not be fully spaced within this planning period.`);
+      } catch (dateError) {
+        warnings.push(`Couldn't assign publish dates: ${dateError instanceof Error ? dateError.message : String(dateError)}`);
+      }
+      let requirementsAutoGenerated = 0;
+      try {
+        requirementsAutoGenerated = (await reconcilePlanRequirementsInternal(supabase, clientId, planId)).created;
+      } catch (reconcileError) {
+        warnings.push(`Couldn't auto-generate production requirements: ${reconcileError instanceof Error ? reconcileError.message : String(reconcileError)}`);
+      }
+      revalidatePlan(clientId, planId);
+      return { stage, mode: "add", replaced: 0, kept, revisionCreated: null, masterContentCreated: 0, platformOutputsCreated: outputsCreated, requirementsAutoGenerated, datesAssigned, warnings };
+    }
+
     // Scope the import (validation above has passed — nothing is removed for
     // an import that would then be rejected).
     let replaced = 0;
@@ -1977,6 +2302,15 @@ export async function importAiOutput(
             lead_draft_copy: str(item.lead_draft_copy),
             pillar_id: str(item.pillar_id) || null,
             audience_id: str(item.audience_id) || null,
+            // Provenance (Duane): what this idea rests on, and why now.
+            why_now: str(item.why_now),
+            source_evidence:
+              str(item.source_evidence) +
+              (typeof item.personal_story_available === "boolean" ? ` [personal story available: ${item.personal_story_available ? "yes" : "no"}]` : ""),
+            client_requirements: str(item.client_requirements),
+            intended_platforms: [
+              ...new Set([...(Array.isArray(item.platform_ids) ? item.platform_ids.map((p) => str(p)) : []), leadPlatformId ?? ""].filter((p) => p && socialById.has(p))),
+            ],
             origin: "ai_import",
             created_by: user?.id ?? null,
           })
@@ -2045,6 +2379,7 @@ export async function importAiOutput(
 
       revalidatePlan(clientId, planId);
       return {
+        stage,
         mode,
         replaced,
         kept,
@@ -2089,6 +2424,7 @@ export interface MonthlyPlanExport {
     cta_priorities: string;
     primary_cta_destination: string;
     scope_status: string;
+    monthly_update: string;
     auto_pulled: MonthlyPlanSnapshot;
   };
   master_content: {
@@ -2107,6 +2443,11 @@ export interface MonthlyPlanExport {
     lead_platform: string;
     lead_platform_id: string | null;
     lead_draft_copy: string;
+    why_now: string;
+    /** Internal provenance — which profile field / Source Library item / monthly-update statement the idea rests on. */
+    source_evidence: string;
+    client_requirements: string;
+    intended_platforms: { id: string; label: string }[];
     target_publish_date: string | null;
     status: string;
     origin: string;
@@ -2186,6 +2527,7 @@ async function buildPlanExportInternal(supabase: SupabaseClient, clientId: strin
         cta_priorities: plan.cta_priorities,
         primary_cta_destination: plan.primary_cta_destination,
         scope_status: plan.scope_status,
+        monthly_update: plan.monthly_update,
         auto_pulled: (plan.snapshot ?? {}) as unknown as MonthlyPlanSnapshot,
       },
       master_content: ideaList.map((idea) => ({
@@ -2202,6 +2544,10 @@ async function buildPlanExportInternal(supabase: SupabaseClient, clientId: strin
         lead_platform: idea.lead_platform,
         lead_platform_id: idea.lead_platform_id,
         lead_draft_copy: idea.lead_draft_copy,
+        why_now: idea.why_now,
+        source_evidence: idea.source_evidence,
+        client_requirements: idea.client_requirements,
+        intended_platforms: idea.intended_platforms.map((pid) => ({ id: pid, label: socialById.get(pid) ? platformLabel(socialById.get(pid)!) : pid })),
         target_publish_date: idea.target_publish_date,
         status: idea.status,
         origin: idea.origin,

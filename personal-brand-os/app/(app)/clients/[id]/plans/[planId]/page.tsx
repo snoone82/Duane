@@ -201,7 +201,7 @@ export default async function MonthlyPlanPage({ params }: { params: Promise<{ id
           PBOS owns this plan — Claude is only ever asked to propose structured content into it. No live API connection
           yet: generate a brief, paste it into Claude yourself, then paste the JSON it returns back in below.
         </p>
-        <AiBriefPanel clientId={id} planId={planId} periodMonth={plan.period_month} readiness={readiness} />
+        <AiBriefPanel clientId={id} planId={planId} periodMonth={plan.period_month} readiness={readiness} masterContentCount={ideaList.length} />
       </section>
     </div>
   );

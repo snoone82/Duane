@@ -17,6 +17,8 @@ RULES — follow these exactly:
 10. A repeatable section may be wrapped as {"mode": "...", "items": [...]} when the default isn't right: "replace" means the list you supply is definitive (anything missing is offered for deletion), "append" means every record is genuinely new. Plain lists mean "update what matches, add what's new" — the default, and correct almost always.
 12. content_guidelines is the client's permanent content direction (tone, language, CTA priorities, hard constraints) that every Monthly Plan inherits. content_safeguards is a HARD constraint the AI must always obey — only fill it when the client actually stated one (safeguarding, legal, regulatory); never invent one.
 13. social_strategies now carries each account's Platform Strategy. role_in_strategy is one of: authority, discovery, community, conversion, commentary, long-form education, secondary distribution. cross_posting_rule is one of: allow | adapt | selective | never. target_cadence is {"value": 3, "period": "week"} (or "month"). posting_days lists the days the account publishes on, e.g. ["Mon", "Tue", "Wed", "Thu", "Fri"]. primary_audience / secondary_audience must exactly match an audience name in this import or in the existing-client context — omit if unsure. account_status is one of: active | planned | inactive; account_type is one of: personal | company | programme.
+14. consultations[].transcript is the FULL transcript or raw notes, verbatim — PBOS retains it permanently as source material. Never summarise it into that field; the summary has its own field.
+15. source_library is the Story / Belief / Voice bank extracted from the consultation: kind is one of story | belief | voice | avoid | rejected_view | priority | opportunity | update. "text" is the item in plain words; "source_quote" is the client's OWN wording, verbatim, whenever you have it. Only extract what the client actually said — never infer a belief, story or opinion they did not state. Mark anything private or risky "sensitive".
 11. For UPDATE imports, identity / matching fields may be repeated even when unchanged where the schema marks them REQUIRED. These are: overview.name, a record's permanent "id" / "action_id", and any required record identity field — name (audiences, content pillars), platform (social strategies), type (authority opportunities), title (actions). Repeating an identity field so PBOS can match the record does NOT count as restating unchanged data. overview.name must ALWAYS be included so PBOS can identify the client, even when the name itself has not changed.
 
 {
@@ -60,8 +62,8 @@ RULES — follow these exactly:
     {
       "id": "internal PBOS id — include when updating a known existing record; omit for genuinely new records",
       "platform": "REQUIRED e.g. LinkedIn",
-      "account_name": "The account/channel name, e.g. Daniel Andrews or CEG Programme",
-      "owner_brand": "Who the account belongs to, e.g. Daniel / CEG",
+      "account_name": "The account/channel name, e.g. a personal profile, company page or programme account",
+      "owner_brand": "Who the account belongs to, e.g. Founder / Company / Programme",
       "url": "The account URL — social URLs live HERE, never in overview",
       "account_type": "personal | company | programme",
       "account_status": "active | planned | inactive",
@@ -116,7 +118,18 @@ RULES — follow these exactly:
       "summary": "", "attendees": "", "client_updates": "", "wins": "",
       "challenges": "", "strategic_observations": "", "decisions_made": "",
       "content_discussed": "", "commercial_opportunities": "",
-      "next_meeting_date": "YYYY-MM-DD or null"
+      "next_meeting_date": "YYYY-MM-DD or null",
+      "transcript": "The FULL transcript or raw notes, verbatim — retained permanently as source material"
+    }
+  ],
+  "source_library": [
+    {
+      "kind": "story | belief | voice | avoid | rejected_view | priority | opportunity | update",
+      "text": "The item in plain words, e.g. A good life is one you do not constantly need to escape from",
+      "source_quote": "The client's own wording, verbatim, e.g. When you're aligned, you have a life that you don't need to escape from.",
+      "source_date": "YYYY-MM-DD of the consultation it came from",
+      "pillar": "name of the most relevant content pillar, or null",
+      "sensitivity": "public | sensitive"
     }
   ],
   "actions": [
@@ -212,7 +225,7 @@ RULES — follow these exactly:
       "outputs": [
         {
           "platform": "REQUIRED e.g. LinkedIn",
-          "account": "The publishing account's name from the client's Social tab (will be provided) — one output per account, e.g. LinkedIn — Daniel Andrews and LinkedIn — CEG are two outputs. null if no matching account.",
+          "account": "The publishing account's name from the client's Social tab (will be provided) — one output per account, e.g. a personal LinkedIn and a company LinkedIn are two outputs. null if no matching account.",
           "format": "e.g. Carousel / Text post / Reel",
           "caption": "The full final or draft copy for this platform",
           "cta": "", "hashtags": "", "alt_text": "",

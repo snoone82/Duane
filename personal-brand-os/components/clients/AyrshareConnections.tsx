@@ -74,11 +74,11 @@ export function AyrshareConnections({
             {state && !state.ok && <Notice kind="danger">{state.message}</Notice>}
             <div>
               <Label htmlFor="conn-title">Identity name</Label>
-              <Input id="conn-title" name="title" required autoFocus autoComplete="off" placeholder="e.g. Daniel Andrews, CEG" />
+              <Input id="conn-title" name="title" required autoFocus autoComplete="off" placeholder="e.g. Founder, Company" />
             </div>
             <p className="text-xs text-ink-faint">
-              A connection holds one linked account per network — so &ldquo;Daniel Andrews&rdquo; (his LinkedIn + his
-              Instagram) and &ldquo;CEG&rdquo; (its LinkedIn + Instagram) are two connections.
+              A connection holds one linked account per network — so a founder&rsquo;s personal profiles (their LinkedIn +
+              their Instagram) and the company&rsquo;s pages (its LinkedIn + Instagram) are two connections.
             </p>
             <div className="flex justify-end gap-2 pt-2">
               <Button type="button" variant="ghost" onClick={() => setIsAdding(false)}>

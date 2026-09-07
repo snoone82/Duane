@@ -130,8 +130,8 @@ export function SocialStrategyCard({
         {/* The account itself — the single source of truth for this URL. */}
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <AutosaveInput id={`soc-platform-${strategy.id}`} label="Platform" initialValue={strategy.platform} onSave={save("platform")} />
-          <AutosaveInput id={`soc-account-${strategy.id}`} label="Account / channel name" initialValue={strategy.account_name} onSave={save("account_name")} placeholder="e.g. Daniel Andrews, CEG Programme" />
-          <AutosaveInput id={`soc-brand-${strategy.id}`} label="Owner / brand" initialValue={strategy.owner_brand} onSave={save("owner_brand")} placeholder="e.g. Daniel / CEG / CEG Girls" />
+          <AutosaveInput id={`soc-account-${strategy.id}`} label="Account / channel name" initialValue={strategy.account_name} onSave={save("account_name")} placeholder="e.g. Personal profile, Company page, Programme account" />
+          <AutosaveInput id={`soc-brand-${strategy.id}`} label="Owner / brand" initialValue={strategy.owner_brand} onSave={save("owner_brand")} placeholder="e.g. Founder / Company / Programme" />
           <AutosaveInput id={`soc-url-${strategy.id}`} label="URL" initialValue={strategy.url} onSave={save("url")} placeholder="https://…" />
           <div>
             <Label htmlFor={`soc-type-${strategy.id}`}>Account type</Label>

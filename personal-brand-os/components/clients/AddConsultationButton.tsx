@@ -54,7 +54,11 @@ export function AddConsultationButton({ clientId }: { clientId: string }) {
             </div>
             <div>
               <Label htmlFor="summary">Summary</Label>
-              <Textarea id="summary" name="summary" rows={5} placeholder="What was discussed…" />
+              <Textarea id="summary" name="summary" rows={4} placeholder="What was discussed…" />
+            </div>
+            <div>
+              <Label htmlFor="transcript">Transcript / raw notes (optional)</Label>
+              <Textarea id="transcript" name="transcript" rows={6} placeholder="Paste the full transcript or notes — retained permanently as source material for content generation." />
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <Button type="button" variant="ghost" onClick={() => setIsOpen(false)}>
