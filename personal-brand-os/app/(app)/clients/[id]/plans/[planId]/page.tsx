@@ -15,7 +15,9 @@ import { StatusPill } from "@/components/ui/StatusPill";
 import { getApproverOptions } from "@/lib/data/approvers";
 import { socialAccountLabel } from "@/lib/format";
 import { isAyrshareConfigured } from "@/lib/ayrshare";
-import { periodMonthLabel, isPlatformExcluded, planSequenceLabel, isMasterBlocked } from "@/lib/monthly-plan-format";
+import { periodMonthLabel, isPlatformExcluded, planSequenceLabel } from "@/lib/monthly-plan-format";
+import { RequirementsSummary } from "@/components/clients/RequirementsSummary";
+import { summariseRequirements } from "@/lib/requirements-summary";
 import { checkMonthlyPlanReadiness } from "@/lib/actions/monthly-plans";
 import { ChangeRequestList } from "@/components/clients/ChangeRequestPanel";
 import { isPlanLocked, changeRequestIdeaLabel } from "@/lib/monthly-plan-format";
@@ -72,13 +74,17 @@ export default async function MonthlyPlanPage({ params }: { params: Promise<{ id
     .filter((account) => !isPlatformExcluded(account))
     .map((account) => ({ id: account.id, label: socialAccountLabel(account.platform, account.account_name) }));
 
-  // Duane's three counts. Blocked is derived from the Master Content item's
-  // own source_evidence, so clearing the block updates these immediately.
-  const blockedIdeaIds = new Set(ideaList.filter((idea) => isMasterBlocked(idea)).map((idea) => idea.id));
-  const plannedOutputs = [...outputsByContent.values()].reduce((sum, list) => sum + list.length, 0);
-  const blockedOutputs = [...outputsByContent.entries()]
-    .filter(([contentId]) => blockedIdeaIds.has(contentId))
-    .reduce((sum, [, list]) => sum + list.length, 0);
+  // The Production Summary, computed from the same Master Content and
+  // Platform Output rows the requirement reconciler reads — one set of
+  // numbers for the month, shown once, above the detail.
+  const summary = summariseRequirements(
+    ideaList,
+    [...outputsByContent.values()].flat().map((output) => ({
+      content_id: output.content_id,
+      platform: output.platform,
+      format: output.format,
+    }))
+  );
 
   const planLocked = isPlanLocked(plan.status);
   const requestList = changeRequests ?? [];
@@ -124,24 +130,6 @@ export default async function MonthlyPlanPage({ params }: { params: Promise<{ id
             ? " This plan is approved: its Master Content is locked as the approved version for the month. Changes go through change requests below."
             : " Edit fields inline, or regenerate one item on its own — the whole month only needs regenerating if the editorial direction is wrong."}
         </p>
-        {plannedOutputs > 0 && (
-          <dl className="mb-3 flex flex-wrap gap-x-6 gap-y-1 rounded-md border border-line bg-surface-muted px-3 py-2 text-xs">
-            <div className="flex gap-1.5">
-              <dt className="text-ink-soft">Planned outputs</dt>
-              <dd className="font-semibold text-ink">{plannedOutputs}</dd>
-            </div>
-            <div className="flex gap-1.5">
-              <dt className="text-ink-soft">Production-ready</dt>
-              <dd className="font-semibold text-ink">{plannedOutputs - blockedOutputs}</dd>
-            </div>
-            {blockedOutputs > 0 && (
-              <div className="flex gap-1.5" title="Waiting on a real story, view or experience from the client. These count towards the month's plan and cadence, but raise no filming, sourcing or asset requirements until the block clears.">
-                <dt className="text-ink-soft">Blocked / waiting for client input</dt>
-                <dd className="font-semibold text-amber-600">{blockedOutputs}</dd>
-              </div>
-            )}
-          </dl>
-        )}
         {ideaList.length === 0 ? (
           <EmptyState
             title="No Master Content yet"
@@ -201,6 +189,9 @@ export default async function MonthlyPlanPage({ params }: { params: Promise<{ id
           (filming, assets) are computed from the Platform Outputs actually planned below — recompute after adding or
           changing them by hand.
         </p>
+        <div className="mb-4">
+          <RequirementsSummary periodMonth={plan.period_month} summary={summary} />
+        </div>
         {!requirements || requirements.length === 0 ? (
           <EmptyState title="No requirements yet" description="Add filming, assets, information or approvals this plan depends on." />
         ) : (

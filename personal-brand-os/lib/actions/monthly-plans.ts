@@ -33,6 +33,8 @@ import {
   needsPersonalInput,
   isMasterBlocked,
   masterBlockReason,
+  productionGroupFor,
+  type ProductionGroup,
   type CtaDestinationState,
 } from "@/lib/monthly-plan-format";
 import { schedulePlanOutputs, normalisePostingDays, SIBLING_GAP_DAYS } from "@/lib/plan-scheduling";
@@ -602,13 +604,15 @@ type DesiredRequirement = { type: RequirementType; description: string; related_
  * format genuinely needs no production requirement (a text post needs no
  * media). Anything not in this map — legacy or manual-entry data from
  * before the constraint existed — falls back to the old regex guess. */
-const FORMAT_PRODUCTION_TYPE: Record<string, "filming" | "asset_upload" | null> = {
-  video: "filming",
-  reel: "filming",
-  carousel: "asset_upload",
-  static: "asset_upload",
-  text_image: "asset_upload",
-  text: null,
+/** The requirement type a production group implies. The grouping itself
+ * lives in monthly-plan-format so the Production Summary above these rows
+ * reads it from the same place — the summary and the detail can't disagree
+ * about what a format needs. */
+const GROUP_REQUIREMENT_TYPE: Record<ProductionGroup, RequirementType> = {
+  filming: "filming",
+  assets: "asset_upload",
+  long_form: "other",
+  writing: "other",
 };
 
 async function reconcilePlanRequirementsInternal(
@@ -660,7 +664,7 @@ async function reconcilePlanRequirementsInternal(
     const format = output.format.trim();
     if (!format) continue;
     const key = format.toLowerCase();
-    if (FORMAT_PRODUCTION_TYPE[key] === null) continue; // e.g. "text" — no production requirement at all
+    if (!productionGroupFor(key)) continue; // e.g. "text" — no production requirement at all
     const bucket = byFormat.get(key) ?? { count: 0, seqs: new Set<string>(), labels: new Set<string>() };
     bucket.count += 1;
     const idea = ideaById.get(output.content_id);
@@ -670,16 +674,8 @@ async function reconcilePlanRequirementsInternal(
     byFormat.set(key, bucket);
   }
   for (const [key, bucket] of byFormat) {
-    const exact = FORMAT_PRODUCTION_TYPE[key];
-    let type: RequirementType;
-    if (exact !== undefined) {
-      type = exact ?? "other"; // exact is never null here — null keys were skipped above
-    } else {
-      // Legacy / manual-entry format text from before the constraint existed.
-      const isFilming = /film|record|shoot|reel|video|short|clip|live/i.test(key);
-      const isAsset = /image|photo|graphic|carousel|design|thumbnail|banner|infograph|static/i.test(key);
-      type = isFilming ? "filming" : isAsset ? "asset_upload" : "other";
-    }
+    // Never null here — the null cases were skipped above.
+    const type: RequirementType = GROUP_REQUIREMENT_TYPE[productionGroupFor(key) ?? "assets"];
     desired.set(`format:${key}`, {
       type,
       description: `${type === "filming" ? "Film" : "Source"} ${bucket.count} × ${key} (${[...bucket.labels].sort().join(", ")})`,
