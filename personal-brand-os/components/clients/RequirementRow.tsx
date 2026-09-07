@@ -7,7 +7,7 @@ import { StatusSelect } from "@/components/ui/StatusSelect";
 import { Button } from "@/components/ui/Button";
 import { Select, Label } from "@/components/ui/Input";
 import { StatusPill } from "@/components/ui/StatusPill";
-import { updateRequirementField, deleteRequirement } from "@/lib/actions/monthly-plans";
+import { updateRequirementField, deleteRequirement, setRequirementInternalOnly } from "@/lib/actions/monthly-plans";
 import { REQUIREMENT_TYPE, REQUIREMENT_STATE, requirementTypeMeta, requirementOriginMeta } from "@/lib/status";
 import type { Database } from "@/lib/database.types";
 
@@ -15,6 +15,7 @@ type Requirement = Database["public"]["Tables"]["monthly_plan_requirements"]["Ro
 
 export function RequirementRow({ clientId, requirement }: { clientId: string; requirement: Requirement }) {
   const [isDeleting, startDelete] = useTransition();
+  const [isSavingVisibility, startVisibility] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
   const save = (field: "description" | "owner_note" | "due_date" | "related_content_note") => (value: string) =>
@@ -54,6 +55,30 @@ export function RequirementRow({ clientId, requirement }: { clientId: string; re
         </div>
       </summary>
       <div className="space-y-3 border-t border-border p-4">
+        {/* The one requirement setting with a consequence outside PBOS: a
+            team-only row never reaches the Client View or a client pack. */}
+        <label className="flex items-start gap-2 rounded-md border border-border bg-surface-muted px-3 py-2">
+          <input
+            type="checkbox"
+            defaultChecked={requirement.internal_only}
+            disabled={isSavingVisibility}
+            onChange={(event) => {
+              const next = event.target.checked;
+              startVisibility(async () => {
+                const result = await setRequirementInternalOnly(clientId, requirement.id, next);
+                if (!result.ok) setError(result.message);
+              });
+            }}
+            className="mt-0.5"
+          />
+          <span>
+            <span className="block text-xs font-medium text-ink">Team only — never show this to the client</span>
+            <span className="block text-xs text-ink-soft">
+              For production notes and constraints written for us. Excluded from the Client View and from any
+              client-facing pack.
+            </span>
+          </span>
+        </label>
         {requirement.origin === "system_generated" && (
           <p className="text-xs text-ink-faint">
             PBOS computed this from the plan&rsquo;s Master Content / Platform Outputs — it&rsquo;ll come back on the next

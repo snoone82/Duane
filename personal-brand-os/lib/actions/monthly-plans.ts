@@ -573,6 +573,32 @@ export async function updateRequirementField(
   });
 }
 
+/**
+ * Mark a requirement team-only, or client-visible again.
+ *
+ * Separate from updateRequirementField because that takes strings and this is
+ * a boolean — and because it is the one requirement setting with a
+ * consequence outside PBOS: a team-only row is excluded from the Client View
+ * and from any client-facing pack.
+ */
+export async function setRequirementInternalOnly(
+  clientId: string,
+  requirementId: string,
+  internalOnly: boolean
+): Promise<ActionResult> {
+  return runAction(async () => {
+    const supabase = await createClient();
+    const { error } = await supabase
+      .from("monthly_plan_requirements")
+      .update({ internal_only: internalOnly })
+      .eq("id", requirementId)
+      .eq("client_id", clientId);
+    if (error) throw new Error(error.message);
+    revalidatePlan(clientId);
+    return undefined;
+  });
+}
+
 export async function deleteRequirement(clientId: string, requirementId: string): Promise<ActionResult> {
   return runAction(async () => {
     const supabase = await createClient();
@@ -2514,6 +2540,9 @@ export interface MonthlyPlanExport {
     auto_pulled: MonthlyPlanSnapshot;
   };
   master_content: {
+    /** The content_ideas row id — a stable key for renderers. `sequence` is
+     * a display code and renumbers if the month is re-sequenced. */
+    id: string;
     sequence: string;
     title: string;
     core_message: string;
@@ -2567,6 +2596,12 @@ export interface MonthlyPlanExport {
     state: string;
     related_content_note: string;
     origin: string;
+    /** Team-only — must never be rendered into a client-facing pack. */
+    internal_only: boolean;
+    /** The reconciler's key for a system-generated row (e.g.
+     * "client_input_needed"). Lets a renderer drop a roll-up deterministically
+     * rather than inferring it from the wording. */
+    generated_key: string | null;
   }[];
   generated_at: string;
 }
@@ -2620,6 +2655,10 @@ async function buildPlanExportInternal(supabase: SupabaseClient, clientId: strin
         auto_pulled: (plan.snapshot ?? {}) as unknown as MonthlyPlanSnapshot,
       },
       master_content: ideaList.map((idea) => ({
+        // The record's own id, not just its display code. The sign-off deck
+        // renderer needs a stable key per item — MC-01 renumbers if the
+        // month is re-sequenced, so it can't be one.
+        id: idea.id,
         sequence: planSequenceLabel(idea.plan_sequence),
         title: idea.title,
         core_message: idea.core_message,
@@ -2667,6 +2706,8 @@ async function buildPlanExportInternal(supabase: SupabaseClient, clientId: strin
         state: r.state,
         related_content_note: r.related_content_note,
         origin: r.origin,
+        internal_only: r.internal_only,
+        generated_key: r.generated_key,
       })),
       generated_at: new Date().toISOString(),
     };

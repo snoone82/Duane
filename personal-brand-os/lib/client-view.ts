@@ -114,8 +114,14 @@ export function buildClientView(doc: MonthlyPlanExport): ClientView {
   // Only the requirement types a client has any part in. Filming schedules
   // and internal sourcing are the team's business.
   const clientRequirements = doc.requirements
+    // Explicitly team-only: a note written for the team must never reach a
+    // document addressed to the client, whatever its type.
+    .filter((requirement) => !requirement.internal_only)
     .filter((requirement) => requirement.type === "information" || requirement.type === "decision_approval" || requirement.type === "asset_upload")
     .filter((requirement) => requirement.state !== "done")
+    // The reconciler's roll-up rows restate asks already shown against each
+    // item above, so listing them here would say everything twice.
+    .filter((requirement) => requirement.generated_key !== "client_input_needed" && requirement.generated_key !== "personal_input_required")
     .map((requirement) => ({ description: requirement.description, relatedTo: requirement.related_content_note }));
 
   return {

@@ -1742,6 +1742,7 @@ export type Database = {
           client_id: string
           created_at: string
           description: string
+          internal_only: boolean
           due_date: string | null
           generated_key: string | null
           id: string
@@ -1757,6 +1758,7 @@ export type Database = {
           client_id: string
           created_at?: string
           description?: string
+          internal_only?: boolean
           due_date?: string | null
           generated_key?: string | null
           id?: string
@@ -1772,6 +1774,7 @@ export type Database = {
           client_id?: string
           created_at?: string
           description?: string
+          internal_only?: boolean
           due_date?: string | null
           generated_key?: string | null
           id?: string
