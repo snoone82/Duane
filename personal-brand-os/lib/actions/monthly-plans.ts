@@ -1062,6 +1062,8 @@ const MASTER_STAGE_SCHEMA = {
       title: "string — the piece's working title",
       hook: "string — the opening line",
       core_message: "string — the single-sentence takeaway (what we're saying)",
+      client_summary:
+        "string — one plain-English sentence describing what this piece is about, written FOR THE CLIENT to read in their monthly sign-off. No jargon, no strategy language, no platform names — just what the piece says and why it is worth saying now.",
       purpose: "string — why we're saying it",
       pillar_id: "string — one of the pillar ids listed below",
       audience_id: "string — one of the audience ids listed below",
@@ -1690,7 +1692,7 @@ export interface ItemRegenerationResult {
 }
 
 interface ParsedItemRegeneration {
-  master?: Partial<Record<"title" | "core_message" | "purpose" | "pillar_id" | "audience_id" | "hook" | "cta" | "cta_destination" | "lead_platform_id" | "lead_draft_copy", string>>;
+  master?: Partial<Record<"title" | "core_message" | "client_summary" | "purpose" | "pillar_id" | "audience_id" | "hook" | "cta" | "cta_destination" | "lead_platform_id" | "lead_draft_copy", string>>;
   outputs: { outputId: string; format: string; adaptation_note: string; media_brief: string; destination_link: string }[];
 }
 
@@ -1762,6 +1764,7 @@ async function parseItemRegeneration(
     result.master = {
       title: str(raw.title),
       core_message: str(raw.core_message),
+      client_summary: str(raw.client_summary),
       purpose: str(raw.purpose),
       hook: str(raw.hook),
       cta: str(raw.cta),
@@ -2004,6 +2007,8 @@ export interface ImportAiOutputResult {
 interface RawMasterContent {
   title?: unknown;
   core_message?: unknown;
+  /** The plain-English line for the Client View (Stage 1). */
+  client_summary?: unknown;
   purpose?: unknown;
   pillar_id?: unknown;
   audience_id?: unknown;
@@ -2371,6 +2376,7 @@ export async function importAiOutput(
             plan_sequence: sequence,
             title: str(item.title),
             core_message: str(item.core_message),
+            client_summary: str(item.client_summary),
             purpose: str(item.purpose),
             hook: str(item.hook),
             cta: str(item.cta),
@@ -2511,6 +2517,9 @@ export interface MonthlyPlanExport {
     sequence: string;
     title: string;
     core_message: string;
+    /** Plain-English line written at Stage 1 for the Client View, so nothing
+     * has to be composed at render time. */
+    client_summary: string;
     purpose: string;
     pillar: string | null;
     audience: string | null;
@@ -2614,6 +2623,7 @@ async function buildPlanExportInternal(supabase: SupabaseClient, clientId: strin
         sequence: planSequenceLabel(idea.plan_sequence),
         title: idea.title,
         core_message: idea.core_message,
+        client_summary: idea.client_summary,
         purpose: idea.purpose,
         pillar: idea.pillar_id ? (pillarNames.get(idea.pillar_id) ?? null) : null,
         audience: idea.audience_id ? (audienceNames.get(idea.audience_id) ?? null) : null,
@@ -2671,4 +2681,17 @@ export async function exportMonthlyPlanJson(clientId: string, planId: string): P
     const doc = await buildPlanExportInternal(supabase, clientId, planId);
     return { json: JSON.stringify(doc, null, 2) };
   });
+}
+
+/**
+ * The same document the Structured Plan Export downloads, as data.
+ *
+ * Duane: the Client View should render from the export's dataset rather than
+ * a second assembly of the plan. This is that single seam — one builder, two
+ * consumers (the JSON download and the in-app view), so they can never show
+ * a different month.
+ */
+export async function buildMonthlyPlanExport(clientId: string, planId: string): Promise<MonthlyPlanExport> {
+  const supabase = await createClient();
+  return buildPlanExportInternal(supabase, clientId, planId);
 }
