@@ -1168,6 +1168,7 @@ export type Database = {
           audience_id: string | null
           body: string
           client_id: string
+          client_summary: string
           client_requirements: string
           core_message: string
           created_at: string
@@ -1210,6 +1211,7 @@ export type Database = {
           audience_id?: string | null
           body?: string
           client_id: string
+          client_summary?: string
           client_requirements?: string
           core_message?: string
           created_at?: string
@@ -1252,6 +1254,7 @@ export type Database = {
           audience_id?: string | null
           body?: string
           client_id?: string
+          client_summary?: string
           client_requirements?: string
           core_message?: string
           created_at?: string
@@ -1859,6 +1862,11 @@ export type Database = {
         Row: {
           avoid_language: string
           client_id: string
+          approved_at: string | null
+          approved_by: string | null
+          approved_fingerprint: string
+          approved_note: string
+          approved_revision: number | null
           created_at: string
           created_by: string | null
           cta_priorities: string
@@ -1879,6 +1887,11 @@ export type Database = {
         Insert: {
           avoid_language?: string
           client_id: string
+          approved_at?: string | null
+          approved_by?: string | null
+          approved_fingerprint?: string
+          approved_note?: string
+          approved_revision?: number | null
           created_at?: string
           created_by?: string | null
           cta_priorities?: string
@@ -1899,6 +1912,11 @@ export type Database = {
         Update: {
           avoid_language?: string
           client_id?: string
+          approved_at?: string | null
+          approved_by?: string | null
+          approved_fingerprint?: string
+          approved_note?: string
+          approved_revision?: number | null
           created_at?: string
           created_by?: string | null
           cta_priorities?: string

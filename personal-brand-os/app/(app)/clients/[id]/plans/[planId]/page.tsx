@@ -111,6 +111,21 @@ export default async function MonthlyPlanPage({ params }: { params: Promise<{ id
         </div>
       </div>
 
+      {/* Not a stage — a view you open as often as you like, before dates,
+          after dates, after comments (Duane). */}
+      <Link
+        href={`/clients/${id}/plans/${planId}/client-view`}
+        className="flex items-center justify-between rounded-lg border border-accent/40 bg-accent/5 px-4 py-3 transition-colors hover:bg-accent/10"
+      >
+        <span>
+          <span className="block text-sm font-semibold text-ink">Client View</span>
+          <span className="block text-xs text-ink-soft">
+            The month as the client sees it, rendered from these records — and where the month gets signed off.
+          </span>
+        </span>
+        <span className="flex-shrink-0 text-sm text-accent">Open →</span>
+      </Link>
+
       <section>
         <h2 className="mb-3 text-sm font-semibold text-ink">Client Snapshot</h2>
         <ClientSnapshotPanel clientId={id} plan={plan} />
@@ -207,7 +222,7 @@ export default async function MonthlyPlanPage({ params }: { params: Promise<{ id
         <h2 className="mb-3 text-sm font-semibold text-ink">Structured export</h2>
         <p className="mb-3 text-xs text-ink-soft">
           The Monthly Plan as one JSON document — Client Snapshot, Master Content, Platform Outputs and Requirements. The
-          first PBOS output is this structured data; the client-facing pack is prototyped from it manually, for now.
+          Client View above renders from this same dataset, so the two always describe the same month.
         </p>
         <ExportPlanJsonButton clientId={id} planId={planId} periodLabel={periodMonthLabel(plan.period_month)} />
       </section>

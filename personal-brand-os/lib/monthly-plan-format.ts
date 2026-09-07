@@ -86,6 +86,7 @@ export const CHANGE_REQUEST_FIELDS: { value: string; label: string; multiline: b
   { value: "title", label: "Title", multiline: false },
   { value: "hook", label: "Hook", multiline: false },
   { value: "core_message", label: "Core message", multiline: true },
+  { value: "client_summary", label: "Client summary", multiline: true },
   { value: "purpose", label: "Purpose", multiline: true },
   { value: "cta", label: "CTA", multiline: false },
   { value: "cta_destination", label: "CTA destination", multiline: false },
