@@ -43,7 +43,7 @@ export function platformLabel(account: { platform: string; account_name: string 
 
 export const CTA_NEEDS_CONFIRMATION = "Needs confirmation";
 
-export type CtaDestinationState = "confirmed" | "needs_confirmation" | "missing" | "no_cta";
+export type CtaDestinationState = "confirmed" | "needs_confirmation" | "missing" | "no_cta" | "not_required";
 
 export function isCtaNeedsConfirmation(value: string): boolean {
   return value.trim().toLowerCase() === CTA_NEEDS_CONFIRMATION.toLowerCase();
@@ -57,9 +57,15 @@ export function normaliseCtaDestination(value: string): string {
 export function ctaDestinationState(idea: { cta: string; cta_destination: string }): CtaDestinationState {
   if (!idea.cta.trim()) return "no_cta";
   const destination = idea.cta_destination.trim();
+  // A real destination was supplied — nothing to ask about, whatever kind of
+  // CTA it is.
+  if (destination && !isCtaNeedsConfirmation(destination)) return "confirmed";
+  // Duane: a CTA that asks for a comment, a reflection or a conversation has
+  // nowhere to send anyone. "Needs confirmation" against one of those is the
+  // generator's default, not a real gap, and must not become client work.
+  if (ctaNeedsDestination(idea.cta) === false) return "not_required";
   if (!destination) return "missing";
-  if (isCtaNeedsConfirmation(destination)) return "needs_confirmation";
-  return "confirmed";
+  return "needs_confirmation";
 }
 
 // ---------------------------------------------------------------------------
@@ -187,4 +193,73 @@ export const PERSONAL_INPUT_REQUIRED = "PERSONAL_INPUT_REQUIRED";
 
 export function needsPersonalInput(value: string): boolean {
   return value.toUpperCase().includes(PERSONAL_INPUT_REQUIRED);
+}
+
+// ---------------------------------------------------------------------------
+// Blocked Platform Outputs (Duane, after the first full two-stage run).
+//
+// A Master Content item flagged PERSONAL_INPUT_REQUIRED still gets its
+// intended Platform Output records — the month's plan and cadence maths
+// should reflect what is intended, not only what happens to be writable
+// today — but those outputs are not production-ready and must not generate
+// filming, sourcing or asset requirements.
+//
+// Blocked is DERIVED from the master rather than stored on the output. That
+// is deliberate: the moment the client supplies the missing story and
+// source_evidence is edited, every output under it unblocks and its
+// production requirement appears on the next recompute. A stored flag would
+// have to be cleared by hand on each output, and would drift.
+// ---------------------------------------------------------------------------
+
+/** Why this Master Content item's outputs can't be produced yet, or null. */
+export function masterBlockReason(idea: { source_evidence: string }): string | null {
+  return needsPersonalInput(idea.source_evidence) ? "Personal input required" : null;
+}
+
+export function isMasterBlocked(idea: { source_evidence: string }): boolean {
+  return masterBlockReason(idea) !== null;
+}
+
+// ---------------------------------------------------------------------------
+// Does this CTA actually need a destination? (Duane, after the first full
+// run: "Confirm CTA destinations for 17 Master Content items" when most of
+// the CTAs were "ask people to comment / reflect / share an experience".)
+//
+// A CTA that asks for a reply, a reflection or a conversation has nowhere to
+// send anyone — asking the client to supply a URL for it is invented work.
+// A CTA that asks someone to book, download, register or view something does
+// need one.
+//
+// Destination is tested FIRST so a mixed CTA ("comment below, then download
+// the guide") is treated as needing one. A CTA matching neither stays
+// unclassified and still raises the requirement — an unrecognised CTA is a
+// question for a person, not something to quietly drop.
+// ---------------------------------------------------------------------------
+
+const CTA_DESTINATION_PATTERNS: RegExp[] = [
+  /\bbook(ing)?\b/, /\bschedule a\b/, /\bcall\b/, /\bdemo\b/, /\btrial\b/,
+  /\brequest (a|an|the)\b/, /\bappl(y|ication)\b/, /\benquir|inquir/,
+  /\bsign[\s-]?up\b/, /\bregister\b/, /\bsubscribe\b/, /\bjoin (the|our|my)\b/, /\bwaitlist\b/,
+  /\bdownload\b/, /\bget (the|our|my|your)\b/, /\bclaim\b/, /\bbuy\b/, /\bpurchase\b/, /\border\b/, /\benrol/,
+  /\bvisit\b/, /\blink\b/, /\bbio\b/, /\bwebsite\b/, /\bform\b/, /\bcontact\b/,
+  /\bsee how\b/, /\blearn more\b/, /\bfind out more\b/, /\bread (the|more)\b/,
+  /\bwatch the\b/, /\blisten to the\b/,
+  /\bguide\b/, /\bchecklist\b/, /\btemplate\b/, /\bwebinar\b/, /\bnewsletter\b/,
+];
+
+const CTA_ENGAGEMENT_PATTERNS: RegExp[] = [
+  /\bask\b/, /\banswer\b/, /\bcomment\b/, /\brepl(y|ies)\b/, /\bdiscuss\b/, /\bconversation\b/,
+  /\breflect\b/, /\bconsider\b/, /\bthink about\b/, /\bnotice\b/,
+  /\bshare (your|their|an|a )/, /\btell (me|us|them)\b/, /\blet me know\b/,
+  /\bwhat'?s your\b/, /\bname a\b/, /\bdescribe\b/, /\bcheck whether\b/,
+  /\btag\b/, /\bsave (this|the post)\b/, /\bdm\b/, /\bmessage me\b/, /\bthoughts\b/,
+  /\binvite (people|viewers|listeners|readers|founders|leaders|senior people|them)[^.]*\bto (name|describe|answer|share|reflect)/,
+];
+
+export function ctaNeedsDestination(cta: string): boolean | null {
+  const text = cta.toLowerCase();
+  if (!text.trim()) return null;
+  if (CTA_DESTINATION_PATTERNS.some((re) => re.test(text))) return true;
+  if (CTA_ENGAGEMENT_PATTERNS.some((re) => re.test(text))) return false;
+  return null; // unrecognised — a person should look
 }

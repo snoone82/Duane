@@ -31,6 +31,8 @@ import {
   SOURCE_ITEM_KINDS,
   PERSONAL_INPUT_REQUIRED,
   needsPersonalInput,
+  isMasterBlocked,
+  masterBlockReason,
   type CtaDestinationState,
 } from "@/lib/monthly-plan-format";
 import { schedulePlanOutputs, normalisePostingDays, SIBLING_GAP_DAYS } from "@/lib/plan-scheduling";
@@ -640,11 +642,21 @@ async function reconcilePlanRequirementsInternal(
 
   const desired = new Map<string, DesiredRequirement>();
 
+  // Blocked Master Content (Duane, after the first full run): an item still
+  // waiting on the client's own story can't be produced, so its outputs are
+  // counted in the month's plan but generate no production work. Derived
+  // from the master, so clearing the block unblocks every output under it on
+  // the next recompute — nothing to reset by hand.
+  const blockedIdeaIds = new Set(ideaList.filter((i) => isMasterBlocked(i)).map((i) => i.id));
+  const blockedOutputCount = outputList.filter((o) => blockedIdeaIds.has(o.content_id)).length;
+
   // a) Aggregate production needs by format — grouped across whichever
   // platforms use it, since a shoot usually covers every platform at once,
   // not a separate one per platform.
   const byFormat = new Map<string, { count: number; seqs: Set<string>; labels: Set<string> }>();
   for (const output of outputList) {
+    // Blocked: no filming, sourcing or asset requirement until the block clears.
+    if (blockedIdeaIds.has(output.content_id)) continue;
     const format = output.format.trim();
     if (!format) continue;
     const key = format.toLowerCase();
@@ -708,9 +720,13 @@ async function reconcilePlanRequirementsInternal(
   // c) CTA destinations — two distinct states, each grouped into one row.
   // "Needs confirmation" is a state the AI set deliberately instead of
   // inventing a link; a blank next to a CTA is genuinely missing data.
+  // An engagement CTA ("ask people to…", "reflect on…") resolves to
+  // "not_required" and asks nothing of the client; a blocked item's CTA is
+  // premature either way.
   const ctaNeedsConfirmation: string[] = [];
   const ctaMissing: string[] = [];
   for (const idea of ideaList) {
+    if (blockedIdeaIds.has(idea.id)) continue;
     const state = ctaDestinationState(idea);
     if (state === "needs_confirmation") ctaNeedsConfirmation.push(planSequenceLabel(idea.plan_sequence));
     else if (state === "missing") ctaMissing.push(planSequenceLabel(idea.plan_sequence));
@@ -798,9 +814,13 @@ async function reconcilePlanRequirementsInternal(
   // grouped into one requirement rather than fabricated.
   const personalInput = ideaList.filter((i) => needsPersonalInput(i.source_evidence)).map((i) => planSequenceLabel(i.plan_sequence));
   if (personalInput.length > 0) {
+    const blockedNote =
+      blockedOutputCount > 0
+        ? ` ${blockedOutputCount} Platform Output(s) are blocked behind this and raise no production work until it's supplied.`
+        : "";
     desired.set("personal_input_required", {
       type: "information",
-      description: `Personal input required for ${personalInput.length} Master Content item(s) — a real story, view or experience from the client is needed; nothing has been invented.`,
+      description: `Personal input required for ${personalInput.length} Master Content item(s) — a real story, view or experience from the client is needed; nothing has been invented.${blockedNote}`,
       related_content_note: personalInput.sort().join(", "),
     });
   }
@@ -1057,7 +1077,7 @@ const MASTER_STAGE_SCHEMA = {
       platform_ids: ["string — every platform id this idea should run on, lead platform included"],
       cta: "string — the desired outcome / call to action",
       cta_destination:
-        "string — an actual destination ONLY if you were given one below; otherwise return exactly \"Needs confirmation\" — never construct or guess a URL",
+        "string — LEAVE EMPTY when the CTA asks for a comment, reply, reflection or conversation: those have nowhere to send anyone and need no destination. Otherwise an actual destination ONLY if you were given one below; failing that return exactly \"Needs confirmation\" — never construct or guess a URL",
       client_requirements: "string — what we need from the client for this idea (a story on camera, a photo, a decision, a confirmation), or omit",
     },
   ],
@@ -1071,9 +1091,12 @@ const OUTPUTS_STAGE_SCHEMA = {
       master_id: "string — the Master Content id exactly as listed below",
       platform_id: "string — one of that item's intended platform ids listed below",
       format: "string — MUST be one of that platform's allowed formats listed below — never freeform",
+      blocked:
+        "boolean — true ONLY for a master marked BLOCKED above; those return an empty adaptation_note and media_brief. Omit or false otherwise.",
       adaptation_note:
-        "string — how this version should differ from the Master Content core message for this platform and this account's strategy. Not a finished caption — that is written at production time, after approval.",
-      media_brief: "string — what media this needs, described in words, before anyone sources or uploads it",
+        "string — how this version should differ from the Master Content core message for this platform and this account's strategy. Not a finished caption — that is written at production time, after approval. Empty string when blocked.",
+      media_brief:
+        "string — what media this needs, described in words, before anyone sources or uploads it. Empty string when blocked.",
       destination_link: "string — optional, only if genuinely different from the Master Content CTA destination",
     },
   ],
@@ -1465,11 +1488,17 @@ export async function exportAiBrief(clientId: string, planId: string, stage: Bri
     lines.push("## Master Content on this plan — generate Platform Outputs for these");
     lines.push("Each item lists the platforms it is intended to run on. Return one platform_output per (master_id, platform_id) pair that does not already exist. Never add a platform that isn't listed for the item, never return a pair marked as existing, and never change the idea itself.");
     lines.push("");
+    lines.push(
+      `Any item marked **BLOCKED — ${PERSONAL_INPUT_REQUIRED}** is waiting on a real story, view or experience from the client that nobody has yet. Still return its (master_id, platform_id) pairs, with a valid format and \`blocked: true\`, but leave \`adaptation_note\` and \`media_brief\` empty strings — there is nothing to adapt until the client supplies the missing material, and writing one would mean inventing it. PBOS enforces this on import regardless of what is returned, and creates any blocked pair left out.`
+    );
+    lines.push("");
     let wanted = 0;
     for (const idea of ideaList) {
       const seq = planSequenceLabel(idea.plan_sequence);
+      const blockReason = masterBlockReason(idea);
       const intended = (idea.intended_platforms.length > 0 ? idea.intended_platforms : idea.lead_platform_id ? [idea.lead_platform_id] : []).filter((id) => socialById.has(id));
-      lines.push(`### ${seq} — ${idea.title} (master_id: ${idea.id})`);
+      lines.push(`### ${seq} — ${idea.title} (master_id: ${idea.id})${blockReason ? ` — **BLOCKED — ${PERSONAL_INPUT_REQUIRED}**` : ""}`);
+      if (blockReason) lines.push(`- Blocked: ${blockReason} — return the pairs below with \`blocked: true\` and empty adaptation_note / media_brief.`);
       lines.push(`- Hook: ${idea.hook || "—"}`);
       lines.push(`- Core message: ${idea.core_message || "—"}`);
       lines.push(`- Purpose: ${idea.purpose || "—"}`);
@@ -2123,9 +2152,15 @@ export async function importAiOutput(
       }
     });
     // Stage 2: every master_id must be Master Content on THIS plan.
-    const planIdeaById = new Map<string, { id: string; plan_sequence: number | null; intended_platforms: string[]; lead_platform_id: string | null }>();
+    const planIdeaById = new Map<
+      string,
+      { id: string; plan_sequence: number | null; intended_platforms: string[]; lead_platform_id: string | null; source_evidence: string }
+    >();
     if (stage === "outputs") {
-      const { data: planIdeas } = await supabase.from("content_ideas").select("id,plan_sequence,intended_platforms,lead_platform_id").eq("monthly_plan_id", planId);
+      const { data: planIdeas } = await supabase
+        .from("content_ideas")
+        .select("id,plan_sequence,intended_platforms,lead_platform_id,source_evidence")
+        .eq("monthly_plan_id", planId);
       for (const idea of planIdeas ?? []) planIdeaById.set(idea.id, idea);
     }
     const seenOutputKeys = new Set<string>();
@@ -2155,7 +2190,11 @@ export async function importAiOutput(
       }
       const format = str(item.format);
       const allowedFormats = allowedFormatsFor(account.platform);
-      if (!allowedFormats.includes(format)) {
+      // A blocked master may legitimately come back without a format — there
+      // is nothing to decide until the client's material arrives, and PBOS
+      // fills the platform's default rather than failing the whole import.
+      const masterBlocked = stage === "outputs" && isMasterBlocked(planIdeaById.get(str(item.master_id)) ?? { source_evidence: "" });
+      if (!allowedFormats.includes(format) && !(masterBlocked && !format)) {
         idErrors.push(`${label}: format "${format || "(blank)"}" isn't valid for ${platformLabel(account)} — must be one of ${allowedFormats.join(", ")}.`);
       }
     });
@@ -2210,21 +2249,66 @@ export async function importAiOutput(
         }
         const verdict = assessPlatformFit(account);
         if (verdict.decision === "review") warnings.push(`${planSequenceLabel(planIdeaById.get(masterId)?.plan_sequence ?? null)} on ${platformLabel(account)}: ${verdict.reason}`);
+        // Blocked master: PBOS decides, not the model. Whatever came back,
+        // a blocked output carries no adaptation and no media brief — both
+        // would have to be invented from material the client hasn't given.
+        const masterIdea = planIdeaById.get(masterId);
+        const blocked = masterIdea ? isMasterBlocked(masterIdea) : false;
+        if (blocked && (str(item.adaptation_note) || str(item.media_brief))) {
+          warnings.push(
+            `${planSequenceLabel(masterIdea?.plan_sequence ?? null)} on ${platformLabel(account)} is blocked (${PERSONAL_INPUT_REQUIRED}) — the returned adaptation note and media brief were discarded.`
+          );
+        }
         const { error } = await supabase.from("content_outputs").insert({
           content_id: masterId,
           client_id: clientId,
           platform: account.platform,
           social_account_id: account.id,
-          format: str(item.format),
-          adaptation_note: str(item.adaptation_note),
-          media_brief: str(item.media_brief),
-          destination_link: str(item.destination_link),
-          media_state: str(item.media_state) || "concept",
+          format: str(item.format) || (blocked ? allowedFormatsFor(account.platform)[0] ?? "" : ""),
+          adaptation_note: blocked ? "" : str(item.adaptation_note),
+          media_brief: blocked ? "" : str(item.media_brief),
+          destination_link: blocked ? "" : str(item.destination_link),
+          media_state: blocked ? "concept" : str(item.media_state) || "concept",
           origin: "ai_import",
         });
         if (error) throw new Error(`Platform output for ${masterId}: ${error.message}`);
         have.add(`${masterId}:${account.id}`);
         outputsCreated += 1;
+      }
+
+      // Blocked masters the model left out entirely: PBOS creates the
+      // intended pairs itself, so the month's plan and cadence still show
+      // what is intended rather than only what happened to be writable.
+      let blockedPlaceholders = 0;
+      for (const idea of planIdeaById.values()) {
+        if (!isMasterBlocked(idea)) continue;
+        const intended = (idea.intended_platforms.length > 0 ? idea.intended_platforms : idea.lead_platform_id ? [idea.lead_platform_id] : []).filter((id) =>
+          socialById.has(id)
+        );
+        for (const platformId of intended) {
+          if (have.has(`${idea.id}:${platformId}`)) continue;
+          const account = socialById.get(platformId)!;
+          const formats = allowedFormatsFor(account.platform);
+          const { error } = await supabase.from("content_outputs").insert({
+            content_id: idea.id,
+            client_id: clientId,
+            platform: account.platform,
+            social_account_id: account.id,
+            format: formats[0] ?? "",
+            adaptation_note: "",
+            media_brief: "",
+            origin: "ai_import",
+          });
+          if (error) throw new Error(`Blocked platform output for ${idea.id}: ${error.message}`);
+          have.add(`${idea.id}:${platformId}`);
+          blockedPlaceholders += 1;
+          outputsCreated += 1;
+        }
+      }
+      if (blockedPlaceholders > 0) {
+        warnings.push(
+          `${blockedPlaceholders} Platform Output(s) created for blocked Master Content — they count towards the month's plan and cadence, but raise no production work until the client supplies the missing material.`
+        );
       }
       let datesAssigned = 0;
       try {
