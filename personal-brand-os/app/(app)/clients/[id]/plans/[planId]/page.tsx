@@ -15,10 +15,11 @@ import { StatusPill } from "@/components/ui/StatusPill";
 import { getApproverOptions } from "@/lib/data/approvers";
 import { socialAccountLabel } from "@/lib/format";
 import { isAyrshareConfigured } from "@/lib/ayrshare";
-import { periodMonthLabel, isPlatformExcluded } from "@/lib/monthly-plan-format";
+import { periodMonthLabel, isPlatformExcluded, planSequenceLabel } from "@/lib/monthly-plan-format";
 import { checkMonthlyPlanReadiness } from "@/lib/actions/monthly-plans";
-import { ChangeRequestList, changeRequestIdeaLabel } from "@/components/clients/ChangeRequestPanel";
-import { isPlanLocked } from "@/lib/monthly-plan-format";
+import { ChangeRequestList } from "@/components/clients/ChangeRequestPanel";
+import { isPlanLocked, changeRequestIdeaLabel } from "@/lib/monthly-plan-format";
+import { RowErrorBoundary } from "@/components/ui/RowErrorBoundary";
 
 export const metadata = { title: "Monthly Plan" };
 
@@ -123,8 +124,8 @@ export default async function MonthlyPlanPage({ params }: { params: Promise<{ id
         ) : (
           <div className="space-y-2">
             {ideaList.map((idea) => (
+              <RowErrorBoundary key={idea.id} label={`${planSequenceLabel(idea.plan_sequence)} "${idea.title}"`}>
               <ContentIdeaRow
-                key={idea.id}
                 clientId={id}
                 idea={idea}
                 outputs={outputsByContent.get(idea.id) ?? []}
@@ -137,6 +138,7 @@ export default async function MonthlyPlanPage({ params }: { params: Promise<{ id
                 planId={planId}
                 planLocked={planLocked}
               />
+              </RowErrorBoundary>
             ))}
           </div>
         )}
