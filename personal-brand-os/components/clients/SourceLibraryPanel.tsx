@@ -75,7 +75,8 @@ export function SourceLibraryPanel({
       {error && <Notice kind="danger">{error}</Notice>}
       {grouped.length === 0 ? (
         <p className="rounded-lg border border-dashed border-border px-4 py-3 text-xs text-ink-faint">
-          Nothing extracted yet. Add items by hand, or include a <code>source_library</code> section in a client-profile import.
+          No source material extracted yet. Add or import a consultation and PBOS will identify the client&rsquo;s stories,
+          beliefs, language, priorities and content opportunities automatically.
         </p>
       ) : (
         grouped.map(({ kind, items: list }) => (

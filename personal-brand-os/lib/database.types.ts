@@ -859,6 +859,182 @@ export type Database = {
           },
         ]
       }
+      consultation_analyses: {
+        Row: {
+          client_id: string
+          consultation_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          model: string
+          overview: string
+          state: string
+        }
+        Insert: {
+          client_id: string
+          consultation_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          model?: string
+          overview?: string
+          state?: string
+        }
+        Update: {
+          client_id?: string
+          consultation_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          model?: string
+          overview?: string
+          state?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "consultation_analyses_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "consultation_analyses_consultation_id_fkey"
+            columns: ["consultation_id"]
+            isOneToOne: false
+            referencedRelation: "consultations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "consultation_analyses_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      consultation_source_proposals: {
+        Row: {
+          analysis_id: string
+          client_id: string
+          created_at: string
+          id: string
+          kind: string
+          sensitivity: string
+          sort_order: number
+          source_item_id: string | null
+          source_quote: string
+          state: string
+          text: string
+        }
+        Insert: {
+          analysis_id: string
+          client_id: string
+          created_at?: string
+          id?: string
+          kind: string
+          sensitivity?: string
+          sort_order?: number
+          source_item_id?: string | null
+          source_quote?: string
+          state?: string
+          text: string
+        }
+        Update: {
+          analysis_id?: string
+          client_id?: string
+          created_at?: string
+          id?: string
+          kind?: string
+          sensitivity?: string
+          sort_order?: number
+          source_item_id?: string | null
+          source_quote?: string
+          state?: string
+          text?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "consultation_source_proposals_analysis_id_fkey"
+            columns: ["analysis_id"]
+            isOneToOne: false
+            referencedRelation: "consultation_analyses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "consultation_source_proposals_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "consultation_source_proposals_source_item_id_fkey"
+            columns: ["source_item_id"]
+            isOneToOne: false
+            referencedRelation: "client_source_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profile_change_suggestions: {
+        Row: {
+          analysis_id: string
+          area: string
+          client_id: string
+          created_at: string
+          current_value: string
+          evidence_quote: string
+          field_label: string
+          id: string
+          rationale: string
+          state: string
+          suggested_value: string
+        }
+        Insert: {
+          analysis_id: string
+          area: string
+          client_id: string
+          created_at?: string
+          current_value?: string
+          evidence_quote?: string
+          field_label?: string
+          id?: string
+          rationale?: string
+          state?: string
+          suggested_value: string
+        }
+        Update: {
+          analysis_id?: string
+          area?: string
+          client_id?: string
+          created_at?: string
+          current_value?: string
+          evidence_quote?: string
+          field_label?: string
+          id?: string
+          rationale?: string
+          state?: string
+          suggested_value?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profile_change_suggestions_analysis_id_fkey"
+            columns: ["analysis_id"]
+            isOneToOne: false
+            referencedRelation: "consultation_analyses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profile_change_suggestions_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       consultations: {
         Row: {
           attendees: string
@@ -876,6 +1052,7 @@ export type Database = {
           next_meeting_date: string | null
           strategic_observations: string
           summary: string
+          title: string
           transcript: string
           updated_at: string
           wins: string
@@ -896,6 +1073,7 @@ export type Database = {
           next_meeting_date?: string | null
           strategic_observations?: string
           summary?: string
+          title?: string
           transcript?: string
           updated_at?: string
           wins?: string
@@ -916,6 +1094,7 @@ export type Database = {
           next_meeting_date?: string | null
           strategic_observations?: string
           summary?: string
+          title?: string
           transcript?: string
           updated_at?: string
           wins?: string

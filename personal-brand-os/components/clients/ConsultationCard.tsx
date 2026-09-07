@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { AutosaveInput } from "@/components/ui/AutosaveInput";
 import { AutosaveTextarea } from "@/components/ui/AutosaveTextarea";
 import { Button } from "@/components/ui/Button";
@@ -38,10 +39,41 @@ export function ConsultationCard({
   consultation: Consultation;
   relatedActions: Action[];
 }) {
+  const router = useRouter();
   const [isDeleting, startDelete] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [isAnalysing, setIsAnalysing] = useState(false);
+  const [analysisNote, setAnalysisNote] = useState<string | null>(null);
+
+  const hasRawMaterial = Boolean(consultation.transcript.trim() || consultation.summary.trim());
 
   const save = (field: Field) => (value: string) => updateConsultationField(clientId, consultation.id, field, value);
+
+  async function analyse() {
+    setError(null);
+    setAnalysisNote(null);
+    setIsAnalysing(true);
+    try {
+      const response = await fetch("/api/consultation-analysis", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId, consultationId: consultation.id }),
+      });
+      const payload = (await response.json()) as { error?: string; sourceItems?: number; profileChanges?: number };
+      if (!response.ok) {
+        setError(payload.error ?? "The analysis failed.");
+        return;
+      }
+      setAnalysisNote(
+        `${payload.sourceItems ?? 0} source item(s) and ${payload.profileChanges ?? 0} suggested profile change(s) found — review them at the top of this page.`
+      );
+      router.refresh();
+    } catch {
+      setError("The analysis couldn't be reached. Nothing has changed — try again.");
+    } finally {
+      setIsAnalysing(false);
+    }
+  }
 
   function handleDelete() {
     if (!window.confirm("Delete this consultation? Its linked actions will stay, unlinked. This can't be undone.")) return;
@@ -57,6 +89,7 @@ export function ConsultationCard({
         <div className="flex min-w-0 items-center gap-2">
           <span className="text-xs text-ink-faint transition-transform duration-150 group-open:rotate-180">▾</span>
           <span className="text-sm font-medium text-ink">{formatDate(consultation.meeting_date)}</span>
+          {consultation.title && <span className="truncate text-sm text-ink">{consultation.title}</span>}
           {consultation.meeting_type && (
             <span className="flex-shrink-0 rounded-full bg-surface-muted px-2 py-0.5 text-xs text-ink-soft">{consultation.meeting_type}</span>
           )}
@@ -114,11 +147,21 @@ export function ConsultationCard({
         </div>
 
         {error && <p className="text-xs text-danger">{error}</p>}
-        <div className="flex justify-end">
+        {analysisNote && <p className="text-xs text-success">{analysisNote}</p>}
+        <div className="flex items-center justify-between gap-2">
+          {/* Re-analysing is always available: the transcript is the permanent
+              evidence, so a better extraction can be run over it later
+              without losing anything. Each run is reviewed before it lands. */}
+          <Button variant="secondary" size="sm" onClick={analyse} disabled={isAnalysing || !hasRawMaterial}>
+            {isAnalysing ? "Analysing…" : "Analyse consultation"}
+          </Button>
           <Button variant="danger" size="sm" onClick={handleDelete} disabled={isDeleting}>
             {isDeleting ? "Deleting…" : "Delete consultation"}
           </Button>
         </div>
+        {!hasRawMaterial && (
+          <p className="text-right text-xs text-ink-faint">Add a transcript or summary above to analyse this consultation.</p>
+        )}
       </div>
     </details>
   );
