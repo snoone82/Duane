@@ -35,6 +35,7 @@ export function ClientSnapshotPanel({ clientId, plan }: { clientId: string; plan
       | "cta_priorities"
       | "primary_cta_destination"
       | "scope_status"
+      | "monthly_update"
   ) => (value: string) => updateMonthlyPlanField(clientId, plan.id, field, value);
 
   function handleRefresh() {
@@ -73,6 +74,18 @@ export function ClientSnapshotPanel({ clientId, plan }: { clientId: string; plan
         </div>
       </div>
       {error && <p className="text-xs text-danger">{error}</p>}
+
+      <div>
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-faint">This month&rsquo;s update</h3>
+        <AutosaveTextarea
+          id={`plan-update-${plan.id}`}
+          label="Monthly content consultation"
+          helpText="The short catch-up that keeps generation current. Cover: what has happened since the last plan that's worth talking about · what you've changed your mind about · what conversations or questions keep coming up · what you're building, testing, struggling with or learning · what you specifically want to achieve or promote this month. This is current source material — the AI may only make first-person claims that come from here, the profile, or the Source Library."
+          initialValue={plan.monthly_update}
+          onSave={save("monthly_update")}
+          rows={6}
+        />
+      </div>
 
       <div>
         <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-faint">This month&rsquo;s synthesis</h3>

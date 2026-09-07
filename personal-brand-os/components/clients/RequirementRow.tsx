@@ -81,7 +81,7 @@ export function RequirementRow({ clientId, requirement }: { clientId: string; re
             label="Owner"
             initialValue={requirement.owner_note}
             onSave={save("owner_note")}
-            placeholder="e.g. Client, or Daniel / Charlie"
+            placeholder="e.g. Client, or a named team member"
           />
           <AutosaveInput id={`req-due-${requirement.id}`} label="Due date" type="date" initialValue={requirement.due_date ?? ""} onSave={save("due_date")} />
         </div>

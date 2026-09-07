@@ -97,6 +97,8 @@ export interface ParsedClientImport extends ImportIssues {
     notes: string;
   }[];
   consultations: { meeting_date: string | null; fields: Record<string, string> }[];
+  /** Story / Belief / Voice bank items (Duane) — appended, deduplicated on kind + text. */
+  sourceItems: { kind: string; text: string; source_quote: string; source_date: string | null; pillar: string | null; sensitivity: "public" | "sensitive" }[];
   actions: {
     /** Internal PBOS action id when the AI is updating a known action. */
     id: string | null;
@@ -157,8 +159,9 @@ const PILLAR_FIELDS = [
 ];
 const CONSULTATION_FIELDS = [
   "meeting_type", "summary", "attendees", "client_updates", "wins", "challenges",
-  "strategic_observations", "decisions_made", "content_discussed", "commercial_opportunities",
+  "strategic_observations", "decisions_made", "content_discussed", "commercial_opportunities", "transcript",
 ];
+const SOURCE_ITEM_KIND_VALUES = ["story", "belief", "voice", "avoid", "rejected_view", "priority", "opportunity", "update"];
 const AUTHORITY_STATUSES = ["identified", "pitched", "in_conversation", "booked", "completed", "published", "declined"];
 const SNAPSHOT_EXTRAS = ["follower_growth", "impressions", "reach", "engagement", "profile_visits", "video_views", "comments", "shares", "saves"];
 
@@ -510,6 +513,31 @@ export function parseClientImport(input: string, options?: { requireName?: boole
     };
   });
 
+  const sourceItems = asArray(doc.source_library, "Source library", issues).flatMap((raw, i) => {
+    const record = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
+    const kind = text(record.kind, `Source item ${i + 1} → kind`, issues).toLowerCase().replace(/[\s-]+/g, "_");
+    const itemText = text(record.text, `Source item ${i + 1} → text`, issues);
+    if (!itemText) {
+      issues.warnings.push(`Source item ${i + 1} has no text — skipped.`);
+      return [];
+    }
+    if (!SOURCE_ITEM_KIND_VALUES.includes(kind)) {
+      issues.warnings.push(`Source item "${itemText.slice(0, 40)}": kind "${kind || "(blank)"}" isn't one of ${SOURCE_ITEM_KIND_VALUES.join(" | ")} — skipped.`);
+      return [];
+    }
+    const sensitivityRaw = text(record.sensitivity, `Source item ${i + 1} → sensitivity`, issues).toLowerCase();
+    return [
+      {
+        kind,
+        text: itemText,
+        source_quote: text(record.source_quote, `Source item ${i + 1} → quote`, issues),
+        source_date: date(record.source_date, `Source item ${i + 1} → date`, issues),
+        pillar: text(record.pillar, `Source item ${i + 1} → pillar`, issues) || null,
+        sensitivity: sensitivityRaw === "sensitive" ? ("sensitive" as const) : ("public" as const),
+      },
+    ];
+  });
+
   const actions = asArray(doc.actions, "Actions", issues).flatMap((raw, i) => {
     const record = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
     const id = text(record.action_id ?? record.id, `Action ${i + 1} → action id`, issues) || null;
@@ -627,7 +655,7 @@ export function parseClientImport(input: string, options?: { requireName?: boole
 
   const KNOWN_KEYS = [
     "pbos_import", "version", "overview", "vision", "positioning", "content_guidelines", "audiences", "social_strategies",
-    "content_pillars", "content_ideas", "sales", "authority_opportunities", "consultations",
+    "content_pillars", "content_ideas", "sales", "authority_opportunities", "consultations", "source_library",
     "actions", "metric_snapshots", "metric_targets", "milestones",
   ];
   for (const key of Object.keys(doc)) {
@@ -648,6 +676,7 @@ export function parseClientImport(input: string, options?: { requireName?: boole
       contentIdeas,
       authority,
       consultations,
+      sourceItems,
       actions,
       metricSnapshots,
       metricTargets,
@@ -679,6 +708,7 @@ export function summarizeClientImport(parsed: ParsedClientImport): ImportSection
     { label: "Sales strategy", count: filled(parsed.sales) > 0 ? 1 : 0, preview: [`${filled(parsed.sales)} of ${SALES_FIELDS.length} fields`] },
     { label: "Authority & opportunities", count: parsed.authority.length, preview: parsed.authority.map((a) => `${a.type}${a.host ? ` · ${a.host}` : ""}`) },
     { label: "Meetings & consultations", count: parsed.consultations.length, preview: parsed.consultations.map((c, i) => c.meeting_date ?? `Meeting ${i + 1}`) },
+    { label: "Source library", count: parsed.sourceItems.length, preview: parsed.sourceItems.map((s) => `${s.kind}: ${s.text.slice(0, 60)}`) },
     { label: "Actions", count: parsed.actions.length, preview: parsed.actions.map((a) => a.title) },
     { label: "Metric snapshots", count: parsed.metricSnapshots.length, preview: parsed.metricSnapshots.map((m) => `${m.platform} · ${m.snapshot_date}`) },
     { label: "Metric targets", count: parsed.metricTargets.length, preview: parsed.metricTargets.map((m) => m.platform) },

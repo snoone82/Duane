@@ -14,6 +14,57 @@ import { normaliseRecordName, buildRecordMatcher, type SectionMode } from "@/lib
 import { assessPlatformFit, type MixDecision } from "@/lib/platform-strategy";
 import type { Database } from "@/lib/database.types";
 
+/** Source-library items from an import: appended, never duplicated —
+ * dedupe on kind + text (case-insensitive), pillar by name, consultation
+ * by matching meeting date when one exists. */
+async function insertSourceItems(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  clientId: string,
+  items: { kind: string; text: string; source_quote: string; source_date: string | null; pillar: string | null; sensitivity: "public" | "sensitive" }[],
+  userId: string | null
+): Promise<{ created: number; skipped: number }> {
+  if (items.length === 0) return { created: 0, skipped: 0 };
+  const [{ data: existing }, { data: pillars }, { data: consultations }] = await Promise.all([
+    supabase.from("client_source_items").select("kind,text").eq("client_id", clientId),
+    supabase.from("brand_pillars").select("id,name").eq("client_id", clientId),
+    supabase.from("consultations").select("id,meeting_date").eq("client_id", clientId),
+  ]);
+  const seen = new Set((existing ?? []).map((e) => `${e.kind}|${e.text.trim().toLowerCase()}`));
+  const pillarMatcher = buildRecordMatcher((pillars ?? []).map((p) => ({ id: p.id, name: p.name })));
+  const consultationByDate = new Map((consultations ?? []).map((c) => [c.meeting_date, c.id]));
+  const rows = [];
+  let skipped = 0;
+  for (const item of items) {
+    const key = `${item.kind}|${item.text.trim().toLowerCase()}`;
+    if (seen.has(key)) {
+      skipped += 1;
+      continue;
+    }
+    seen.add(key);
+    let pillarId: string | null = null;
+    if (item.pillar) {
+      const outcome = pillarMatcher.match({ name: item.pillar });
+      if (outcome.kind === "exact" || outcome.kind === "normalised" || outcome.kind === "id") pillarId = outcome.record.id;
+    }
+    rows.push({
+      client_id: clientId,
+      consultation_id: item.source_date ? (consultationByDate.get(item.source_date) ?? null) : null,
+      kind: item.kind,
+      text: item.text,
+      source_quote: item.source_quote,
+      source_date: item.source_date,
+      pillar_id: pillarId,
+      sensitivity: item.sensitivity,
+      created_by: userId,
+    });
+  }
+  if (rows.length > 0) {
+    const { error } = await supabase.from("client_source_items").insert(rows);
+    if (error) throw new Error(`Source library: ${error.message}`);
+  }
+  return { created: rows.length, skipped };
+}
+
 /** Social strategy fields arrive from the parser as text (so one string
  * comparison decides "changed or not"); cadence_target and posting_days go
  * back to their real column types here, on write. */
@@ -277,6 +328,16 @@ export async function commitClientImport(text: string): Promise<ActionResult<{ c
             if (error) throw new Error(`Consultations: ${error.message}`);
           },
           parsed.consultations.length
+        );
+      }
+
+      if (parsed.sourceItems.length > 0) {
+        await step(
+          "Source library",
+          async () => {
+            await insertSourceItems(supabase, clientId, parsed.sourceItems, user?.id ?? null);
+          },
+          parsed.sourceItems.length
         );
       }
 
@@ -993,6 +1054,21 @@ async function buildClientUpdatePlan(
         if (error) throw fail("Meetings & consultations", error.message);
       });
     }
+    sections.push(section);
+  }
+
+  if (parsed.sourceItems.length > 0) {
+    const section = emptySection("Source library");
+    const { data: existingItems } = await supabase.from("client_source_items").select("kind,text").eq("client_id", clientId);
+    const seen = new Set((existingItems ?? []).map((e) => `${e.kind}|${e.text.trim().toLowerCase()}`));
+    for (const item of parsed.sourceItems) {
+      const label = `${item.kind}: ${clip(item.text)}`;
+      if (seen.has(`${item.kind}|${item.text.trim().toLowerCase()}`)) section.skips.push(`${label} — already in the library`);
+      else section.creates.push(label);
+    }
+    work.push(async () => {
+      await insertSourceItems(supabase, clientId, parsed.sourceItems, userId);
+    });
     sections.push(section);
   }
 

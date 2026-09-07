@@ -19,6 +19,7 @@ export async function createConsultation(_prev: ActionResult | null, formData: F
   const nextMeetingDate = String(formData.get("next_meeting_date") ?? "").trim() || null;
   const summary = String(formData.get("summary") ?? "").trim();
   const attendees = String(formData.get("attendees") ?? "").trim();
+  const transcript = String(formData.get("transcript") ?? "").trim();
   if (!meetingDate) return { ok: false, message: "Meeting date is required." };
 
   return runAction(async () => {
@@ -33,6 +34,7 @@ export async function createConsultation(_prev: ActionResult | null, formData: F
       next_meeting_date: nextMeetingDate,
       summary,
       attendees,
+      transcript,
       created_by: user?.id ?? null,
     });
     if (error) throw new Error(error.message);
@@ -54,6 +56,7 @@ const FIELDS = [
   "decisions_made",
   "content_discussed",
   "commercial_opportunities",
+  "transcript",
 ] as const;
 type Field = (typeof FIELDS)[number];
 // `meeting_date` is NOT NULL (defaults to current_date, but once set can

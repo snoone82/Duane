@@ -291,6 +291,9 @@ export function ContentIdeaRow({
                         lead_draft_copy: idea.lead_draft_copy,
                         body: idea.body,
                         notes: idea.notes,
+                        why_now: idea.why_now,
+                        source_evidence: idea.source_evidence,
+                        client_requirements: idea.client_requirements,
                       }}
                     />
                   )}
@@ -350,6 +353,34 @@ export function ContentIdeaRow({
                 </Select>
               </div>
             </div>
+            {idea.intended_platforms.length > 0 && (
+              <p className="text-xs text-ink-faint">
+                Intended platforms:{" "}
+                {idea.intended_platforms.map((pid) => accounts.find((a) => a.id === pid)?.label ?? "(unknown)").join(" · ")}
+              </p>
+            )}
+            <AutosaveTextarea
+              id={`idea-whynow-${idea.id}`}
+              label="Why now"
+              initialValue={idea.why_now}
+              onSave={(v) => updatePlanContentIdeaField(clientId, idea.id, "why_now", v)}
+              rows={2}
+            />
+            <AutosaveTextarea
+              id={`idea-source-${idea.id}`}
+              label="Source evidence"
+              helpText="Internal — which profile field, Source Library item or monthly-update statement this idea rests on. PERSONAL_INPUT_REQUIRED means the AI needed a real story or view it didn't have."
+              initialValue={idea.source_evidence}
+              onSave={(v) => updatePlanContentIdeaField(clientId, idea.id, "source_evidence", v)}
+              rows={2}
+            />
+            <AutosaveTextarea
+              id={`idea-clientreq-${idea.id}`}
+              label="What we need from the client"
+              initialValue={idea.client_requirements}
+              onSave={(v) => updatePlanContentIdeaField(clientId, idea.id, "client_requirements", v)}
+              rows={2}
+            />
             <AutosaveTextarea
               id={`idea-leaddraft-${idea.id}`}
               label="Lead draft copy"

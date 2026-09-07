@@ -80,7 +80,7 @@ export function ClientTeamPanel({ clientId, members, isAdmin }: { clientId: stri
               </div>
               <div>
                 <Label htmlFor="member-org">Organisation</Label>
-                <Input id="member-org" name="organisation" autoComplete="off" placeholder="e.g. CEG" />
+                <Input id="member-org" name="organisation" autoComplete="off" placeholder="e.g. Client company" />
               </div>
               <div>
                 <Label htmlFor="member-job">Job title / role</Label>
@@ -89,7 +89,7 @@ export function ClientTeamPanel({ clientId, members, isAdmin }: { clientId: stri
             </div>
             <div>
               <Label htmlFor="member-role">Client role</Label>
-              <Input id="member-role" name="member_role" autoComplete="off" placeholder="e.g. Principal / Client, CEG team member" />
+              <Input id="member-role" name="member_role" autoComplete="off" placeholder="e.g. Principal / Client, team member" />
             </div>
             <label className="flex items-center gap-2 text-sm text-ink">
               <input type="checkbox" name="can_be_assigned" defaultChecked className="accent-[--color-accent]" />

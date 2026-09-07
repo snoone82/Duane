@@ -26,7 +26,8 @@ type Field =
   | "strategic_observations"
   | "decisions_made"
   | "content_discussed"
-  | "commercial_opportunities";
+  | "commercial_opportunities"
+  | "transcript";
 
 export function ConsultationCard({
   clientId,
@@ -74,6 +75,14 @@ export function ConsultationCard({
         </div>
         <AutosaveInput id={`cons-attendees-${consultation.id}`} label="Attendees" initialValue={consultation.attendees} onSave={save("attendees")} />
         <AutosaveTextarea id={`cons-summary-${consultation.id}`} label="Summary" initialValue={consultation.summary} onSave={save("summary")} rows={3} />
+        <AutosaveTextarea
+          id={`cons-transcript-${consultation.id}`}
+          label="Transcript / raw notes"
+          helpText="Kept permanently as source material — the profile is the distilled strategy; this is where the person actually lives. Feeds the Source Library and content generation."
+          initialValue={consultation.transcript}
+          onSave={save("transcript")}
+          rows={6}
+        />
         <AutosaveTextarea id={`cons-updates-${consultation.id}`} label="Client updates" initialValue={consultation.client_updates} onSave={save("client_updates")} rows={2} />
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <AutosaveTextarea id={`cons-wins-${consultation.id}`} label="Wins since previous meeting" initialValue={consultation.wins} onSave={save("wins")} rows={2} />

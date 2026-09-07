@@ -609,6 +609,84 @@ export type Database = {
           },
         ]
       }
+      client_source_items: {
+        Row: {
+          client_id: string
+          consultation_id: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          kind: string
+          pillar_id: string | null
+          sensitivity: string
+          source_date: string | null
+          source_quote: string
+          text: string
+        }
+        Insert: {
+          client_id: string
+          consultation_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          kind: string
+          pillar_id?: string | null
+          sensitivity?: string
+          source_date?: string | null
+          source_quote?: string
+          text: string
+        }
+        Update: {
+          client_id?: string
+          consultation_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          kind?: string
+          pillar_id?: string | null
+          sensitivity?: string
+          source_date?: string | null
+          source_quote?: string
+          text?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_source_items_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_source_items_consultation_id_fkey"
+            columns: ["consultation_id"]
+            isOneToOne: false
+            referencedRelation: "consultations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_source_items_consultation_id_fkey"
+            columns: ["consultation_id"]
+            isOneToOne: false
+            referencedRelation: "portal_meeting_summaries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_source_items_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_source_items_pillar_id_fkey"
+            columns: ["pillar_id"]
+            isOneToOne: false
+            referencedRelation: "brand_pillars"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       clients: {
         Row: {
           company: string | null
@@ -798,6 +876,7 @@ export type Database = {
           next_meeting_date: string | null
           strategic_observations: string
           summary: string
+          transcript: string
           updated_at: string
           wins: string
         }
@@ -817,6 +896,7 @@ export type Database = {
           next_meeting_date?: string | null
           strategic_observations?: string
           summary?: string
+          transcript?: string
           updated_at?: string
           wins?: string
         }
@@ -836,6 +916,7 @@ export type Database = {
           next_meeting_date?: string | null
           strategic_observations?: string
           summary?: string
+          transcript?: string
           updated_at?: string
           wins?: string
         }
@@ -908,6 +989,7 @@ export type Database = {
           audience_id: string | null
           body: string
           client_id: string
+          client_requirements: string
           core_message: string
           created_at: string
           created_by: string | null
@@ -916,6 +998,7 @@ export type Database = {
           due_date: string | null
           hook: string
           id: string
+          intended_platforms: string[]
           lead_draft_copy: string
           lead_platform: string
           lead_platform_id: string | null
@@ -931,6 +1014,7 @@ export type Database = {
           production_due_date: string | null
           purpose: string
           scheduled_at: string | null
+          source_evidence: string
           status: Database["public"]["Enums"]["content_status"]
           target_publish_date: string | null
           thumbnail_path: string | null
@@ -938,6 +1022,7 @@ export type Database = {
           thumbnail_url: string | null
           title: string
           updated_at: string
+          why_now: string
         }
         Insert: {
           action_id?: string | null
@@ -946,6 +1031,7 @@ export type Database = {
           audience_id?: string | null
           body?: string
           client_id: string
+          client_requirements?: string
           core_message?: string
           created_at?: string
           created_by?: string | null
@@ -954,6 +1040,7 @@ export type Database = {
           due_date?: string | null
           hook?: string
           id?: string
+          intended_platforms?: string[]
           lead_draft_copy?: string
           lead_platform?: string
           lead_platform_id?: string | null
@@ -969,6 +1056,7 @@ export type Database = {
           production_due_date?: string | null
           purpose?: string
           scheduled_at?: string | null
+          source_evidence?: string
           status?: Database["public"]["Enums"]["content_status"]
           target_publish_date?: string | null
           thumbnail_path?: string | null
@@ -976,6 +1064,7 @@ export type Database = {
           thumbnail_url?: string | null
           title: string
           updated_at?: string
+          why_now?: string
         }
         Update: {
           action_id?: string | null
@@ -984,6 +1073,7 @@ export type Database = {
           audience_id?: string | null
           body?: string
           client_id?: string
+          client_requirements?: string
           core_message?: string
           created_at?: string
           created_by?: string | null
@@ -992,6 +1082,7 @@ export type Database = {
           due_date?: string | null
           hook?: string
           id?: string
+          intended_platforms?: string[]
           lead_draft_copy?: string
           lead_platform?: string
           lead_platform_id?: string | null
@@ -1007,6 +1098,7 @@ export type Database = {
           production_due_date?: string | null
           purpose?: string
           scheduled_at?: string | null
+          source_evidence?: string
           status?: Database["public"]["Enums"]["content_status"]
           target_publish_date?: string | null
           thumbnail_path?: string | null
@@ -1014,6 +1106,7 @@ export type Database = {
           thumbnail_url?: string | null
           title?: string
           updated_at?: string
+          why_now?: string
         }
         Relationships: [
           {
@@ -1592,6 +1685,7 @@ export type Database = {
           cta_priorities: string
           global_tone_notes: string
           id: string
+          monthly_update: string
           period_month: string
           preferred_language: string
           primary_cta_destination: string
@@ -1611,6 +1705,7 @@ export type Database = {
           cta_priorities?: string
           global_tone_notes?: string
           id?: string
+          monthly_update?: string
           period_month: string
           preferred_language?: string
           primary_cta_destination?: string
@@ -1630,6 +1725,7 @@ export type Database = {
           cta_priorities?: string
           global_tone_notes?: string
           id?: string
+          monthly_update?: string
           period_month?: string
           preferred_language?: string
           primary_cta_destination?: string

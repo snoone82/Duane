@@ -54,7 +54,7 @@ export function AddSocialStrategyButton({ clientId }: { clientId: string }) {
             </div>
             <div>
               <Label htmlFor="social-account-name">Account / channel name</Label>
-              <Input id="social-account-name" name="account_name" autoComplete="off" placeholder="e.g. Daniel Andrews, CEG Programme" />
+              <Input id="social-account-name" name="account_name" autoComplete="off" placeholder="e.g. Personal profile, Company page, Programme account" />
             </div>
             <p className="text-xs text-ink-faint">URL, owner/brand, type and the strategy fields get filled in after — the account card is the single source of truth for this account.</p>
             <div className="flex justify-end gap-2 pt-2">
