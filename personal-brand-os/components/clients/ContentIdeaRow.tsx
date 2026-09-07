@@ -21,7 +21,7 @@ import {
 } from "@/lib/actions/content";
 import { updatePlanContentIdeaField, updatePlanContentLeadPlatform } from "@/lib/actions/monthly-plans";
 import { CONTENT_STATUS, CONTENT_PRIORITY, contentOriginMeta } from "@/lib/status";
-import { planSequenceLabel } from "@/lib/monthly-plan-format";
+import { planSequenceLabel, masterBlockReason } from "@/lib/monthly-plan-format";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { ContentOutputRow } from "@/components/clients/ContentOutputRow";
 import { RegenerateItemDialog } from "@/components/clients/RegenerateItemDialog";
@@ -124,6 +124,10 @@ export function ContentIdeaRow({
   const accountLabel = (output: Output) =>
     (output.social_account_id && accounts.find((a) => a.id === output.social_account_id)?.label) || output.platform;
   const platformSummary = outputs.map(accountLabel).join(" · ");
+  // Blocked is read from the Master Content item itself, so every Platform
+  // Output under it inherits the state and unblocks the moment the client's
+  // material lands in source_evidence.
+  const blockReason = masterBlockReason(idea);
   // How many versions are actually inheriting the master asset — shown on the
   // master slot so it is obvious what removing it would affect.
   const inheritingCount = outputs.filter((output) => resolveMedia(output, idea).origin === "master").length;
@@ -142,6 +146,14 @@ export function ContentIdeaRow({
             <span className="flex-shrink-0 font-mono text-xs text-ink-faint">{planSequenceLabel(idea.plan_sequence)}</span>
           )}
           <span className="truncate text-sm text-ink">{idea.title}</span>
+          {blockReason && (
+            <span
+              className="flex-shrink-0"
+              title={`${blockReason} — this item's Platform Outputs still count towards the month's plan and cadence, but raise no filming, sourcing or asset requirements until the client supplies the missing material.`}
+            >
+              <StatusPill label={`Blocked — ${blockReason.toLowerCase()}`} color="amber" />
+            </span>
+          )}
           {idea.origin !== "manual" && (
             <span className="flex-shrink-0">
               <StatusPill label={contentOriginMeta(idea.origin).label} color={contentOriginMeta(idea.origin).color} />
