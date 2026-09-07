@@ -87,3 +87,11 @@ export const CHANGE_REQUEST_FIELDS: { value: string; label: string; multiline: b
   { value: "body", label: "Brief / body", multiline: true },
   { value: "notes", label: "Notes", multiline: true },
 ];
+
+/** "MC-03 · Title" — how a change request names its Master Content item.
+ * Lives here (not in the client panel) so the server-rendered plan page can
+ * call it: a function exported from a "use client" module can only be
+ * rendered as a component or passed as a prop, never invoked on the server. */
+export function changeRequestIdeaLabel(seq: number | null, title: string): string {
+  return `${planSequenceLabel(seq)} · ${title}`;
+}

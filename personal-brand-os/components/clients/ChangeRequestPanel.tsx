@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { applyChangeRequest, declineChangeRequest, requestPlanContentChange } from "@/lib/actions/monthly-plans";
-import { CHANGE_REQUEST_FIELDS, planSequenceLabel } from "@/lib/monthly-plan-format";
+import { CHANGE_REQUEST_FIELDS } from "@/lib/monthly-plan-format";
 import { Button } from "@/components/ui/Button";
 import { Input, Label, Select, Textarea } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
@@ -197,6 +197,3 @@ export function ChangeRequestList({
   );
 }
 
-export function changeRequestIdeaLabel(seq: number | null, title: string): string {
-  return `${planSequenceLabel(seq)} · ${title}`;
-}
