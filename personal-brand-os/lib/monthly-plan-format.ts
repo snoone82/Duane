@@ -263,3 +263,87 @@ export function ctaNeedsDestination(cta: string): boolean | null {
   if (CTA_ENGAGEMENT_PATTERNS.some((re) => re.test(text))) return false;
   return null; // unrecognised — a person should look
 }
+
+// ---------------------------------------------------------------------------
+// What kind of production work a format implies. One definition, used both by
+// the requirement rows and by the Production Summary above them — Duane's
+// standing condition wherever PBOS shows the same thing twice: the summary
+// and the detail must never be able to disagree.
+// ---------------------------------------------------------------------------
+
+export type ProductionGroup = "filming" | "long_form" | "assets" | "writing";
+
+const FORMAT_GROUP: Record<string, ProductionGroup | null> = {
+  video: "filming",
+  reel: "filming",
+  short: "filming",
+  live: "filming",
+  clip: "filming",
+  episode: "long_form",
+  trailer: "long_form",
+  carousel: "assets",
+  static: "assets",
+  image: "assets",
+  text_image: "assets",
+  article: "writing",
+  issue: "writing",
+  thread: "writing",
+  // Writing a text post is the work of writing it — there is nothing to
+  // film, source or upload, so it raises no production requirement.
+  text: null,
+};
+
+/** The production group for a format, or null when it needs no production
+ * work at all. Unknown / legacy freeform formats fall back to a guess from
+ * the words in them rather than disappearing. */
+export function productionGroupFor(format: string): ProductionGroup | null {
+  const key = format.trim().toLowerCase();
+  if (!key) return null;
+  if (key in FORMAT_GROUP) return FORMAT_GROUP[key] ?? null;
+  if (/podcast|episode|long[\s-]*form|webinar/.test(key)) return "long_form";
+  if (/film|record|shoot|reel|video|short|clip|live/.test(key)) return "filming";
+  if (/image|photo|graphic|carousel|design|thumbnail|banner|infograph|static/.test(key)) return "assets";
+  if (/article|blog|newsletter|issue|thread|essay/.test(key)) return "writing";
+  return "assets";
+}
+
+const FORMAT_PLURAL: Record<string, string> = {
+  video: "video pieces",
+  reel: "Reels",
+  short: "Shorts",
+  live: "live streams",
+  clip: "clips",
+  episode: "episodes",
+  trailer: "trailers",
+  carousel: "carousels",
+  static: "static posts",
+  image: "images",
+  text_image: "text/image assets",
+  article: "articles",
+  issue: "issues",
+  thread: "threads",
+};
+
+const FORMAT_SINGULAR: Record<string, string> = {
+  video: "video piece",
+  reel: "Reel",
+  short: "Short",
+  live: "live stream",
+  clip: "clip",
+  episode: "episode",
+  trailer: "trailer",
+  carousel: "carousel",
+  static: "static post",
+  image: "image",
+  text_image: "text/image asset",
+  article: "article",
+  issue: "issue",
+  thread: "thread",
+};
+
+/** "Shorts" / "Short" — how a format reads in a summary line. */
+export function formatNoun(format: string, count: number): string {
+  const key = format.trim().toLowerCase();
+  const table = count === 1 ? FORMAT_SINGULAR : FORMAT_PLURAL;
+  return table[key] ?? (count === 1 ? key : `${key}s`);
+}
