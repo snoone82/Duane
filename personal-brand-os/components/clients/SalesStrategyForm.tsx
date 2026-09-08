@@ -4,11 +4,13 @@
 // rule as VisionForm: the onSave closures over the server action must be
 // created client-side.
 import { AutosaveTextarea } from "@/components/ui/AutosaveTextarea";
-import { updateSalesStrategyField } from "@/lib/actions/sales";
+import { updateSalesStrategyField, setClientRevenueTarget } from "@/lib/actions/sales";
+import { AutosaveInput } from "@/components/ui/AutosaveInput";
 import type { Database } from "@/lib/database.types";
 
 type SalesStrategy = Database["public"]["Tables"]["sales_strategy"]["Row"];
 type SalesField =
+  | "sales_objective"
   | "services_products"
   | "target_customers"
   | "ideal_clients"
@@ -22,6 +24,16 @@ type SalesField =
   | "referral_opportunities";
 
 const SECTIONS: { heading: string; fields: { key: SalesField; label: string; help: string }[] }[] = [
+  {
+    heading: "What they're trying to achieve",
+    fields: [
+      {
+        key: "sales_objective",
+        label: "Commercial objective",
+        help: "What the brand is meant to earn them — the number, the kind of work, or the position they're buying. This is the client's own goal, not ours.",
+      },
+    ],
+  },
   {
     heading: "What they sell",
     fields: [
@@ -53,6 +65,23 @@ const SECTIONS: { heading: string; fields: { key: SalesField; label: string; hel
 export function SalesStrategyForm({ clientId, strategy }: { clientId: string; strategy: SalesStrategy }) {
   return (
     <>
+      <section className="space-y-4">
+        <h2 className="text-sm font-semibold text-ink">Their monthly revenue target</h2>
+        <div className="max-w-xs">
+          <AutosaveInput
+            id="client-revenue-target"
+            label="Monthly revenue target (£)"
+            type="number"
+            initialValue={strategy.monthly_revenue_target?.toString() ?? ""}
+            onSave={(value) => setClientRevenueTarget(clientId, value)}
+            placeholder="e.g. 15000"
+          />
+        </div>
+        <p className="text-xs text-ink-faint">
+          Their number, tracked against the commercial outcomes logged for them above. Nothing to do with what PBOS is
+          billing them — that lives on the PBOS Sales screen.
+        </p>
+      </section>
       {SECTIONS.map((section) => (
         <section key={section.heading} className="space-y-4">
           <h2 className="text-sm font-semibold text-ink">{section.heading}</h2>
