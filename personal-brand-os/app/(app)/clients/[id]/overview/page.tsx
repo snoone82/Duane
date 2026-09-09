@@ -10,6 +10,7 @@ import { ClientTeamPanel } from "@/components/clients/ClientTeamPanel";
 import { ViewAsUser, type PreviewablePerson } from "@/components/clients/ViewAsUser";
 import { PortalAccessControl } from "@/components/clients/PortalAccessControl";
 import { NorthStarCard } from "@/components/clients/NorthStarCard";
+import { CommercialFocusCard } from "@/components/clients/CommercialFocusCard";
 import { ClientDangerZone } from "@/components/clients/ClientDangerZone";
 import { ClientDetailsForms } from "@/components/clients/ClientDetailsForms";
 import { formatDate, formatRelativeToToday, formatCurrency, formatDateTime, isOverdue, auditVerb } from "@/lib/format";
@@ -67,6 +68,12 @@ export default async function OverviewPage({ params }: { params: Promise<{ id: s
         </Link>
       </div>
       <NorthStarCard clientId={id} northStar={client.north_star} />
+      <CommercialFocusCard
+        clientId={id}
+        flagshipOffer={client.flagship_offer}
+        commercialPriority={client.commercial_priority}
+        brandRole={client.brand_role}
+      />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.3fr_1fr]">
       <div className="space-y-6">

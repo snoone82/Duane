@@ -50,6 +50,12 @@ export async function createClientAction(_prev: ActionResult | null, formData: F
 export interface ClientHeaderInput {
   name: string;
   north_star: string;
+  // Current Commercial Focus (Duane): what the brand is working towards
+  // right now — between the North Star, which is long term, and the monthly
+  // objective on the plan, which is just this month.
+  flagship_offer: string;
+  commercial_priority: string;
+  brand_role: string;
   company: string | null;
   job_title: string | null;
   industry: string | null;
@@ -65,7 +71,7 @@ export interface ClientHeaderInput {
 
 const NUMERIC_CLIENT_FIELDS: (keyof ClientHeaderInput)[] = ["retainer_amount"];
 // NOT NULL text columns — clearing them stores '' rather than null.
-const NON_NULL_TEXT_FIELDS: (keyof ClientHeaderInput)[] = ["north_star"];
+const NON_NULL_TEXT_FIELDS: (keyof ClientHeaderInput)[] = ["north_star", "flagship_offer", "commercial_priority", "brand_role"];
 
 export async function updateClient(clientId: string, patch: Partial<ClientHeaderInput>): Promise<ActionResult> {
   return runAction(async () => {
