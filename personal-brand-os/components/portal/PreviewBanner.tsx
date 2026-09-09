@@ -9,14 +9,16 @@ import { endPreview } from "@/lib/actions/preview";
  * says whose view it is, says plainly that it's read-only, and offers the
  * way out in the same breath.
  */
-export function PreviewBanner({ name }: { name: string }) {
+export function PreviewBanner({ name, tier }: { name: string; tier?: string }) {
   const [isExiting, startExit] = useTransition();
 
   return (
     <div className="sticky top-0 z-50 border-b border-amber-500/40 bg-amber-500/15 backdrop-blur">
       <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-2 px-4 py-2">
         <p className="text-sm text-ink">
-          <span className="font-semibold">Viewing as {name} — preview mode, read only</span>
+          <span className="font-semibold">
+            Viewing as {name}{tier ? ` — ${tier}` : ""} — preview mode, read only
+          </span>
           <span className="text-ink-soft"> · This is their view, with their permissions. Nothing here can change anything or reach the client.</span>
         </p>
         <button

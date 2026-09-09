@@ -6,7 +6,7 @@ import { ClientsToolbar } from "@/components/clients/ClientsToolbar";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Table, Thead, Th, Td, Tr } from "@/components/ui/Table";
-import { clientStatusMeta } from "@/lib/status";
+import { clientStatusMeta, pbosTierMeta, pbosTierNumber } from "@/lib/status";
 import { formatDate } from "@/lib/format";
 
 export const metadata = { title: "Clients" };
@@ -15,7 +15,7 @@ const COLUMNS: { key: ClientSort; label: string }[] = [
   { key: "name", label: "Name" },
   { key: "company", label: "Company" },
   { key: "status", label: "Status" },
-  { key: "package", label: "Package" },
+  { key: "tier", label: "Tier" },
   { key: "lastConsultation", label: "Last consultation" },
   { key: "openActions", label: "Open actions" },
 ];
@@ -122,8 +122,8 @@ export default async function ClientsPage({
                     </Link>
                   </Td>
                   <Td className="p-0">
-                    <Link href={href} className="block px-3 py-2 text-ink-soft">
-                      {client.package || "—"}
+                    <Link href={href} className="block px-3 py-2" title={pbosTierMeta(client.tier).label}>
+                      <StatusPill label={pbosTierNumber(client.tier)} color={pbosTierMeta(client.tier).color} />
                     </Link>
                   </Td>
                   <Td className="p-0">

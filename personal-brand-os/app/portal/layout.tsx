@@ -5,6 +5,7 @@ import { getPortalContext } from "@/lib/data/portal";
 import { PortalSidebar, PortalMobileHeader, type PortalNavItem } from "@/components/portal/PortalSidebar";
 import { PreviewBanner } from "@/components/portal/PreviewBanner";
 import { signOut } from "@/lib/actions/auth";
+import { pbosTierNumber } from "@/lib/status";
 import { Button } from "@/components/ui/Button";
 
 export const metadata = { title: { template: "%s · Client portal", default: "Client portal" } };
@@ -68,7 +69,7 @@ export default async function PortalLayout({ children }: { children: React.React
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden">
-      {context.preview && <PreviewBanner name={context.preview.name} />}
+      {context.preview && <PreviewBanner name={context.preview.name} tier={pbosTierNumber(context.client.tier)} />}
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden md:flex-row">
       <PortalMobileHeader items={navItems} clientName={context.client.name} personName={personName} previewing={Boolean(context.preview)} />
       <PortalSidebar items={navItems} clientName={context.client.name} personName={personName} previewing={Boolean(context.preview)} />

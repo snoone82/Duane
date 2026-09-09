@@ -61,6 +61,9 @@ export interface ClientHeaderInput {
   industry: string | null;
   location: string | null;
   status: ClientStatus;
+  /** Service tier — a pbos_tiers key. What the client is operated under, and
+   * eventually what they are permitted to do in the portal. */
+  tier: string;
   package: string | null;
   retainer_amount: number | null;
   email: string | null;

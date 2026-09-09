@@ -203,12 +203,28 @@ export const OPEN_PBOS_STAGES = PBOS_STAGES.filter((s) => s.value !== "won" && s
  * the pbos_tiers table, so pricing can change without touching code. */
 export type PbosTier = "self_serve" | "guided" | "managed" | "partner";
 
-export const PBOS_TIERS: { value: PbosTier; label: string; color: TagColor }[] = [
-  { value: "self_serve", label: "Self-Serve", color: "slate" },
-  { value: "guided", label: "Guided", color: "blue" },
-  { value: "managed", label: "Managed", color: "teal" },
-  { value: "partner", label: "Partner", color: "purple" },
+/** Duane refers to these by number — "Jonny is Tier 4" — while the product
+ * names them. `rank` is the number, and matches pbos_tiers.rank in the
+ * database, so the two vocabularies can never drift apart. Tier 1 is the
+ * most self-directed; Tier 4 is the most done-for-you. */
+export const PBOS_TIERS: { value: PbosTier; rank: 1 | 2 | 3 | 4; label: string; color: TagColor }[] = [
+  { value: "self_serve", rank: 1, label: "Self-Serve", color: "slate" },
+  { value: "guided", rank: 2, label: "Guided", color: "blue" },
+  { value: "managed", rank: 3, label: "Managed", color: "teal" },
+  { value: "partner", rank: 4, label: "Partner", color: "purple" },
 ];
+
+/** "Tier 4" — how Duane refers to it. */
+export const pbosTierNumber = (value: string) => {
+  const tier = PBOS_TIERS.find((t) => t.value === value);
+  return tier ? `Tier ${tier.rank}` : "No tier";
+};
+
+/** "Tier 4 · Partner" — for anywhere with room for both. */
+export const pbosTierBadge = (value: string) => {
+  const tier = PBOS_TIERS.find((t) => t.value === value);
+  return tier ? `Tier ${tier.rank} · ${tier.label}` : "No tier set";
+};
 
 export type PbosLeadStatus = "open" | "won" | "lost" | "dormant";
 

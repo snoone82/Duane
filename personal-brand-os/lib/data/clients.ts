@@ -9,23 +9,26 @@ export interface ClientListRow {
   company: string | null;
   status: ClientStatus;
   package: string | null;
+  /** Service tier — what the client is operated under, and eventually what
+   * they are permitted to do. */
+  tier: string;
   lastConsultation: string | null;
   openActions: number;
 }
 
-export type ClientSort = "name" | "company" | "status" | "package" | "lastConsultation" | "openActions";
+export type ClientSort = "name" | "company" | "status" | "package" | "tier" | "lastConsultation" | "openActions";
 
 export async function getClientList(
   supabase: Client,
   opts: { q?: string; status?: ClientStatus | "all"; sort?: ClientSort; dir?: "asc" | "desc" }
 ): Promise<ClientListRow[]> {
-  let query = supabase.from("clients").select("id,name,company,status,package");
+  let query = supabase.from("clients").select("id,name,company,status,package,tier");
 
   if (opts.q) query = query.ilike("name", `%${opts.q}%`);
   if (opts.status && opts.status !== "all") query = query.eq("status", opts.status);
 
   // Direct columns sort in SQL; computed columns (below) sort in JS after.
-  const directSortable: ClientSort[] = ["name", "company", "status", "package"];
+  const directSortable: ClientSort[] = ["name", "company", "status", "package", "tier"];
   if (opts.sort && directSortable.includes(opts.sort)) {
     query = query.order(opts.sort, { ascending: opts.dir !== "desc" });
   } else {
@@ -61,6 +64,7 @@ export async function getClientList(
     company: c.company,
     status: c.status,
     package: c.package,
+    tier: c.tier,
     lastConsultation: lastConsultation.get(c.id) ?? null,
     openActions: openActionCounts.get(c.id) ?? 0,
   }));

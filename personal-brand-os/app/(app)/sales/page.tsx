@@ -9,7 +9,7 @@ import { EngagementCard } from "@/components/sales/EngagementCard";
 import { TierPricing } from "@/components/sales/TierPricing";
 import { ProgressRing, HBars } from "@/components/dashboard/Charts";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { OPEN_PBOS_STAGES, pbosTierMeta } from "@/lib/status";
+import { OPEN_PBOS_STAGES, pbosTierMeta, pbosTierNumber } from "@/lib/status";
 import { formatCurrency } from "@/lib/format";
 import type { LeadActionRow, TeamOwner, TierOption } from "@/components/sales/shared";
 
@@ -93,13 +93,16 @@ export default async function PbosSalesPage() {
     {
       label: "PBOS revenue this month",
       value: formatCurrency(overview.revenueThisMonth),
-      detail:
-        overview.setupFeesThisMonth > 0
-          ? `${formatCurrency(overview.mrr)} recurring + ${formatCurrency(overview.setupFeesThisMonth)} setup`
-          : `${formatCurrency(overview.mrr)} recurring, no setup fees invoiced`,
+      detail: [
+        `${formatCurrency(overview.mrr)} recurring`,
+        overview.setupFeesThisMonth > 0 ? `${formatCurrency(overview.setupFeesThisMonth)} new` : null,
+        overview.extrasThisMonth > 0 ? `${formatCurrency(overview.extrasThisMonth)} additional` : null,
+      ]
+        .filter(Boolean)
+        .join(" + "),
     },
     {
-      label: "MRR",
+      label: "Recurring revenue",
       value: formatCurrency(overview.mrr),
       detail: `${overview.liveClients} live client${overview.liveClients === 1 ? "" : "s"}${onboardingCount > 0 ? `, ${onboardingCount} onboarding` : ""}`,
     },
@@ -152,7 +155,7 @@ export default async function PbosSalesPage() {
   }).filter((bar) => bar.value > 0);
 
   const tierBars = overview.byTier.map((row) => ({
-    label: pbosTierMeta(row.tier).label,
+    label: `${pbosTierNumber(row.tier)} · ${pbosTierMeta(row.tier).label}`,
     value: row.liveClients,
     detail: row.mrr > 0 ? `${formatCurrency(row.mrr)}/mo` : undefined,
   }));
