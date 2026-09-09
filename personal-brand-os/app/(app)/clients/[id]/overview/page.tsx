@@ -11,6 +11,7 @@ import { ViewAsUser, type PreviewablePerson } from "@/components/clients/ViewAsU
 import { PortalAccessControl } from "@/components/clients/PortalAccessControl";
 import { NorthStarCard } from "@/components/clients/NorthStarCard";
 import { CommercialFocusCard } from "@/components/clients/CommercialFocusCard";
+import { ClientTierCard } from "@/components/clients/ClientTierCard";
 import { ClientDangerZone } from "@/components/clients/ClientDangerZone";
 import { ClientDetailsForms } from "@/components/clients/ClientDetailsForms";
 import { formatDate, formatRelativeToToday, formatCurrency, formatDateTime, isOverdue, auditVerb } from "@/lib/format";
@@ -68,6 +69,7 @@ export default async function OverviewPage({ params }: { params: Promise<{ id: s
         </Link>
       </div>
       <NorthStarCard clientId={id} northStar={client.north_star} />
+      <ClientTierCard clientId={id} tier={client.tier} />
       <CommercialFocusCard
         clientId={id}
         flagshipOffer={client.flagship_offer}

@@ -40,6 +40,8 @@ export interface PbosSalesOverview {
   // in the month; that is the figure the monthly target is measured against.
   mrr: number;
   setupFeesThisMonth: number;
+  /** Project and add-on work billed monthly on top of retainers. */
+  extrasThisMonth: number;
   revenueThisMonth: number;
 
   // Growth, as opposed to run rate.
@@ -83,13 +85,24 @@ export async function getPbosSalesOverview(supabase: Client, tiers: PbosTierRow[
   const in30Days = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
   const { start: monthStart, end: monthEnd } = monthBounds();
 
-  const [{ data: settings }, { data: opportunities }, { data: engagements }, { data: leads }, { data: leadActions }] =
+  const [{ data: settings }, { data: opportunities }, { data: engagements }, { data: leads }, { data: leadActions }, { data: clients }] =
     await Promise.all([
       supabase.from("workspace_settings").select("monthly_sales_target").eq("id", true).maybeSingle(),
       supabase.from("pbos_opportunities").select("tier,stage,setup_fee,expected_mrr,probability,expected_close,closed_at"),
-      supabase.from("pbos_engagements").select("tier,status,actual_mrr,expected_mrr,setup_fee,setup_fee_invoiced_on"),
+      supabase.from("pbos_engagements").select("client_id,tier,status,actual_mrr,expected_mrr,extras_monthly_value,setup_fee,setup_fee_invoiced_on"),
       supabase.from("pbos_leads").select("id,status,tier_interest"),
       supabase.from("pbos_lead_actions").select("id,due_date,status").neq("status", "completed"),
+      // Duane: "if a client has an active monthly retainer, that needs to
+      // automatically feed into revenue for the current month… I don't want
+      // an active retained client appearing as zero revenue simply because
+      // there wasn't a new sale that month."
+      //
+      // The retainer lives on the client record and is what the team
+      // actually maintains; pbos_engagements is the commercial contract and
+      // is empty for every current client. So recurring revenue is computed
+      // per client, taking the engagement's figure when there is one and
+      // falling back to the client's own retainer.
+      supabase.from("clients").select("id,tier,status,retainer_amount").eq("status", "active"),
     ]);
 
   const allOpportunities = opportunities ?? [];
@@ -102,7 +115,17 @@ export async function getPbosSalesOverview(supabase: Client, tiers: PbosTierRow[
 
   const sum = <T,>(rows: T[], pick: (row: T) => number | null) => rows.reduce((total, row) => total + (pick(row) ?? 0), 0);
 
-  const mrr = sum(live, engagementMrr);
+  const activeClients = clients ?? [];
+  const engagementByClient = new Map(live.map((e) => [e.client_id, e]));
+  const clientRecurring = (client: { id: string; retainer_amount: number | null }) => {
+    const engagement = engagementByClient.get(client.id);
+    // A confirmed engagement figure wins — someone has stated it explicitly.
+    // Otherwise the standing retainer on the client record is the truth.
+    return engagement ? engagementMrr(engagement) : (client.retainer_amount ?? 0);
+  };
+  const mrr = sum(activeClients, clientRecurring);
+  // Project and add-on work billed monthly on top of the retainer.
+  const extrasThisMonth = sum(live, (e) => e.extras_monthly_value);
   const setupFeesThisMonth = sum(
     allEngagements.filter((e) => e.setup_fee_invoiced_on && e.setup_fee_invoiced_on >= monthStart && e.setup_fee_invoiced_on <= monthEnd),
     (e) => e.setup_fee,
@@ -118,13 +141,13 @@ export async function getPbosSalesOverview(supabase: Client, tiers: PbosTierRow[
 
   const byTier: TierBreakdown[] = tiers.map((tier) => {
     const tierOpen = open.filter((o) => o.tier === tier.key);
-    const tierLive = live.filter((e) => e.tier === tier.key);
+    const tierClients = activeClients.filter((c) => c.tier === tier.key);
     return {
       tier: tier.key as PbosTier,
       openOpportunities: tierOpen.length,
       pipelineValue: sum(tierOpen, dealValue),
-      liveClients: tierLive.length,
-      mrr: sum(tierLive, engagementMrr),
+      liveClients: tierClients.length,
+      mrr: sum(tierClients, clientRecurring),
     };
   });
 
@@ -135,7 +158,8 @@ export async function getPbosSalesOverview(supabase: Client, tiers: PbosTierRow[
 
     mrr,
     setupFeesThisMonth,
-    revenueThisMonth: mrr + setupFeesThisMonth,
+    extrasThisMonth,
+    revenueThisMonth: mrr + setupFeesThisMonth + extrasThisMonth,
 
     newBusinessWon: sum(wonThisMonth, dealValue),
     newBusinessMrr: sum(wonThisMonth, (o) => o.expected_mrr),
@@ -152,7 +176,7 @@ export async function getPbosSalesOverview(supabase: Client, tiers: PbosTierRow[
     wonAllTime: won.length,
     lostAllTime: lost.length,
     openLeads: (leads ?? []).filter((l) => l.status === "open").length,
-    liveClients: live.length,
+    liveClients: activeClients.length,
     byTier,
   };
 }

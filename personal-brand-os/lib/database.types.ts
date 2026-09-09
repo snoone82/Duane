@@ -699,6 +699,7 @@ export type Database = {
           portal_user_id: string | null
           retainer_amount: number | null
           status: Database["public"]["Enums"]["client_status"]
+          tier: string
           updated_at: string
           website_url: string | null
         }
@@ -723,6 +724,7 @@ export type Database = {
           portal_user_id?: string | null
           retainer_amount?: number | null
           status?: Database["public"]["Enums"]["client_status"]
+          tier?: string
           updated_at?: string
           website_url?: string | null
         }
@@ -747,6 +749,7 @@ export type Database = {
           portal_user_id?: string | null
           retainer_amount?: number | null
           status?: Database["public"]["Enums"]["client_status"]
+          tier?: string
           updated_at?: string
           website_url?: string | null
         }
