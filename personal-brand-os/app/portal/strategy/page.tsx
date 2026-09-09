@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getPortalClient } from "@/lib/data/portal";
 import { ReadOnlyField } from "@/components/portal/ReadOnlyField";
@@ -38,19 +39,35 @@ export default async function PortalStrategyPage() {
   if (!client) return null; // layout already renders the not-linked state
 
   const supabase = await createClient();
-  const [{ data: vision }, { data: positioning }, { data: pillars }, { data: audiences }, { data: socials }] =
+  const [{ data: vision }, { data: positioning }, { data: pillars }, { data: audiences }, { data: socials }, { data: guidelines }, { data: signoffs }] =
     await Promise.all([
       supabase.from("brand_vision").select("*").eq("client_id", client.id).maybeSingle(),
       supabase.from("positioning").select("*").eq("client_id", client.id).maybeSingle(),
       supabase.from("brand_pillars").select("*").eq("client_id", client.id).order("sort_order").order("created_at"),
       supabase.from("audiences").select("*").eq("client_id", client.id).order("sort_order").order("created_at"),
       supabase.from("social_strategies").select("*").eq("client_id", client.id).order("sort_order").order("created_at"),
+      // Duane: the story-first rules, voice, CTA rules and safeguards took a
+      // lot of work to get right — the client should be able to see what the
+      // system is actually working from.
+      supabase.from("content_guidelines").select("*").eq("client_id", client.id).maybeSingle(),
+      supabase.from("strategy_signoffs").select("id,version,status,approved_at").eq("client_id", client.id).order("version", { ascending: false }).limit(1),
     ]);
 
   const clip = (value: string | null | undefined, length = 90) => {
     const text = (value ?? "").trim().replace(/\s+/g, " ");
     return text.length > length ? `${text.slice(0, length)}…` : text;
   };
+
+  const latestPack = (signoffs ?? [])[0];
+  const hasCommercialFocus = Boolean(
+    client.flagship_offer.trim() || client.commercial_priority.trim() || client.brand_role.trim()
+  );
+  const hasGuidelines = Boolean(
+    guidelines &&
+      [guidelines.tone_voice_notes, guidelines.preferred_language, guidelines.avoid_language, guidelines.cta_priorities,
+       guidelines.primary_cta_destination, guidelines.content_safeguards, guidelines.secondary_objectives]
+        .some((v) => (v ?? "").trim())
+  );
 
   const hasAnything =
     Boolean(vision?.long_term_goal || positioning?.positioning_statement) ||
@@ -68,6 +85,35 @@ export default async function PortalStrategyPage() {
         <section className="rounded-lg border border-accent/40 bg-surface p-4">
           <p className="text-xs font-medium uppercase tracking-wide text-ink-faint">North Star</p>
           <p className="mt-1 whitespace-pre-wrap text-base font-medium text-ink">{client.north_star}</p>
+        </section>
+      )}
+
+      {/* Current Commercial Focus — what the brand is working towards right
+          now, between the North Star above (long term) and the monthly
+          objective on the plan (this month). */}
+      {hasCommercialFocus && (
+        <section className="rounded-lg border border-border bg-surface p-4">
+          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-ink-faint">Current commercial focus</p>
+          <dl className="space-y-2">
+            {client.flagship_offer.trim() && (
+              <div>
+                <dt className="text-xs text-ink-soft">Flagship</dt>
+                <dd className="whitespace-pre-wrap text-sm text-ink">{client.flagship_offer}</dd>
+              </div>
+            )}
+            {client.commercial_priority.trim() && (
+              <div>
+                <dt className="text-xs text-ink-soft">Priority</dt>
+                <dd className="whitespace-pre-wrap text-sm text-ink">{client.commercial_priority}</dd>
+              </div>
+            )}
+            {client.brand_role.trim() && (
+              <div>
+                <dt className="text-xs text-ink-soft">Role</dt>
+                <dd className="whitespace-pre-wrap text-sm text-ink">{client.brand_role}</dd>
+              </div>
+            )}
+          </dl>
         </section>
       )}
 
@@ -141,6 +187,41 @@ export default async function PortalStrategyPage() {
             </div>
           ))}
         </StrategySection>
+      )}
+
+      {/* Content & Voice Guidelines — the rules the system actually writes
+          to. Shown last because it is the most detailed, but it is the
+          section that explains why the content sounds the way it does. */}
+      {hasGuidelines && guidelines && (
+        <StrategySection title="Content & Voice Guidelines" summary={clip(guidelines.tone_voice_notes)}>
+          <ReadOnlyField label="Tone of voice" value={guidelines.tone_voice_notes} />
+          <ReadOnlyField label="Language we use" value={guidelines.preferred_language} />
+          <ReadOnlyField label="Language we avoid" value={guidelines.avoid_language} />
+          <ReadOnlyField label="What we ask people to do" value={guidelines.cta_priorities} />
+          <ReadOnlyField label="Where we send them" value={guidelines.primary_cta_destination} />
+          <ReadOnlyField label="Things we never do" value={guidelines.content_safeguards} />
+          <ReadOnlyField label="Secondary objectives" value={guidelines.secondary_objectives} />
+        </StrategySection>
+      )}
+
+      {/* Sign-off lives here rather than in the menu (Duane): a permanent
+          top-level item implies there is always something to sign. A version
+          genuinely awaiting approval is surfaced on the dashboard instead. */}
+      {latestPack && (
+        <section className="rounded-lg border border-border bg-surface px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm text-ink-soft">
+              {latestPack.status === "approved" && latestPack.approved_at
+                ? `Approved as version ${latestPack.version} — this is your agreed baseline.`
+                : latestPack.status === "sent"
+                  ? `Version ${latestPack.version} is waiting for your approval.`
+                  : `Version ${latestPack.version} — ${latestPack.status.replace(/_/g, " ")}.`}
+            </p>
+            <Link href="/portal/signoff" className="flex-shrink-0 text-sm text-accent underline-offset-2 hover:underline">
+              Sign-off &amp; history →
+            </Link>
+          </div>
+        </section>
       )}
     </div>
   );

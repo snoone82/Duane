@@ -47,14 +47,21 @@ export default async function PortalLayout({ children }: { children: React.React
   // Same navigation shell as the admin workspace — sidebar on desktop,
   // hamburger drawer on phones — with the client's own sections.
   const navItems: PortalNavItem[] = [
+    // Duane's order, testing as Jonny: the day-to-day working areas first,
+    // the foundational and reference ones last. Content sits directly under
+    // Dashboard because it is where the client actually works.
+    //
+    // Sign-off is deliberately not here. Once a strategy is approved a
+    // permanent menu item implies there is always something to sign, which
+    // there isn't; a version genuinely awaiting approval surfaces in Needs
+    // Your Attention on the dashboard, and the history lives under Strategy.
     { href: "/portal", label: "Dashboard" },
-    ...(context.can("view_strategy") ? [{ href: "/portal/strategy", label: "Strategy" }] : []),
-    ...(context.can("view_strategy") ? [{ href: "/portal/signoff", label: "Sign-off" }] : []),
-    { href: "/portal/priorities", label: "Actions" },
     ...(context.can("view_content") ? [{ href: "/portal/content", label: "Content" }] : []),
     { href: "/portal/calendar", label: "Calendar" },
-    ...(context.can("view_progress") ? [{ href: "/portal/progress", label: "Progress" }] : []),
-    ...(context.can("view_meetings") ? [{ href: "/portal/meetings", label: "Meetings" }] : []),
+    { href: "/portal/priorities", label: "Actions" },
+    ...(context.can("view_progress") ? [{ href: "/portal/progress", label: "Performance" }] : []),
+    ...(context.can("view_meetings") ? [{ href: "/portal/meetings", label: "Meetings & Notes" }] : []),
+    ...(context.can("view_strategy") ? [{ href: "/portal/strategy", label: "Strategy" }] : []),
     ...(context.can("connect_social") ? [{ href: "/portal/accounts", label: "Social accounts" }] : []),
   ];
   const personName = context.member?.name ?? context.client.name;

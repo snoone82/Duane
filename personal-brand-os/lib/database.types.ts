@@ -680,6 +680,9 @@ export type Database = {
       clients: {
         Row: {
           company: string | null
+          brand_role: string
+          commercial_priority: string
+          flagship_offer: string
           created_at: string
           created_by: string | null
           email: string | null
@@ -701,6 +704,9 @@ export type Database = {
         }
         Insert: {
           company?: string | null
+          brand_role?: string
+          commercial_priority?: string
+          flagship_offer?: string
           created_at?: string
           created_by?: string | null
           email?: string | null
@@ -722,6 +728,9 @@ export type Database = {
         }
         Update: {
           company?: string | null
+          brand_role?: string
+          commercial_priority?: string
+          flagship_offer?: string
           created_at?: string
           created_by?: string | null
           email?: string | null
