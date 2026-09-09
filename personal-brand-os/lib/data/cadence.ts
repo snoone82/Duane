@@ -1,5 +1,5 @@
 import type { SupabaseServerClient } from "@/lib/supabase/server";
-import { cadenceStatus, type CadenceStatus } from "@/lib/platform-strategy";
+import { cadenceStatus, type CadenceStatus, type CadenceState } from "@/lib/platform-strategy";
 import type { Database } from "@/lib/database.types";
 
 type SocialRow = Database["public"]["Tables"]["social_strategies"]["Row"];
@@ -137,4 +137,51 @@ export async function getCadenceForClient(
     monthLabel: now.toLocaleDateString("en-GB", { month: "long", year: "numeric" }),
     totals,
   };
+}
+
+// ---------------------------------------------------------------------------
+// How cadence reads to the CLIENT (Duane, testing as Jonny).
+//
+// "Below target" on the 3rd of the month is technically true and completely
+// useless — of course the month isn't full yet. The same number means
+// something quite different on the 28th. So the client-facing note is a
+// function of the shortfall AND how far through the month we are, and it
+// only becomes a warning once there is genuinely no time left to fix it.
+//
+// The underlying number is untouched: this is wording, not arithmetic, and
+// the team still sees the raw on/under/over state.
+// ---------------------------------------------------------------------------
+
+export interface CadenceNote {
+  label: string;
+  tone: "good" | "neutral" | "warn";
+}
+
+/** 0 at the first of the month, 1 on the last day. */
+export function monthProgress(now = new Date()): number {
+  const day = now.getDate();
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  return (day - 1) / Math.max(1, daysInMonth - 1);
+}
+
+export function cadenceClientNote(
+  state: CadenceState,
+  stages: Record<CadenceStage, number>,
+  now = new Date()
+): CadenceNote {
+  if (state === "untracked") return { label: "", tone: "neutral" };
+  if (state === "over") return { label: "Ahead of plan", tone: "good" };
+  if (state === "on_track") {
+    // Everything for the month already has a date on it — the strongest
+    // thing we can say, and truer than a generic "on track".
+    const outstanding = stages.planned + stages.in_production + stages.awaiting_approval + stages.ready_to_schedule;
+    if (outstanding === 0 && stages.scheduled + stages.published > 0) return { label: "All scheduled", tone: "good" };
+    return { label: "On track", tone: "good" };
+  }
+
+  // Short of target — what that means depends entirely on the date.
+  const progress = monthProgress(now);
+  if (progress < 0.4) return { label: "Planning in progress", tone: "neutral" };
+  if (progress < 0.75) return { label: "Building the month", tone: "neutral" };
+  return { label: "Behind target", tone: "warn" };
 }
