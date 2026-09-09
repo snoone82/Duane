@@ -6,7 +6,7 @@ export const NAV_ITEMS = [
   { href: "/clients", label: "Clients" },
   { href: "/calendar", label: "Calendar" },
   { href: "/actions", label: "Actions" },
-  { href: "/sales", label: "Sales" },
+  { href: "/sales", label: "PBOS Sales" },
   { href: "/search", label: "Search" },
 ];
 

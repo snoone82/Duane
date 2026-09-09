@@ -17,7 +17,11 @@ export type TagColor =
  * label text and never drift from the database enum. */
 
 export const CLIENT_STATUS: { value: ClientStatus; label: string; color: TagColor }[] = [
-  { value: "prospect", label: "Prospect", color: "slate" },
+  // 'prospect' is legacy. PBOS prospects are pbos_leads now and have no
+  // client record at all — a client only exists once a deal is won, and the
+  // deal creates them as 'onboarding'. Kept so old rows still render.
+  { value: "prospect", label: "Prospect (legacy)", color: "slate" },
+  { value: "onboarding", label: "Onboarding", color: "purple" },
   { value: "active", label: "Active", color: "green" },
   { value: "paused", label: "Paused", color: "amber" },
   { value: "offboarded", label: "Offboarded", color: "red" },
@@ -165,9 +169,13 @@ export const requirementOriginMeta = (value: string) => lookup(REQUIREMENT_ORIGI
 export const requirementStateMeta = (value: string) => lookup(REQUIREMENT_STATE, value as RequirementState);
 export const mediaStateMeta = (value: string) => lookup(MEDIA_STATE, value as MediaState);
 
-/** Duane's sales pipeline stages, in journey order. Won/lost are terminal. */
-export type SalesStage =
-  | "prospect"
+/** PBOS pipeline stages, in journey order — Duane selling PBOS, nobody
+ * selling anything else. The first stage is "lead", not "prospect": a lead
+ * is a person who might buy PBOS, and calling them a prospect was half of
+ * why this area got confused with a client's own sales in the first place.
+ * Won/lost are terminal. */
+export type PbosStage =
+  | "lead"
   | "contacted"
   | "conversation"
   | "qualified"
@@ -177,8 +185,8 @@ export type SalesStage =
   | "won"
   | "lost";
 
-export const SALES_STAGES: { value: SalesStage; label: string; color: TagColor }[] = [
-  { value: "prospect", label: "Prospect", color: "slate" },
+export const PBOS_STAGES: { value: PbosStage; label: string; color: TagColor }[] = [
+  { value: "lead", label: "Lead", color: "slate" },
   { value: "contacted", label: "Contacted", color: "blue" },
   { value: "conversation", label: "Conversation", color: "cyan" },
   { value: "qualified", label: "Qualified", color: "teal" },
@@ -189,13 +197,50 @@ export const SALES_STAGES: { value: SalesStage; label: string; color: TagColor }
   { value: "lost", label: "Lost", color: "red" },
 ];
 
-export const salesStageMeta = (value: string) => lookup(SALES_STAGES, value as SalesStage);
+export const OPEN_PBOS_STAGES = PBOS_STAGES.filter((s) => s.value !== "won" && s.value !== "lost");
+
+/** The four ways to buy PBOS. Order and labels live here; the money lives in
+ * the pbos_tiers table, so pricing can change without touching code. */
+export type PbosTier = "self_serve" | "guided" | "managed" | "partner";
+
+export const PBOS_TIERS: { value: PbosTier; label: string; color: TagColor }[] = [
+  { value: "self_serve", label: "Self-Serve", color: "slate" },
+  { value: "guided", label: "Guided", color: "blue" },
+  { value: "managed", label: "Managed", color: "teal" },
+  { value: "partner", label: "Partner", color: "purple" },
+];
+
+export type PbosLeadStatus = "open" | "won" | "lost" | "dormant";
+
+export const PBOS_LEAD_STATUS: { value: PbosLeadStatus; label: string; color: TagColor }[] = [
+  { value: "open", label: "Open", color: "blue" },
+  { value: "won", label: "Won", color: "green" },
+  { value: "lost", label: "Lost", color: "red" },
+  { value: "dormant", label: "Dormant", color: "slate" },
+];
+
+/** What a won client is on. Distinct from the client's own status: the
+ * client record says how delivery is going, the engagement says what they
+ * are paying for. */
+export type EngagementStatus = "onboarding" | "active" | "paused" | "ended";
+
+export const ENGAGEMENT_STATUS: { value: EngagementStatus; label: string; color: TagColor }[] = [
+  { value: "onboarding", label: "Onboarding", color: "purple" },
+  { value: "active", label: "Active", color: "green" },
+  { value: "paused", label: "Paused", color: "amber" },
+  { value: "ended", label: "Ended", color: "red" },
+];
+
+export const pbosStageMeta = (value: string) => lookup(PBOS_STAGES, value as PbosStage);
+export const pbosTierMeta = (value: string) => lookup(PBOS_TIERS, value as PbosTier);
+export const pbosLeadStatusMeta = (value: string) => lookup(PBOS_LEAD_STATUS, value as PbosLeadStatus);
+export const engagementStatusMeta = (value: string) => lookup(ENGAGEMENT_STATUS, value as EngagementStatus);
 
 /** Where an Action originated — set automatically, shown read-only. */
 export const ACTION_SOURCE_LABELS: Record<string, string> = {
   manual: "Manual",
   meeting: "Meeting / Consultation",
-  opportunity: "Authority Opportunity",
+  opportunity: "Authority Opportunity",   // authority/PR, not a PBOS deal
   content: "Content workflow",
   import: "AI Import",
   client_confirmation: "AI / Client Confirmation",

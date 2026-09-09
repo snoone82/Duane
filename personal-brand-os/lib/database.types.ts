@@ -29,7 +29,6 @@ export type Database = {
           owner_user_id: string | null
           portal_notes: string
           priority: string
-          sales_opportunity_id: string | null
           source: string
           status: Database["public"]["Enums"]["action_status"]
           title: string
@@ -50,7 +49,6 @@ export type Database = {
           owner_user_id?: string | null
           portal_notes?: string
           priority?: string
-          sales_opportunity_id?: string | null
           source?: string
           status?: Database["public"]["Enums"]["action_status"]
           title: string
@@ -71,7 +69,6 @@ export type Database = {
           owner_user_id?: string | null
           portal_notes?: string
           priority?: string
-          sales_opportunity_id?: string | null
           source?: string
           status?: Database["public"]["Enums"]["action_status"]
           title?: string
@@ -112,13 +109,6 @@ export type Database = {
             columns: ["owner_user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "actions_sales_opportunity_id_fkey"
-            columns: ["sales_opportunity_id"]
-            isOneToOne: false
-            referencedRelation: "sales_opportunities"
             referencedColumns: ["id"]
           },
         ]
@@ -906,6 +896,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "consultation_analyses_consultation_id_fkey"
+            columns: ["consultation_id"]
+            isOneToOne: false
+            referencedRelation: "portal_meeting_summaries"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "consultation_analyses_created_by_fkey"
             columns: ["created_by"]
             isOneToOne: false
@@ -974,63 +971,6 @@ export type Database = {
             columns: ["source_item_id"]
             isOneToOne: false
             referencedRelation: "client_source_items"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      profile_change_suggestions: {
-        Row: {
-          analysis_id: string
-          area: string
-          client_id: string
-          created_at: string
-          current_value: string
-          evidence_quote: string
-          field_label: string
-          id: string
-          rationale: string
-          state: string
-          suggested_value: string
-        }
-        Insert: {
-          analysis_id: string
-          area: string
-          client_id: string
-          created_at?: string
-          current_value?: string
-          evidence_quote?: string
-          field_label?: string
-          id?: string
-          rationale?: string
-          state?: string
-          suggested_value: string
-        }
-        Update: {
-          analysis_id?: string
-          area?: string
-          client_id?: string
-          created_at?: string
-          current_value?: string
-          evidence_quote?: string
-          field_label?: string
-          id?: string
-          rationale?: string
-          state?: string
-          suggested_value?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "profile_change_suggestions_analysis_id_fkey"
-            columns: ["analysis_id"]
-            isOneToOne: false
-            referencedRelation: "consultation_analyses"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "profile_change_suggestions_client_id_fkey"
-            columns: ["client_id"]
-            isOneToOne: false
-            referencedRelation: "clients"
             referencedColumns: ["id"]
           },
         ]
@@ -1168,8 +1108,8 @@ export type Database = {
           audience_id: string | null
           body: string
           client_id: string
-          client_summary: string
           client_requirements: string
+          client_summary: string
           core_message: string
           created_at: string
           created_by: string | null
@@ -1211,8 +1151,8 @@ export type Database = {
           audience_id?: string | null
           body?: string
           client_id: string
-          client_summary?: string
           client_requirements?: string
+          client_summary?: string
           core_message?: string
           created_at?: string
           created_by?: string | null
@@ -1254,8 +1194,8 @@ export type Database = {
           audience_id?: string | null
           body?: string
           client_id?: string
-          client_summary?: string
           client_requirements?: string
+          client_summary?: string
           core_message?: string
           created_at?: string
           created_by?: string | null
@@ -1742,10 +1682,10 @@ export type Database = {
           client_id: string
           created_at: string
           description: string
-          internal_only: boolean
           due_date: string | null
           generated_key: string | null
           id: string
+          internal_only: boolean
           monthly_plan_id: string
           origin: string
           owner_note: string
@@ -1758,10 +1698,10 @@ export type Database = {
           client_id: string
           created_at?: string
           description?: string
-          internal_only?: boolean
           due_date?: string | null
           generated_key?: string | null
           id?: string
+          internal_only?: boolean
           monthly_plan_id: string
           origin?: string
           owner_note?: string
@@ -1774,10 +1714,10 @@ export type Database = {
           client_id?: string
           created_at?: string
           description?: string
-          internal_only?: boolean
           due_date?: string | null
           generated_key?: string | null
           id?: string
+          internal_only?: boolean
           monthly_plan_id?: string
           origin?: string
           owner_note?: string
@@ -1863,13 +1803,13 @@ export type Database = {
       }
       monthly_plans: {
         Row: {
-          avoid_language: string
-          client_id: string
           approved_at: string | null
           approved_by: string | null
           approved_fingerprint: string
           approved_note: string
           approved_revision: number | null
+          avoid_language: string
+          client_id: string
           created_at: string
           created_by: string | null
           cta_priorities: string
@@ -1888,13 +1828,13 @@ export type Database = {
           updated_at: string
         }
         Insert: {
-          avoid_language?: string
-          client_id: string
           approved_at?: string | null
           approved_by?: string | null
           approved_fingerprint?: string
           approved_note?: string
           approved_revision?: number | null
+          avoid_language?: string
+          client_id: string
           created_at?: string
           created_by?: string | null
           cta_priorities?: string
@@ -1913,13 +1853,13 @@ export type Database = {
           updated_at?: string
         }
         Update: {
-          avoid_language?: string
-          client_id?: string
           approved_at?: string | null
           approved_by?: string | null
           approved_fingerprint?: string
           approved_note?: string
           approved_revision?: number | null
+          avoid_language?: string
+          client_id?: string
           created_at?: string
           created_by?: string | null
           cta_priorities?: string
@@ -1939,6 +1879,13 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "monthly_plans_approved_by_fkey"
+            columns: ["approved_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "monthly_plans_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
@@ -1953,6 +1900,399 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      pbos_engagements: {
+        Row: {
+          actual_mrr: number | null
+          client_id: string
+          contract_start_date: string | null
+          contract_term_months: number | null
+          created_at: string
+          ended_on: string | null
+          expected_mrr: number | null
+          extras: string
+          extras_monthly_value: number | null
+          lead_id: string | null
+          monthly_fee: number | null
+          notes: string
+          onboarding_completed_at: string | null
+          onboarding_started_at: string
+          opportunity_id: string | null
+          setup_fee: number | null
+          setup_fee_invoiced_on: string | null
+          status: string
+          tier: string
+          updated_at: string
+        }
+        Insert: {
+          actual_mrr?: number | null
+          client_id: string
+          contract_start_date?: string | null
+          contract_term_months?: number | null
+          created_at?: string
+          ended_on?: string | null
+          expected_mrr?: number | null
+          extras?: string
+          extras_monthly_value?: number | null
+          lead_id?: string | null
+          monthly_fee?: number | null
+          notes?: string
+          onboarding_completed_at?: string | null
+          onboarding_started_at?: string
+          opportunity_id?: string | null
+          setup_fee?: number | null
+          setup_fee_invoiced_on?: string | null
+          status?: string
+          tier: string
+          updated_at?: string
+        }
+        Update: {
+          actual_mrr?: number | null
+          client_id?: string
+          contract_start_date?: string | null
+          contract_term_months?: number | null
+          created_at?: string
+          ended_on?: string | null
+          expected_mrr?: number | null
+          extras?: string
+          extras_monthly_value?: number | null
+          lead_id?: string | null
+          monthly_fee?: number | null
+          notes?: string
+          onboarding_completed_at?: string | null
+          onboarding_started_at?: string
+          opportunity_id?: string | null
+          setup_fee?: number | null
+          setup_fee_invoiced_on?: string | null
+          status?: string
+          tier?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pbos_engagements_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: true
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pbos_engagements_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "pbos_leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pbos_engagements_opportunity_id_fkey"
+            columns: ["opportunity_id"]
+            isOneToOne: false
+            referencedRelation: "pbos_opportunities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pbos_engagements_tier_fkey"
+            columns: ["tier"]
+            isOneToOne: false
+            referencedRelation: "pbos_tiers"
+            referencedColumns: ["key"]
+          },
+        ]
+      }
+      pbos_lead_actions: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          due_date: string | null
+          id: string
+          lead_id: string
+          opportunity_id: string | null
+          owner_name: string
+          owner_user_id: string | null
+          status: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          due_date?: string | null
+          id?: string
+          lead_id: string
+          opportunity_id?: string | null
+          owner_name?: string
+          owner_user_id?: string | null
+          status?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          due_date?: string | null
+          id?: string
+          lead_id?: string
+          opportunity_id?: string | null
+          owner_name?: string
+          owner_user_id?: string | null
+          status?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pbos_lead_actions_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "pbos_leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pbos_lead_actions_opportunity_id_fkey"
+            columns: ["opportunity_id"]
+            isOneToOne: false
+            referencedRelation: "pbos_opportunities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pbos_lead_actions_owner_user_id_fkey"
+            columns: ["owner_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pbos_leads: {
+        Row: {
+          company: string
+          converted_at: string | null
+          converted_client_id: string | null
+          created_at: string
+          created_by: string | null
+          email: string
+          id: string
+          job_title: string
+          linkedin_url: string
+          name: string
+          notes: string
+          owner_name: string
+          owner_user_id: string | null
+          phone: string
+          source: string
+          status: string
+          tier_interest: string | null
+          updated_at: string
+          website_url: string
+        }
+        Insert: {
+          company?: string
+          converted_at?: string | null
+          converted_client_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          email?: string
+          id?: string
+          job_title?: string
+          linkedin_url?: string
+          name: string
+          notes?: string
+          owner_name?: string
+          owner_user_id?: string | null
+          phone?: string
+          source?: string
+          status?: string
+          tier_interest?: string | null
+          updated_at?: string
+          website_url?: string
+        }
+        Update: {
+          company?: string
+          converted_at?: string | null
+          converted_client_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          email?: string
+          id?: string
+          job_title?: string
+          linkedin_url?: string
+          name?: string
+          notes?: string
+          owner_name?: string
+          owner_user_id?: string | null
+          phone?: string
+          source?: string
+          status?: string
+          tier_interest?: string | null
+          updated_at?: string
+          website_url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pbos_leads_converted_client_id_fkey"
+            columns: ["converted_client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pbos_leads_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pbos_leads_owner_user_id_fkey"
+            columns: ["owner_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pbos_leads_tier_interest_fkey"
+            columns: ["tier_interest"]
+            isOneToOne: false
+            referencedRelation: "pbos_tiers"
+            referencedColumns: ["key"]
+          },
+        ]
+      }
+      pbos_opportunities: {
+        Row: {
+          closed_at: string | null
+          contact_name: string
+          contract_start_date: string | null
+          contract_term_months: number | null
+          created_at: string
+          expected_close: string | null
+          expected_mrr: number | null
+          extras: string
+          extras_monthly_value: number | null
+          id: string
+          lead_id: string
+          lost_reason: string
+          monthly_fee: number | null
+          notes: string
+          owner_name: string
+          owner_user_id: string | null
+          probability: number
+          setup_fee: number | null
+          source: string
+          stage: string
+          stage_history: Json
+          tier: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          closed_at?: string | null
+          contact_name?: string
+          contract_start_date?: string | null
+          contract_term_months?: number | null
+          created_at?: string
+          expected_close?: string | null
+          expected_mrr?: number | null
+          extras?: string
+          extras_monthly_value?: number | null
+          id?: string
+          lead_id: string
+          lost_reason?: string
+          monthly_fee?: number | null
+          notes?: string
+          owner_name?: string
+          owner_user_id?: string | null
+          probability?: number
+          setup_fee?: number | null
+          source?: string
+          stage?: string
+          stage_history?: Json
+          tier: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          closed_at?: string | null
+          contact_name?: string
+          contract_start_date?: string | null
+          contract_term_months?: number | null
+          created_at?: string
+          expected_close?: string | null
+          expected_mrr?: number | null
+          extras?: string
+          extras_monthly_value?: number | null
+          id?: string
+          lead_id?: string
+          lost_reason?: string
+          monthly_fee?: number | null
+          notes?: string
+          owner_name?: string
+          owner_user_id?: string | null
+          probability?: number
+          setup_fee?: number | null
+          source?: string
+          stage?: string
+          stage_history?: Json
+          tier?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pbos_opportunities_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "pbos_leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pbos_opportunities_owner_user_id_fkey"
+            columns: ["owner_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pbos_opportunities_tier_fkey"
+            columns: ["tier"]
+            isOneToOne: false
+            referencedRelation: "pbos_tiers"
+            referencedColumns: ["key"]
+          },
+        ]
+      }
+      pbos_tiers: {
+        Row: {
+          default_monthly_fee: number | null
+          default_setup_fee: number | null
+          description: string
+          key: string
+          name: string
+          promise: string
+          rank: number
+          updated_at: string
+        }
+        Insert: {
+          default_monthly_fee?: number | null
+          default_setup_fee?: number | null
+          description?: string
+          key: string
+          name: string
+          promise?: string
+          rank: number
+          updated_at?: string
+        }
+        Update: {
+          default_monthly_fee?: number | null
+          default_setup_fee?: number | null
+          description?: string
+          key?: string
+          name?: string
+          promise?: string
+          rank?: number
+          updated_at?: string
+        }
+        Relationships: []
       }
       positioning: {
         Row: {
@@ -2001,6 +2341,63 @@ export type Database = {
           },
         ]
       }
+      profile_change_suggestions: {
+        Row: {
+          analysis_id: string
+          area: string
+          client_id: string
+          created_at: string
+          current_value: string
+          evidence_quote: string
+          field_label: string
+          id: string
+          rationale: string
+          state: string
+          suggested_value: string
+        }
+        Insert: {
+          analysis_id: string
+          area: string
+          client_id: string
+          created_at?: string
+          current_value?: string
+          evidence_quote?: string
+          field_label?: string
+          id?: string
+          rationale?: string
+          state?: string
+          suggested_value: string
+        }
+        Update: {
+          analysis_id?: string
+          area?: string
+          client_id?: string
+          created_at?: string
+          current_value?: string
+          evidence_quote?: string
+          field_label?: string
+          id?: string
+          rationale?: string
+          state?: string
+          suggested_value?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profile_change_suggestions_analysis_id_fkey"
+            columns: ["analysis_id"]
+            isOneToOne: false
+            referencedRelation: "consultation_analyses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profile_change_suggestions_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -2031,81 +2428,6 @@ export type Database = {
         }
         Relationships: []
       }
-      sales_opportunities: {
-        Row: {
-          client_id: string
-          closed_at: string | null
-          contact_name: string
-          created_at: string
-          estimated_value: number | null
-          expected_close: string | null
-          id: string
-          notes: string
-          owner_name: string
-          owner_user_id: string | null
-          probability: number
-          source: string
-          stage: string
-          stage_history: Json
-          title: string
-          updated_at: string
-          value_type: string
-        }
-        Insert: {
-          client_id: string
-          closed_at?: string | null
-          contact_name?: string
-          created_at?: string
-          estimated_value?: number | null
-          expected_close?: string | null
-          id?: string
-          notes?: string
-          owner_name?: string
-          owner_user_id?: string | null
-          probability?: number
-          source?: string
-          stage?: string
-          stage_history?: Json
-          title: string
-          updated_at?: string
-          value_type?: string
-        }
-        Update: {
-          client_id?: string
-          closed_at?: string | null
-          contact_name?: string
-          created_at?: string
-          estimated_value?: number | null
-          expected_close?: string | null
-          id?: string
-          notes?: string
-          owner_name?: string
-          owner_user_id?: string | null
-          probability?: number
-          source?: string
-          stage?: string
-          stage_history?: Json
-          title?: string
-          updated_at?: string
-          value_type?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "sales_opportunities_client_id_fkey"
-            columns: ["client_id"]
-            isOneToOne: false
-            referencedRelation: "clients"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "sales_opportunities_owner_user_id_fkey"
-            columns: ["owner_user_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       sales_strategy: {
         Row: {
           calls_to_action: string
@@ -2114,10 +2436,12 @@ export type Database = {
           ideal_clients: string
           lead_generation_approach: string
           lead_magnets: string
+          monthly_revenue_target: number | null
           offers: string
           referral_opportunities: string
           sales_conversations: string
           sales_messaging: string
+          sales_objective: string
           services_products: string
           target_customers: string
           updated_at: string
@@ -2129,10 +2453,12 @@ export type Database = {
           ideal_clients?: string
           lead_generation_approach?: string
           lead_magnets?: string
+          monthly_revenue_target?: number | null
           offers?: string
           referral_opportunities?: string
           sales_conversations?: string
           sales_messaging?: string
+          sales_objective?: string
           services_products?: string
           target_customers?: string
           updated_at?: string
@@ -2144,10 +2470,12 @@ export type Database = {
           ideal_clients?: string
           lead_generation_approach?: string
           lead_magnets?: string
+          monthly_revenue_target?: number | null
           offers?: string
           referral_opportunities?: string
           sales_conversations?: string
           sales_messaging?: string
+          sales_objective?: string
           services_products?: string
           target_customers?: string
           updated_at?: string
@@ -2492,6 +2820,7 @@ export type Database = {
         Returns: boolean
       }
       is_admin: { Args: never; Returns: boolean }
+      is_operator: { Args: never; Returns: boolean }
       is_portal_client_of: {
         Args: { target_client_id: string }
         Returns: boolean
@@ -2512,7 +2841,12 @@ export type Database = {
         | "completed"
         | "published"
         | "declined"
-      client_status: "prospect" | "active" | "paused" | "offboarded"
+      client_status:
+        | "prospect"
+        | "onboarding"
+        | "active"
+        | "paused"
+        | "offboarded"
       content_priority: "low" | "medium" | "high"
       content_status:
         | "idea"
@@ -2683,7 +3017,13 @@ export const Constants = {
         "published",
         "declined",
       ],
-      client_status: ["prospect", "active", "paused", "offboarded"],
+      client_status: [
+        "prospect",
+        "onboarding",
+        "active",
+        "paused",
+        "offboarded",
+      ],
       content_priority: ["low", "medium", "high"],
       content_status: [
         "idea",

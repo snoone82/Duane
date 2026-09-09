@@ -11,7 +11,7 @@ import {
   getOpenOpportunities,
   getContentPipelineSummary,
 } from "@/lib/data/dashboard";
-import { getSalesOverview } from "@/lib/data/sales";
+import { getPbosSalesOverview, getPbosTiers } from "@/lib/data/pbos-sales";
 import { getCurrentProfile } from "@/lib/current-user";
 import { Panel } from "@/components/dashboard/Panel";
 import { ProgressRing, Donut, HBars } from "@/components/dashboard/Charts";
@@ -38,7 +38,10 @@ export default async function DashboardPage() {
     isAdmin ? getRecentActivity(supabase) : Promise.resolve([]),
     getContentPipelineSummary(supabase),
   ]);
-  const sales = await getSalesOverview(supabase);
+  // PBOS's own revenue. This card used to add up commercial_outcomes — the
+  // revenue CLIENTS generate — and show it against Duane's PBOS target, which
+  // measured two different businesses with one number.
+  const sales = await getPbosSalesOverview(supabase, await getPbosTiers(supabase));
 
   const overdueCount = actionsDue.filter((a) => a.isOverdue).length;
   const totalIdeas = contentGroups.reduce((sum, g) => sum + g.ideas.length, 0);
@@ -58,7 +61,7 @@ export default async function DashboardPage() {
 
   const salesProgress =
     sales.monthlyTarget !== null && sales.monthlyTarget > 0
-      ? Math.min(100, Math.round((sales.actualThisMonth / sales.monthlyTarget) * 100))
+      ? Math.min(100, Math.round((sales.revenueThisMonth / sales.monthlyTarget) * 100))
       : null;
 
   const stats: {
@@ -78,8 +81,8 @@ export default async function DashboardPage() {
       tone: "violet",
     },
     {
-      label: "Sales this month",
-      value: formatCurrency(sales.actualThisMonth),
+      label: "PBOS revenue this month",
+      value: formatCurrency(sales.revenueThisMonth),
       detail: sales.monthlyTarget !== null ? `of ${formatCurrency(sales.monthlyTarget)} target` : "Set a target →",
       href: "/sales",
       tone: "teal",
@@ -189,12 +192,12 @@ export default async function DashboardPage() {
 
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <div className="rounded-lg border border-border bg-surface p-4 shadow-md backdrop-blur-sm">
-          <p className="mb-4 text-xs font-medium uppercase tracking-[0.14em] text-ink-soft">Sales target</p>
+          <p className="mb-4 text-xs font-medium uppercase tracking-[0.14em] text-ink-soft">PBOS monthly target</p>
           {sales.monthlyTarget !== null && sales.monthlyTarget > 0 ? (
             <ProgressRing
               percent={salesProgress ?? 0}
               centre={`${salesProgress ?? 0}%`}
-              caption={`${formatCurrency(sales.actualThisMonth)} of ${formatCurrency(sales.monthlyTarget)} this month`}
+              caption={`${formatCurrency(sales.revenueThisMonth)} of ${formatCurrency(sales.monthlyTarget)} this month`}
             />
           ) : (
             <div className="flex h-40 items-center justify-center">
