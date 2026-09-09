@@ -1,3 +1,8 @@
+-- Applied live as "0047_portal_reads_for_client_dashboard" (2026-09-09) and
+-- renumbered to 0050 afterwards: a concurrent session had already taken 0047
+-- to 0049 for the PBOS/client sales separation. Ordering in the database is
+-- by timestamp and is correct; this is the file sequence catching up.
+
 -- Duane, testing PBOS as Jonny: the client dashboard should be a control
 -- centre — what needs you, what's coming, and whether it's working — rather
 -- than a system status page.
