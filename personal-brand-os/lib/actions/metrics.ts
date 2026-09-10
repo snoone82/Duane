@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { runAction, type ActionResult } from "@/lib/action-result";
 import { SCORECARD_CATEGORIES } from "@/lib/scorecard";
+import { UserFacingError } from "@/lib/errors";
 
 function num(formData: FormData, key: string): number | null {
   const raw = String(formData.get(key) ?? "").trim();
@@ -154,5 +155,56 @@ export async function addCommercialSnapshot(_prev: ActionResult | null, formData
     if (error) throw new Error(error.message);
     revalidatePath(`/clients/${clientId}/metrics`);
     return undefined;
+  });
+}
+
+/**
+ * Remove one platform's metrics entirely (Duane).
+ *
+ * A "platform metric" row on the Metrics tab isn't a record — it's a view
+ * assembled from that platform's snapshots and its targets. So removing it
+ * means clearing both, and only for that platform: the other platforms,
+ * commercial metrics, outcomes and the scorecard are untouched.
+ *
+ * The reason it exists is seeded data. A client created before anyone had
+ * real numbers carries default LinkedIn and Newsletter rows, and until now
+ * there was no way to clear them and start from a genuine baseline.
+ */
+export async function deletePlatformMetrics(clientId: string, platform: string): Promise<ActionResult<number>> {
+  return runAction(async () => {
+    if (!platform.trim()) throw new UserFacingError("No platform given.");
+    const supabase = await createClient();
+
+    // Counted before deleting so the confirmation can say what actually went.
+    const [{ count: snapshotCount }, { count: targetCount }] = await Promise.all([
+      supabase
+        .from("metric_snapshots")
+        .select("id", { count: "exact", head: true })
+        .eq("client_id", clientId)
+        .eq("platform", platform),
+      supabase
+        .from("metric_targets")
+        .select("id", { count: "exact", head: true })
+        .eq("client_id", clientId)
+        .eq("platform", platform),
+    ]);
+
+    const { error: snapshotError } = await supabase
+      .from("metric_snapshots")
+      .delete()
+      .eq("client_id", clientId)
+      .eq("platform", platform);
+    if (snapshotError) throw new UserFacingError(snapshotError.message);
+
+    const { error: targetError } = await supabase
+      .from("metric_targets")
+      .delete()
+      .eq("client_id", clientId)
+      .eq("platform", platform);
+    if (targetError) throw new UserFacingError(targetError.message);
+
+    revalidatePath(`/clients/${clientId}/metrics`);
+    revalidatePath(`/clients/${clientId}`, "layout");
+    return (snapshotCount ?? 0) + (targetCount ?? 0);
   });
 }

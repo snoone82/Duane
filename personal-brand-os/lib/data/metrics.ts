@@ -20,6 +20,10 @@ export interface PlatformMetric {
    * summary table — brief §15 wants ~10 metrics per platform, not just
    * followers. */
   latestSnapshot: Snapshot | null;
+  /** How much history sits behind this row — a platform metric is a stack of
+   * snapshots and targets, not one record, so anything offering to delete it
+   * should be able to say what actually goes. */
+  snapshotCount: number;
 }
 
 export async function getPlatformMetrics(supabase: Client, clientId: string): Promise<PlatformMetric[]> {
@@ -66,6 +70,7 @@ export async function getPlatformMetrics(supabase: Client, clientId: string): Pr
           .map((t) => ({ metric: t.metric, baseline: t.baseline_value, target: t.target_value, targetDate: t.target_date }))
           .sort((a, b) => a.metric.localeCompare(b.metric)),
         latestSnapshot: last ?? null,
+        snapshotCount: rows.length,
       };
     });
 }

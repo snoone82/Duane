@@ -10,6 +10,7 @@ import { AddCommercialSnapshotButton } from "@/components/clients/AddCommercialS
 import { AyrsharePerformancePanel } from "@/components/clients/AyrsharePerformancePanel";
 import { isAyrshareConfigured } from "@/lib/ayrshare";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { DeletePlatformMetricButton } from "@/components/clients/DeletePlatformMetricButton";
 import { Table, Thead, Th, Td, Tr } from "@/components/ui/Table";
 import { formatNumber, formatDate, formatCurrency } from "@/lib/format";
 
@@ -82,6 +83,7 @@ export default async function MetricsPage({ params }: { params: Promise<{ id: st
                   <Th>Current (followers)</Th>
                   <Th>Target</Th>
                   <Th>As of</Th>
+                  <Th><span className="sr-only">Actions</span></Th>
                 </tr>
               </Thead>
               <tbody>
@@ -110,6 +112,16 @@ export default async function MetricsPage({ params }: { params: Promise<{ id: st
                       )}
                     </Td>
                     <Td className="text-ink-faint">{formatDate(metric.currentDate)}</Td>
+                    <Td className="text-right">
+                      {/* Duane: clear the seeded LinkedIn / Newsletter rows
+                          and start from a genuine baseline. */}
+                      <DeletePlatformMetricButton
+                        clientId={id}
+                        platform={metric.platform}
+                        snapshotCount={metric.snapshotCount}
+                        targetCount={metric.targets.length}
+                      />
+                    </Td>
                   </Tr>
                 ))}
               </tbody>
