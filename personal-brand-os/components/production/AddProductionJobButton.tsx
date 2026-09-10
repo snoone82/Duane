@@ -50,6 +50,18 @@ export function AddProductionJobButton({ clientId }: { clientId: string }) {
               <Label htmlFor="pj_location">Location</Label>
               <Input id="pj_location" name="location" placeholder="e.g. CEG offices, Manchester" />
             </div>
+            {/* Set once for the day; every asset made that day inherits it
+                rather than being asked per item (Duane). */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label htmlFor="pj_owner">Default owner</Label>
+                <Input id="pj_owner" name="default_owner_name" placeholder="Who is producing" />
+              </div>
+              <div>
+                <Label htmlFor="pj_approver">Default approver</Label>
+                <Input id="pj_approver" name="default_approver_name" placeholder="Who signs it off" />
+              </div>
+            </div>
             <div>
               <Label htmlFor="pj_notes">Notes</Label>
               <Textarea id="pj_notes" name="notes" rows={2} placeholder="Kit, crew, anything the day depends on…" />

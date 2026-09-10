@@ -10,6 +10,7 @@ import { getApproverOptions } from "@/lib/data/approvers";
 import { socialAccountLabel } from "@/lib/format";
 import { isAyrshareConfigured } from "@/lib/ayrshare";
 import { CadenceStrip } from "@/components/clients/CadenceStrip";
+import { SendToProductionPanel } from "@/components/production/SendToProductionPanel";
 import { getCadenceForClient } from "@/lib/data/cadence";
 
 export const metadata = { title: "Content" };
@@ -124,6 +125,27 @@ export default async function ContentPage({ params }: { params: Promise<{ id: st
     />
   );
 
+  // Duane: get ten ideas onto a production day without opening any of them.
+  // Offered here rather than in Production because this is where the
+  // decision is actually made — the month is approved on this screen.
+  const producibleStatuses = new Set(["approved_production", "in_production", "changes_requested"]);
+  const [{ data: onADay }, { data: outputCounts }, { data: upcomingDays }] = await Promise.all([
+    supabase.from("production_job_ideas").select("content_id"),
+    supabase.from("content_outputs").select("content_id").eq("client_id", id),
+    supabase
+      .from("production_jobs")
+      .select("id,title,production_date")
+      .eq("client_id", id)
+      .in("status", ["planned", "confirmed", "in_progress"])
+      .order("production_date", { ascending: false }),
+  ]);
+  const scheduledForProduction = new Set((onADay ?? []).map((r) => r.content_id));
+  const outputsPerIdea = new Map<string, number>();
+  for (const row of outputCounts ?? []) outputsPerIdea.set(row.content_id, (outputsPerIdea.get(row.content_id) ?? 0) + 1);
+  const producible = ideaList
+    .filter((idea) => producibleStatuses.has(idea.status) && !scheduledForProduction.has(idea.id))
+    .map((idea) => ({ id: idea.id, title: idea.title, outputCount: outputsPerIdea.get(idea.id) ?? 0 }));
+
   return (
     <div className="max-w-4xl space-y-8">
       <CadenceStrip
@@ -165,6 +187,12 @@ export default async function ContentPage({ params }: { params: Promise<{ id: st
           <div className="space-y-2">{queue.map((idea) => renderIdea(idea, true))}</div>
         </section>
       )}
+
+      <SendToProductionPanel
+        clientId={id}
+        ideas={producible}
+        days={(upcomingDays ?? []).map((d) => ({ id: d.id, title: d.title, productionDate: d.production_date }))}
+      />
 
       <section>
         <div className="mb-3 flex items-center justify-between">

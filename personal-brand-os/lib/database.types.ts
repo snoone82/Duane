@@ -2414,6 +2414,8 @@ export type Database = {
         Row: {
           client_id: string
           created_at: string
+          default_approver_name: string
+          default_owner_name: string
           created_by: string | null
           id: string
           location: string
@@ -2427,6 +2429,8 @@ export type Database = {
         Insert: {
           client_id: string
           created_at?: string
+          default_approver_name?: string
+          default_owner_name?: string
           created_by?: string | null
           id?: string
           location?: string
@@ -2440,6 +2444,8 @@ export type Database = {
         Update: {
           client_id?: string
           created_at?: string
+          default_approver_name?: string
+          default_owner_name?: string
           created_by?: string | null
           id?: string
           location?: string

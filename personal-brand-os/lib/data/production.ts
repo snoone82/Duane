@@ -44,6 +44,7 @@ export interface RunSheetIdea {
   title: string;
   hook: string;
   body: string;
+  cta: string;
   pillarName: string | null;
   assets: RunSheetAsset[];
   /** Platform versions of this idea that no asset is yet feeding — the gap
@@ -107,7 +108,7 @@ export async function getRunSheet(supabase: Client, clientId: string, jobId: str
   }
 
   const [{ data: ideas }, { data: assets }, { data: outputs }, { data: pillars }] = await Promise.all([
-    supabase.from("content_ideas").select("id,title,hook,body,pillar_id").in("id", ideaIds),
+    supabase.from("content_ideas").select("id,title,hook,body,cta,pillar_id").in("id", ideaIds),
     supabase
       .from("production_assets")
       .select("id,content_id,kind,title,status,hook,brief,finish_cta,production_notes,owner_name,due_date,sort_order")
@@ -171,6 +172,7 @@ export async function getRunSheet(supabase: Client, clientId: string, jobId: str
         title: idea.title,
         hook: idea.hook,
         body: idea.body,
+        cta: idea.cta,
         pillarName: idea.pillar_id ? (pillarNames.get(idea.pillar_id) ?? null) : null,
         assets: ideaAssets.map((asset) => ({
           id: asset.id,
