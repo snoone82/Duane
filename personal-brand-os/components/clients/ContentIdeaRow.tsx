@@ -140,29 +140,46 @@ export function ContentIdeaRow({
   return (
     <details className="group rounded-lg border border-border bg-surface" open={defaultOpen}>
       <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 px-4 py-2.5">
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="text-xs text-ink-faint transition-transform duration-150 group-open:rotate-180">▾</span>
-          {idea.monthly_plan_id && idea.plan_sequence !== null && (
-            <span className="flex-shrink-0 font-mono text-xs text-ink-faint">{planSequenceLabel(idea.plan_sequence)}</span>
-          )}
-          <span className="truncate text-sm text-ink">{idea.title}</span>
-          {blockReason && (
-            <span
-              className="flex-shrink-0"
-              title={`${blockReason} — this item's Platform Outputs still count towards the month's plan and cadence, but raise no filming, sourcing or asset requirements until the client supplies the missing material.`}
-            >
-              <StatusPill label={`Blocked — ${blockReason.toLowerCase()}`} color="amber" />
-            </span>
-          )}
-          {idea.origin !== "manual" && (
-            <span className="flex-shrink-0">
-              <StatusPill label={contentOriginMeta(idea.origin).label} color={contentOriginMeta(idea.origin).color} />
-            </span>
-          )}
-          {pillarName && (
-            <span className="flex-shrink-0 rounded-full bg-surface-muted px-2 py-0.5 text-xs text-ink-soft">{pillarName}</span>
-          )}
-          {platformSummary && <span className="hidden flex-shrink-0 text-xs text-ink-faint sm:inline">{platformSummary}</span>}
+        {/* Duane: the master idea title must always be the primary label —
+            it is what the operator and client recognise in Content,
+            Production, Calendar and reporting.
+
+            It used to sit on one line with the pillar chip, origin pill and
+            platform list, all of which were flex-shrink-0 while the title
+            alone could shrink. So an idea with five or six platform versions
+            squeezed its own title down to nothing: the row showed the
+            platform list and no title at all. Two lines fixes that by
+            structure rather than by tuning widths — the title can never lose
+            a fight it is no longer in. */}
+        <div className="flex min-w-0 flex-1 items-start gap-2">
+          <span className="mt-0.5 text-xs text-ink-faint transition-transform duration-150 group-open:rotate-180">▾</span>
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 items-center gap-2">
+              {idea.monthly_plan_id && idea.plan_sequence !== null && (
+                <span className="flex-shrink-0 font-mono text-xs text-ink-faint">{planSequenceLabel(idea.plan_sequence)}</span>
+              )}
+              <span className="truncate text-sm font-medium text-ink">{idea.title}</span>
+              {blockReason && (
+                <span
+                  className="flex-shrink-0"
+                  title={`${blockReason} — this item's Platform Outputs still count towards the month's plan and cadence, but raise no filming, sourcing or asset requirements until the client supplies the missing material.`}
+                >
+                  <StatusPill label={`Blocked — ${blockReason.toLowerCase()}`} color="amber" />
+                </span>
+              )}
+            </div>
+            {(idea.origin !== "manual" || pillarName || platformSummary) && (
+              <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                {idea.origin !== "manual" && (
+                  <StatusPill label={contentOriginMeta(idea.origin).label} color={contentOriginMeta(idea.origin).color} />
+                )}
+                {pillarName && (
+                  <span className="rounded-full bg-surface-muted px-2 py-0.5 text-xs text-ink-soft">{pillarName}</span>
+                )}
+                {platformSummary && <span className="min-w-0 truncate text-xs text-ink-faint">{platformSummary}</span>}
+              </div>
+            )}
+          </div>
         </div>
         <div className="flex flex-shrink-0 items-center gap-3">
           {idea.target_publish_date && (

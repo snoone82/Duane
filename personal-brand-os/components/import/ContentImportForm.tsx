@@ -5,12 +5,30 @@ import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { Label, Textarea } from "@/components/ui/Input";
 import { Notice } from "@/components/ui/Notice";
-import { previewContentImport, commitContentImport, type ContentImportPreview } from "@/lib/actions/import";
+import { previewContentImport, commitContentImport, type ContentImportPreview, type DuplicateAction } from "@/lib/actions/import";
 
 type Stage =
   | { step: "edit" }
   | { step: "review"; preview: ContentImportPreview }
-  | { step: "done"; created: number; skippedDuplicates: string[]; outputsCreated: number; outputsSkipped: number };
+  | {
+      step: "done";
+      created: number;
+      updated: number;
+      skippedDuplicates: string[];
+      outputsCreated: number;
+      outputsUpdated: number;
+      outputsSkipped: number;
+    };
+
+/** What to do with a master whose title already exists. Duane's normal Tier 4
+ * flow is a client submitting a raw idea and the team developing it later, so
+ * enriching the existing record is the default rather than skipping it. */
+const DUPLICATE_CHOICES: { value: DuplicateAction; label: string; hint: string }[] = [
+  { value: "update", label: "Update the existing idea", hint: "Brings the new wording and adds the platform versions. A blank never overwrites what's there." },
+  { value: "add_outputs", label: "Add platform versions only", hint: "Leaves the idea's own words alone." },
+  { value: "create_new", label: "Create as a separate idea", hint: "Two ideas will share a title." },
+  { value: "skip", label: "Skip it", hint: "Nothing changes." },
+];
 
 const DECISION_STYLE: Record<string, { dot: string; text: string }> = {
   include: { dot: "bg-success", text: "text-ink-soft" },
@@ -26,6 +44,9 @@ export function ContentImportForm({ clientId }: { clientId: string }) {
   // the decision. Keys come straight from the preview so the same text
   // re-parsed at commit lines up exactly.
   const [approvedKeys, setApprovedKeys] = useState<Set<string>>(new Set());
+  // Per-title choice for masters that already exist, keyed by lowercase title
+  // to match what the server does with the same text.
+  const [duplicateActions, setDuplicateActions] = useState<Record<string, DuplicateAction>>({});
   const [isPending, startTransition] = useTransition();
 
   const toggleKey = (key: string) =>
@@ -51,7 +72,7 @@ export function ContentImportForm({ clientId }: { clientId: string }) {
   function handleCommit() {
     setError(null);
     startTransition(async () => {
-      const result = await commitContentImport(clientId, text, [...approvedKeys]);
+      const result = await commitContentImport(clientId, text, [...approvedKeys], duplicateActions);
       if (!result.ok) setError(result.message);
       else setStage({ step: "done", ...result.data });
     });
@@ -61,8 +82,9 @@ export function ContentImportForm({ clientId }: { clientId: string }) {
     return (
       <div className="rounded-lg border border-border bg-surface p-5">
         <Notice kind="success">
-          {stage.created} content idea{stage.created === 1 ? "" : "s"} imported with {stage.outputsCreated} platform version
+          {stage.created} content idea{stage.created === 1 ? "" : "s"} created{stage.updated > 0 ? `, ${stage.updated} updated` : ""} with {stage.outputsCreated} new platform version
           {stage.outputsCreated === 1 ? "" : "s"}.
+          {stage.outputsUpdated > 0 && ` ${stage.outputsUpdated} existing version${stage.outputsUpdated === 1 ? " was" : "s were"} updated rather than duplicated.`}
           {stage.outputsSkipped > 0 && ` ${stage.outputsSkipped} version${stage.outputsSkipped === 1 ? " was" : "s were"} not created, per the platform strategies.`}
         </Notice>
         {stage.skippedDuplicates.length > 0 && (
@@ -133,10 +155,33 @@ export function ContentImportForm({ clientId }: { clientId: string }) {
           <ul className="space-y-2">
             {stage.preview.ideas.map((idea) => (
               <li key={idea.title} className="rounded-md border border-border bg-surface px-3 py-2">
-                <p className="text-sm font-medium text-ink">
-                  {idea.title}
-                  {idea.duplicate && <span className="ml-2 text-xs text-danger">will be skipped — same title already exists</span>}
-                </p>
+                <p className="text-sm font-medium text-ink">{idea.title}</p>
+                {idea.duplicate && (
+                  <div className="mt-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-2">
+                    <p className="text-xs font-medium text-ink">This idea is already in the pipeline. What should happen?</p>
+                    <div className="mt-1.5 space-y-1">
+                      {DUPLICATE_CHOICES.map((choice) => {
+                        const key = idea.title.toLowerCase();
+                        const current = duplicateActions[key] ?? "update";
+                        return (
+                          <label key={choice.value} className="flex items-start gap-2">
+                            <input
+                              type="radio"
+                              name={`dupe-${key}`}
+                              className="mt-0.5"
+                              checked={current === choice.value}
+                              onChange={() => setDuplicateActions((prev) => ({ ...prev, [key]: choice.value }))}
+                            />
+                            <span className="min-w-0">
+                              <span className="block text-xs text-ink">{choice.label}</span>
+                              <span className="block text-xs text-ink-faint">{choice.hint}</span>
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
                 {idea.mix.length === 0 ? (
                   <p className="mt-1 text-xs text-ink-faint">No platform versions — the master idea is created on its own.</p>
                 ) : (

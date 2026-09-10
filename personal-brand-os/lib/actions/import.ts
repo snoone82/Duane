@@ -1429,6 +1429,17 @@ export interface PlatformMixItem {
   reason: string;
 }
 
+/**
+ * What to do when an imported master has the same title as one already in
+ * the pipeline (Duane).
+ *
+ * The old behaviour skipped the whole record — master AND its platform
+ * versions — which broke the normal Tier 4 flow: a client submits a raw
+ * idea, the master exists, the team develops the treatment later and needs
+ * to add platform versions and creative direction to that same record.
+ */
+export type DuplicateAction = "update" | "add_outputs" | "create_new" | "skip";
+
 export interface ContentImportPreview {
   ideas: { title: string; mix: PlatformMixItem[]; flags: string[]; duplicate: boolean }[];
   needsConfirmation: string[];
@@ -1549,8 +1560,21 @@ export async function previewContentImport(clientId: string, text: string): Prom
 export async function commitContentImport(
   clientId: string,
   text: string,
-  approvedReviewKeys: string[] = []
-): Promise<ActionResult<{ created: number; skippedDuplicates: string[]; outputsCreated: number; outputsSkipped: number }>> {
+  approvedReviewKeys: string[] = [],
+  /** Per-title choice for masters that already exist, keyed by lowercase
+   * title. Defaults to "update": enriching the existing master is the normal
+   * workflow, and silently skipping is what Duane reported as the problem. */
+  duplicateActions: Record<string, DuplicateAction> = {}
+): Promise<
+  ActionResult<{
+    created: number;
+    updated: number;
+    skippedDuplicates: string[];
+    outputsCreated: number;
+    outputsUpdated: number;
+    outputsSkipped: number;
+  }>
+> {
   const result = parseContentImport(text);
   if (!result.ok) return { ok: false, message: result.error };
   const parsed = result.parsed;
@@ -1565,22 +1589,41 @@ export async function commitContentImport(
     const [{ data: pillars }, { data: audiences }, { data: existing }, { data: socials }] = await Promise.all([
       supabase.from("brand_pillars").select("id,name").eq("client_id", clientId),
       supabase.from("audiences").select("id,name").eq("client_id", clientId),
-      supabase.from("content_ideas").select("title").eq("client_id", clientId),
+      supabase.from("content_ideas").select("id,title").eq("client_id", clientId),
       supabase.from("social_strategies").select("*").eq("client_id", clientId),
     ]);
     const pillarIds = new Map((pillars ?? []).map((p) => [p.name.toLowerCase(), p.id]));
     const audienceIds = new Map((audiences ?? []).map((a) => [a.name.toLowerCase(), a.id]));
-    const existingTitles = new Set((existing ?? []).map((c) => c.title.toLowerCase()));
+    const existingByTitle = new Map((existing ?? []).map((c) => [c.title.toLowerCase(), c.id]));
     const resolveAccount = buildAccountResolver(socials ?? []);
 
     const hasAnyStrategy = (socials ?? []).length > 0;
     let created = 0;
+    let updated = 0;
     let outputsCreated = 0;
+    let outputsUpdated = 0;
     let outputsSkipped = 0;
     const skippedDuplicates: string[] = [];
 
+    // A blank never overwrites. The parser can't tell "field omitted" from
+    // "field deliberately emptied" — both arrive as "" — so on an update a
+    // supplied value wins and an empty one leaves what is already there.
+    // Same rule the profile importer uses, and the reason an import can
+    // enrich a record without ever quietly wiping one.
+    const patch = <T extends Record<string, unknown>>(fields: T): Partial<T> => {
+      const out: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(fields)) {
+        if (value === null || value === undefined) continue;
+        if (typeof value === "string" && value.trim() === "") continue;
+        out[key] = value;
+      }
+      return out as Partial<T>;
+    };
+
     for (const [ideaIndex, idea] of parsed.ideas.entries()) {
-      if (existingTitles.has(idea.title.toLowerCase())) {
+      const existingId = existingByTitle.get(idea.title.toLowerCase()) ?? null;
+      const action: DuplicateAction = existingId ? (duplicateActions[idea.title.toLowerCase()] ?? "update") : "create_new";
+      if (existingId && action === "skip") {
         skippedDuplicates.push(idea.title);
         continue;
       }
@@ -1593,60 +1636,101 @@ export async function commitContentImport(
         if (!take) outputsSkipped += 1;
         return take;
       });
-      const { data: row, error } = await supabase
-        .from("content_ideas")
-        .insert({
-          client_id: clientId,
-          title: idea.title,
-          hook: idea.hook,
-          body: idea.body,
-          notes: idea.notes,
-          priority: idea.priority,
-          production_due_date: idea.production_due_date,
-          target_publish_date: idea.target_publish_date,
-          pillar_id: idea.pillar ? (pillarIds.get(idea.pillar.toLowerCase()) ?? null) : null,
-          audience_id: idea.audience ? (audienceIds.get(idea.audience.toLowerCase()) ?? null) : null,
-          created_by: user?.id ?? null,
-        })
-        .select("id")
-        .single();
-      if (error) throw new Error(`"${idea.title}": ${error.message}`);
+      const masterFields = {
+        title: idea.title,
+        hook: idea.hook,
+        body: idea.body,
+        notes: idea.notes,
+        priority: idea.priority,
+        production_due_date: idea.production_due_date,
+        target_publish_date: idea.target_publish_date,
+        pillar_id: idea.pillar ? (pillarIds.get(idea.pillar.toLowerCase()) ?? null) : null,
+        audience_id: idea.audience ? (audienceIds.get(idea.audience.toLowerCase()) ?? null) : null,
+      };
+
+      let masterId: string;
+      if (existingId && action !== "create_new") {
+        masterId = existingId;
+        // "add_outputs" leaves the master's own words alone and only brings
+        // the platform versions; "update" enriches it too.
+        if (action === "update") {
+          const changes = patch(masterFields);
+          if (Object.keys(changes).length > 0) {
+            const { error } = await supabase.from("content_ideas").update(changes).eq("id", masterId).eq("client_id", clientId);
+            if (error) throw new Error(`"${idea.title}": ${error.message}`);
+          }
+          updated += 1;
+        }
+      } else {
+        const { data: row, error } = await supabase
+          .from("content_ideas")
+          .insert({ client_id: clientId, ...masterFields, created_by: user?.id ?? null })
+          .select("id")
+          .single();
+        if (error) throw new Error(`"${idea.title}": ${error.message}`);
+        masterId = row.id;
+        created += 1;
+        // So a second entry with the same title in one file updates the
+        // record this one just made rather than making another.
+        existingByTitle.set(idea.title.toLowerCase(), masterId);
+      }
 
       if (keep.length > 0) {
-        const { error: outputError } = await supabase.from("content_outputs").insert(
-          keep.map((output, i) => {
-            // Match the named publishing account from the Social tab; the
-            // matched account also wins on the platform label.
-            const account = resolveAccount(output.account, output.platform);
-            return {
-              content_id: row.id,
-              client_id: clientId,
-              platform: account?.platform ?? output.platform,
-              social_account_id: account?.id ?? null,
-              format: output.format,
-              caption: output.caption,
-              cta: output.cta,
-              hashtags: output.hashtags,
-              alt_text: output.alt_text,
-              destination_link: output.destination_link,
-              notes: output.notes,
-              sort_order: i,
-            };
-          })
-        );
-        if (outputError) {
-          // Remove the half-made master so a retry doesn't hit the
-          // duplicate-title skip.
-          await supabase.from("content_ideas").delete().eq("id", row.id);
-          throw new Error(`"${idea.title}" platform versions: ${outputError.message}`);
+        // Match an existing version before creating one (Duane): platform
+        // plus account, so a master that already publishes to LinkedIn — CEG
+        // gets that version updated rather than a second one alongside it.
+        const { data: currentOutputs } = await supabase
+          .from("content_outputs")
+          .select("id,platform,social_account_id")
+          .eq("content_id", masterId);
+        const outputKey = (platform: string, accountId: string | null) =>
+          `${platform.trim().toLowerCase()}|${accountId ?? ""}`;
+        const existingOutputs = new Map((currentOutputs ?? []).map((o) => [outputKey(o.platform, o.social_account_id), o.id]));
+
+        for (const [i, output] of keep.entries()) {
+          // Match the named publishing account from the Social tab; the
+          // matched account also wins on the platform label.
+          const account = resolveAccount(output.account, output.platform);
+          const platform = account?.platform ?? output.platform;
+          const accountId = account?.id ?? null;
+          const fields = {
+            format: output.format,
+            caption: output.caption,
+            cta: output.cta,
+            hashtags: output.hashtags,
+            alt_text: output.alt_text,
+            destination_link: output.destination_link,
+            notes: output.notes,
+          };
+
+          const match = existingOutputs.get(outputKey(platform, accountId));
+          if (match) {
+            const changes = patch(fields);
+            if (Object.keys(changes).length > 0) {
+              const { error } = await supabase.from("content_outputs").update(changes).eq("id", match);
+              if (error) throw new Error(`"${idea.title}" → ${platform}: ${error.message}`);
+            }
+            outputsUpdated += 1;
+            continue;
+          }
+
+          const { error } = await supabase.from("content_outputs").insert({
+            content_id: masterId,
+            client_id: clientId,
+            platform,
+            social_account_id: accountId,
+            ...fields,
+            sort_order: (currentOutputs ?? []).length + i,
+          });
+          if (error) throw new Error(`"${idea.title}" → ${platform}: ${error.message}`);
+          existingOutputs.set(outputKey(platform, accountId), "created");
+          outputsCreated += 1;
         }
-        outputsCreated += keep.length;
       }
-      created += 1;
     }
 
     revalidatePath(`/clients/${clientId}/content`);
     revalidatePath("/");
-    return { created, skippedDuplicates, outputsCreated, outputsSkipped };
+    return { created, updated, skippedDuplicates, outputsCreated, outputsUpdated, outputsSkipped };
   });
 }
