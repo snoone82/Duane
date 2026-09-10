@@ -2410,6 +2410,132 @@ export type Database = {
           },
         ]
       }
+      production_jobs: {
+        Row: {
+          client_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          location: string
+          notes: string
+          production_date: string
+          scheduled_at: string | null
+          status: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          location?: string
+          notes?: string
+          production_date: string
+          scheduled_at?: string | null
+          status?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          location?: string
+          notes?: string
+          production_date?: string
+          scheduled_at?: string | null
+          status?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      production_job_ideas: {
+        Row: { content_id: string; job_id: string; sort_order: number }
+        Insert: { content_id: string; job_id: string; sort_order?: number }
+        Update: { content_id?: string; job_id?: string; sort_order?: number }
+        Relationships: []
+      }
+      production_assets: {
+        Row: {
+          brief: string
+          client_id: string
+          completed_at: string | null
+          content_id: string
+          created_at: string
+          created_by: string | null
+          due_date: string | null
+          finish_cta: string
+          hook: string
+          id: string
+          job_id: string | null
+          kind: string
+          media_path: string | null
+          media_source_url: string
+          owner_name: string
+          owner_user_id: string | null
+          production_notes: string
+          sort_order: number
+          status: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          brief?: string
+          client_id: string
+          completed_at?: string | null
+          content_id: string
+          created_at?: string
+          created_by?: string | null
+          due_date?: string | null
+          finish_cta?: string
+          hook?: string
+          id?: string
+          job_id?: string | null
+          kind?: string
+          media_path?: string | null
+          media_source_url?: string
+          owner_name?: string
+          owner_user_id?: string | null
+          production_notes?: string
+          sort_order?: number
+          status?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          brief?: string
+          client_id?: string
+          completed_at?: string | null
+          content_id?: string
+          created_at?: string
+          created_by?: string | null
+          due_date?: string | null
+          finish_cta?: string
+          hook?: string
+          id?: string
+          job_id?: string | null
+          kind?: string
+          media_path?: string | null
+          media_source_url?: string
+          owner_name?: string
+          owner_user_id?: string | null
+          production_notes?: string
+          sort_order?: number
+          status?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      production_asset_outputs: {
+        Row: { asset_id: string; output_id: string }
+        Insert: { asset_id: string; output_id: string }
+        Update: { asset_id?: string; output_id?: string }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null

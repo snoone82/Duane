@@ -278,3 +278,70 @@ export const actionStatusMeta = (value: ActionStatus) => lookup(ACTION_STATUS, v
 export const actionPriorityMeta = (value: string) => lookup(ACTION_PRIORITY, value as ActionPriority);
 export const contentPriorityMeta = (value: ContentPriority) => lookup(CONTENT_PRIORITY, value);
 export const outputStatusMeta = (value: OutputStatus) => lookup(OUTPUT_STATUS, value);
+
+// ---------------------------------------------------------------------------
+// Production (Duane's build note). The layer between deciding what to say and
+// scheduling it: what physically has to be filmed, shot, recorded or made.
+// ---------------------------------------------------------------------------
+
+export type ProductionJobStatus = "planned" | "confirmed" | "in_progress" | "complete" | "cancelled";
+
+export const PRODUCTION_JOB_STATUS: { value: ProductionJobStatus; label: string; color: TagColor }[] = [
+  { value: "planned", label: "Planned", color: "slate" },
+  { value: "confirmed", label: "Confirmed", color: "blue" },
+  { value: "in_progress", label: "In progress", color: "amber" },
+  { value: "complete", label: "Complete", color: "green" },
+  { value: "cancelled", label: "Cancelled", color: "red" },
+];
+
+export type ProductionAssetStatus =
+  | "ready_to_produce"
+  | "in_production"
+  | "ready_for_edit"
+  | "editing"
+  | "ready_for_review"
+  | "complete";
+
+/** In order — this is the production line, and the run sheet reads it as a
+ * progression rather than a set of unrelated states. */
+export const PRODUCTION_ASSET_STATUS: { value: ProductionAssetStatus; label: string; color: TagColor }[] = [
+  { value: "ready_to_produce", label: "Ready to produce", color: "slate" },
+  { value: "in_production", label: "In production", color: "amber" },
+  { value: "ready_for_edit", label: "Ready for edit", color: "orange" },
+  { value: "editing", label: "Editing", color: "blue" },
+  { value: "ready_for_review", label: "Ready for review", color: "teal" },
+  { value: "complete", label: "Complete", color: "green" },
+];
+
+export type ProductionAssetKind =
+  | "video" | "clip" | "talking_head" | "photo" | "b_roll"
+  | "thumbnail" | "graphic" | "carousel" | "audio" | "written" | "other";
+
+export const PRODUCTION_ASSET_KIND: { value: ProductionAssetKind; label: string }[] = [
+  { value: "talking_head", label: "Talking head" },
+  { value: "video", label: "Main video" },
+  { value: "clip", label: "Short clip" },
+  { value: "b_roll", label: "B-roll" },
+  { value: "photo", label: "Photography" },
+  { value: "thumbnail", label: "Thumbnail" },
+  { value: "graphic", label: "Graphic" },
+  { value: "carousel", label: "Carousel" },
+  { value: "audio", label: "Audio" },
+  { value: "written", label: "Written post" },
+  { value: "other", label: "Other" },
+];
+
+export const productionJobStatusMeta = (value: string) => lookup(PRODUCTION_JOB_STATUS, value as ProductionJobStatus);
+export const productionAssetStatusMeta = (value: string) => lookup(PRODUCTION_ASSET_STATUS, value as ProductionAssetStatus);
+export const productionAssetKindLabel = (value: string) =>
+  PRODUCTION_ASSET_KIND.find((k) => k.value === value)?.label ?? value;
+
+/** Which statuses mean the asset still needs work — what a run sheet counts
+ * as outstanding, and what stops a production day being finished. */
+export const OUTSTANDING_ASSET_STATUSES: ProductionAssetStatus[] = [
+  "ready_to_produce",
+  "in_production",
+  "ready_for_edit",
+  "editing",
+  "ready_for_review",
+];
