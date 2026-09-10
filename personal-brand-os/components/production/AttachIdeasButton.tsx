@@ -59,7 +59,8 @@ export function AttachIdeasButton({
             {error && <Notice kind="danger">{error}</Notice>}
             <p className="text-xs text-ink-soft">
               Approved Master Content not already on this day. Attaching points the run sheet at the existing record —
-              nothing is copied.
+              nothing is copied — and creates the obvious assets from each idea&rsquo;s platform versions, so you only add
+              the extras.
             </p>
             <ul className="max-h-72 space-y-1 overflow-y-auto">
               {available.map((idea) => (

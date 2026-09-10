@@ -61,7 +61,17 @@ export default async function ProductionDayPage({ params }: { params: Promise<{ 
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-sm font-semibold text-ink">Run sheet</h2>
-        <AttachIdeasButton clientId={id} jobId={jobId} available={attachable} />
+        <div className="flex items-center gap-2">
+          {sheet.ideas.length > 0 && (
+            <Link
+              href={`/clients/${id}/production/${jobId}/run-sheet`}
+              className="rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-ink-soft transition-colors hover:bg-surface-muted hover:text-ink"
+            >
+              Open crew run sheet →
+            </Link>
+          )}
+          <AttachIdeasButton clientId={id} jobId={jobId} available={attachable} />
+        </div>
       </div>
 
       {sheet.ideas.length === 0 ? (
@@ -84,6 +94,12 @@ export default async function ProductionDayPage({ params }: { params: Promise<{ 
               </div>
               {idea.hook && <p className="mt-1.5 text-sm text-ink">{idea.hook}</p>}
               {idea.body && <p className="mt-1 whitespace-pre-wrap text-xs text-ink-soft">{idea.body}</p>}
+              {idea.cta && (
+                <p className="mt-1 text-xs text-ink-soft">
+                  <span className="text-ink-faint">CTA · </span>
+                  {idea.cta}
+                </p>
+              )}
 
               {idea.assets.length > 0 && (
                 <ul className="mt-3 space-y-2">

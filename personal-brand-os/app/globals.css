@@ -97,3 +97,32 @@ table {
 ::selection {
   background: rgba(33, 201, 224, 0.3);
 }
+
+/* The crew run sheet is meant to be printed and worked through on the day
+   (Duane). Everything the app paints around a page — the aurora ground, the
+   sidebar, the header — becomes noise on paper, so print gets plain black on
+   white and the page keeps only its own content. */
+@media print {
+  body {
+    background: #fff !important;
+    color: #000 !important;
+  }
+  nav,
+  header,
+  aside,
+  .print\:hidden {
+    display: none !important;
+  }
+  main {
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+  /* An asset must never be split across a page break mid-brief. */
+  li {
+    break-inside: avoid;
+  }
+  * {
+    color: #000 !important;
+    box-shadow: none !important;
+  }
+}
