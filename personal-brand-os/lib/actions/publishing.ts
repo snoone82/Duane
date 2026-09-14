@@ -23,6 +23,14 @@ import {
   getAyrsharePostAnalytics,
   type AyrshareHistoryRecord,
 } from "@/lib/ayrshare";
+import { cancelOpenHandover, resolveProfileKey } from "@/lib/ayrshare-handover";
+import {
+  appendHandover,
+  closeHandover,
+  openHandover,
+  readHistory,
+  type HandoverEntry,
+} from "@/lib/ayrshare-history";
 
 function revalidateSocial(clientId: string) {
   revalidatePath(`/clients/${clientId}/social`);
@@ -132,7 +140,21 @@ export async function setSocialPublishing(
 /** Publish (or hand to Ayrshare's scheduler) one platform version. The
  * caption + hashtags become the post; media comes from the version's media
  * slot; the account row decides which network and which connection. */
-export async function sendOutputToAyrshare(clientId: string, outputId: string): Promise<ActionResult<string>> {
+/**
+ * Hand a platform version to Ayrshare.
+ *
+ * `replaceExisting` is the deliberate re-send. Without it this refuses any
+ * output that already has a post queued at Ayrshare — which is the guard
+ * that was missing when Jonny's LinkedIn posts went out twice. The old check
+ * only caught outputs already marked published, so a SCHEDULED one (which by
+ * definition has a live post sitting in Ayrshare's queue) sailed straight
+ * through and created a second.
+ */
+export async function sendOutputToAyrshare(
+  clientId: string,
+  outputId: string,
+  replaceExisting = false
+): Promise<ActionResult<string>> {
   return runAction(async () => {
     const supabase = await createClient();
     const { data: output, error } = await supabase
@@ -146,6 +168,21 @@ export async function sendOutputToAyrshare(clientId: string, outputId: string): 
     if (error) throw new UserFacingError(error.message);
 
     if (output.status === "published") throw new UserFacingError("This version is already published.");
+
+    // The re-send guard. An output holding an open handover has a real post
+    // sitting in Ayrshare's queue that will publish on its own, so sending
+    // again is how you get two. Refused outright unless the caller has
+    // explicitly asked to replace it, in which case the queued post is
+    // cancelled below before anything new goes out.
+    const existingHandover = openHandover(readHistory(output.ayrshare_history));
+    if (existingHandover && !replaceExisting) {
+      throw new UserFacingError(
+        existingHandover.mode === "scheduled" && existingHandover.scheduled_for
+          ? `This version is already with Ayrshare, due to publish at ${new Date(existingHandover.scheduled_for).toLocaleString("en-GB")}. Sending it again would post it twice. Use "Check status" to see whether it has gone out, or "Replace at Ayrshare" to cancel the queued post and send a new one.`
+          : `This version is already with Ayrshare and will publish on its own. Sending it again would post it twice. Use "Check status" to see whether it has gone out, or "Replace at Ayrshare" to cancel the queued post and send a new one.`
+      );
+    }
+
     if (!output.social) throw new UserFacingError("Assign a publishing account to this version first.");
     const platform = output.social.ayrshare_platform;
     if (!platform) {
@@ -212,6 +249,19 @@ export async function sendOutputToAyrshare(clientId: string, outputId: string): 
       profileKey = profileRow.profile_key;
     }
 
+    // Replacing: cancel the queued post FIRST. If Ayrshare says it has
+    // already gone out then the post is live and sending now would be the
+    // second one — so stop, rather than warn and carry on.
+    if (existingHandover && replaceExisting) {
+      const cancelled = await cancelOpenHandover(supabase, output, profileKey);
+      if (cancelled.alreadyPublished) {
+        revalidateContent(clientId);
+        throw new UserFacingError(
+          `That post has already gone out on ${output.social.platform} — Ayrshare can't cancel it. Sending again would publish a second copy. Use "Check status" to pull in the live link.`
+        );
+      }
+    }
+
     const post = [caption, output.hashtags.trim()].filter(Boolean).join("\n\n");
 
     // Jonny's YouTube version came back "Ayrshare returned 400" while the
@@ -261,19 +311,46 @@ export async function sendOutputToAyrshare(clientId: string, outputId: string): 
       throw err;
     }
 
+    // Append, never overwrite. The old code replaced ayrshare_post_id with
+    // the new id, which is precisely why the first of Jonny's two LinkedIn
+    // posts left no trace. Re-read the history because a replace above will
+    // have closed the previous entry.
+    const { data: current } = await supabase
+      .from("content_outputs")
+      .select("ayrshare_history")
+      .eq("id", outputId)
+      .maybeSingle();
+    const history = readHistory(current?.ayrshare_history);
+    const entry: HandoverEntry = {
+      post_id: result.id,
+      sent_at: new Date().toISOString(),
+      mode: result.scheduled ? "scheduled" : "immediate",
+      scheduled_for: result.scheduled ? (scheduleDate ?? null) : null,
+      outcome: result.scheduled ? null : "live",
+      closed_at: result.scheduled ? null : new Date().toISOString(),
+    };
+
     if (result.scheduled) {
       await supabase
         .from("content_outputs")
-        .update({ ayrshare_post_id: result.id, publish_error: "", status: "scheduled" })
+        .update({
+          ayrshare_post_id: result.id,
+          ayrshare_history: appendHandover(history, entry),
+          ayrshare_checked_at: null,
+          publish_error: "",
+          status: "scheduled",
+        })
         .eq("id", outputId);
       revalidateContent(clientId);
-      return `Handed to Ayrshare — it will publish automatically at the scheduled time. Use "Check status" afterwards to pull in the live link.`;
+      return `Handed to Ayrshare — it will publish automatically at the scheduled time. PBOS will check by itself and mark it published once it has gone out.`;
     }
 
     await supabase
       .from("content_outputs")
       .update({
         ayrshare_post_id: result.id,
+        ayrshare_history: appendHandover(history, entry),
+        ayrshare_checked_at: new Date().toISOString(),
         publish_error: "",
         status: "published",
         published_at: new Date().toISOString(),
@@ -293,34 +370,51 @@ export async function refreshAyrshareOutput(clientId: string, outputId: string):
     const supabase = await createClient();
     const { data: output, error } = await supabase
       .from("content_outputs")
-      .select("id,content_id,status,live_url,ayrshare_post_id,social:social_strategies(ayrshare_profile_id)")
+      .select(
+        "id,content_id,status,live_url,ayrshare_post_id,ayrshare_history,social:social_strategies(ayrshare_profile_id)"
+      )
       .eq("id", outputId)
       .eq("client_id", clientId)
       .single();
     if (error) throw new UserFacingError(error.message);
     if (!output.ayrshare_post_id) throw new UserFacingError("This version hasn't been sent to Ayrshare.");
 
-    let profileKey: string | null = null;
-    if (output.social?.ayrshare_profile_id) {
-      const { data: profileRow } = await supabase
-        .from("ayrshare_profiles")
-        .select("profile_key")
-        .eq("id", output.social.ayrshare_profile_id)
-        .single();
-      profileKey = profileRow?.profile_key ?? null;
-    }
+    const profileKey = await resolveProfileKey(supabase, output.social?.ayrshare_profile_id);
 
     const status = await getAyrsharePostUrl(output.ayrshare_post_id, profileKey);
-    if (!status.postUrl) return "Still with Ayrshare — not published yet.";
+    if (!status.postUrl) {
+      await supabase
+        .from("content_outputs")
+        .update({ ayrshare_checked_at: new Date().toISOString() })
+        .eq("id", outputId);
+      return "Still with Ayrshare — not published yet.";
+    }
+
+    // It's live, so close the open handover. That's what takes the output
+    // out of "re-send would duplicate" territory and into "already posted".
+    const history = closeHandover(readHistory(output.ayrshare_history), output.ayrshare_post_id, "live");
 
     if (output.status !== "published") {
       await supabase
         .from("content_outputs")
-        .update({ status: "published", published_at: new Date().toISOString(), live_url: status.postUrl })
+        .update({
+          status: "published",
+          published_at: new Date().toISOString(),
+          live_url: status.postUrl,
+          ayrshare_history: history,
+          ayrshare_checked_at: new Date().toISOString(),
+        })
         .eq("id", outputId);
       await rollUpMasterStatus(supabase, output.content_id);
-    } else if (!output.live_url) {
-      await supabase.from("content_outputs").update({ live_url: status.postUrl }).eq("id", outputId);
+    } else {
+      await supabase
+        .from("content_outputs")
+        .update({
+          ayrshare_history: history,
+          ayrshare_checked_at: new Date().toISOString(),
+          ...(output.live_url ? {} : { live_url: status.postUrl }),
+        })
+        .eq("id", outputId);
     }
     revalidateContent(clientId);
     return "Published — live link saved to this version.";
@@ -554,5 +648,85 @@ export async function pullClientPerformance(
     revalidateContent(clientId);
     revalidatePath(`/clients/${clientId}/metrics`);
     return { updated, failed, remaining: targets.length - batch.length };
+  });
+}
+
+/** Don't re-ask Ayrshare about the same post more often than this. */
+const RECONCILE_THROTTLE_MS = 5 * 60 * 1000;
+
+/**
+ * Ask Ayrshare whether any handed-over post has actually gone out, and mark
+ * it published if so.
+ *
+ * This is the root of the duplicate problem rather than a convenience. A
+ * scheduled post published on its own, but PBOS kept showing it as pending
+ * because the only way to find out was to press "Check status" on that one
+ * row. So the screen said "not published" about a post that was live, and
+ * the button on it read "Publish now" — which made sending a second one the
+ * obvious thing to do. Seventeen of Jonny's outputs were sitting in exactly
+ * that state.
+ *
+ * Runs from the Content tab on load. Read-only at Ayrshare, throttled per
+ * output, and it only ever moves a version forwards to published.
+ */
+export async function reconcileDueHandovers(clientId: string): Promise<ActionResult<number>> {
+  return runAction(async () => {
+    const supabase = await createClient();
+    const cutoff = new Date(Date.now() - RECONCILE_THROTTLE_MS).toISOString();
+
+    const { data: due, error } = await supabase
+      .from("content_outputs")
+      .select(
+        "id,content_id,status,live_url,scheduled_at,ayrshare_post_id,ayrshare_history,ayrshare_checked_at,social:social_strategies(ayrshare_profile_id)"
+      )
+      .eq("client_id", clientId)
+      .neq("status", "published")
+      .neq("ayrshare_post_id", "")
+      .or(`ayrshare_checked_at.is.null,ayrshare_checked_at.lt.${cutoff}`);
+    if (error) throw new UserFacingError(error.message);
+
+    // Only posts whose moment has passed can have gone out. Anything still
+    // in the future is correctly showing as pending.
+    const ready = (due ?? []).filter(
+      (row) => !row.scheduled_at || new Date(row.scheduled_at).getTime() <= Date.now()
+    );
+    if (ready.length === 0) return 0;
+
+    let published = 0;
+    for (const row of ready) {
+      try {
+        const profileKey = await resolveProfileKey(supabase, row.social?.ayrshare_profile_id);
+        const status = await getAyrsharePostUrl(row.ayrshare_post_id, profileKey);
+        if (!status.postUrl) {
+          await supabase
+            .from("content_outputs")
+            .update({ ayrshare_checked_at: new Date().toISOString() })
+            .eq("id", row.id);
+          continue;
+        }
+        await supabase
+          .from("content_outputs")
+          .update({
+            status: "published",
+            published_at: new Date().toISOString(),
+            live_url: row.live_url || status.postUrl,
+            ayrshare_history: closeHandover(readHistory(row.ayrshare_history), row.ayrshare_post_id, "live"),
+            ayrshare_checked_at: new Date().toISOString(),
+          })
+          .eq("id", row.id);
+        await rollUpMasterStatus(supabase, row.content_id);
+        published += 1;
+      } catch {
+        // One unreachable post mustn't stop the rest. Stamp it so a
+        // persistently failing row doesn't get retried on every page load.
+        await supabase
+          .from("content_outputs")
+          .update({ ayrshare_checked_at: new Date().toISOString() })
+          .eq("id", row.id);
+      }
+    }
+
+    if (published > 0) revalidateContent(clientId);
+    return published;
   });
 }
