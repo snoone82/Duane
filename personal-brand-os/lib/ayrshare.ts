@@ -453,3 +453,45 @@ export async function getAyrsharePostUrl(postId: string, profileKey?: string | n
   const posted = data.postIds?.find((p) => p.postUrl);
   return { postUrl: posted?.postUrl ?? null, status: typeof data.status === "string" ? data.status : "unknown" };
 }
+
+/**
+ * Cancel a post at Ayrshare.
+ *
+ * Needed because PBOS could take a post off its own calendar while leaving
+ * it queued at Ayrshare, which then published it anyway — half of how
+ * Jonny's LinkedIn posts went out twice.
+ *
+ * Ayrshare refuses to delete a post that has already gone out, and that
+ * refusal is the useful answer rather than a failure: it means the post is
+ * live and anything sent now would be a second one. `alreadyPublished`
+ * carries that distinction back to the caller.
+ */
+export async function deleteAyrsharePost(
+  postId: string,
+  profileKey?: string | null
+): Promise<{ deleted: boolean; alreadyPublished: boolean; message: string }> {
+  try {
+    await ayr("/post", { method: "DELETE", body: { id: postId }, profileKey });
+    return { deleted: true, alreadyPublished: false, message: "Cancelled at Ayrshare." };
+  } catch (err) {
+    if (err instanceof AyrshareError) {
+      const haystack = `${err.message} ${err.body}`.toLowerCase();
+      // Ayrshare words this several ways depending on network and timing.
+      const published =
+        haystack.includes("already been posted") ||
+        haystack.includes("already posted") ||
+        haystack.includes("already published") ||
+        haystack.includes("cannot delete a post that has been published");
+      // A post id Ayrshare no longer knows about is, for our purposes,
+      // already gone — nothing left to cancel and nothing left to fire.
+      const missing = haystack.includes("not found") || haystack.includes("does not exist");
+      if (published) {
+        return { deleted: false, alreadyPublished: true, message: err.message };
+      }
+      if (missing) {
+        return { deleted: true, alreadyPublished: false, message: "No such post at Ayrshare — nothing queued." };
+      }
+    }
+    throw err;
+  }
+}

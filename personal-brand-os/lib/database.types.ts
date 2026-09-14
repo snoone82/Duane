@@ -1307,6 +1307,8 @@ export type Database = {
           alt_text: string
           analytics_at: string | null
           analytics_raw: Json | null
+          ayrshare_checked_at: string | null
+          ayrshare_history: Json
           ayrshare_post_id: string
           caption: string
           client_id: string
@@ -1349,6 +1351,8 @@ export type Database = {
           alt_text?: string
           analytics_at?: string | null
           analytics_raw?: Json | null
+          ayrshare_checked_at?: string | null
+          ayrshare_history?: Json
           ayrshare_post_id?: string
           caption?: string
           client_id: string
@@ -1391,6 +1395,8 @@ export type Database = {
           alt_text?: string
           analytics_at?: string | null
           analytics_raw?: Json | null
+          ayrshare_checked_at?: string | null
+          ayrshare_history?: Json
           ayrshare_post_id?: string
           caption?: string
           client_id?: string

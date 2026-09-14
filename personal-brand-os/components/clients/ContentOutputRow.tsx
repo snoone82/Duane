@@ -26,6 +26,7 @@ import { OutputMediaSlot } from "@/components/clients/OutputMediaSlot";
 import { RegenerateItemDialog } from "@/components/clients/RegenerateItemDialog";
 import { formatDate, formatDateTime } from "@/lib/format";
 import type { Database } from "@/lib/database.types";
+import { openHandover, readHistory } from "@/lib/ayrshare-history";
 
 type Output = Database["public"]["Tables"]["content_outputs"]["Row"];
 
@@ -59,7 +60,11 @@ export function ContentOutputRow({
   const [showPublish, setShowPublish] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const handedToAyrshare = Boolean(output.ayrshare_post_id) && output.status !== "published";
+  // "Queued at Ayrshare" now means an OPEN handover, not merely a post id.
+  // A post id alone can't tell you whether Ayrshare still holds something —
+  // which is why a scheduled post could be sent a second time.
+  const queued = output.status === "published" ? null : openHandover(readHistory(output.ayrshare_history));
+  const handedToAyrshare = Boolean(queued);
   const handover =
     output.status === "published"
       ? null
@@ -67,7 +72,9 @@ export function ContentOutputRow({
         ? {
             label: "With Ayrshare",
             color: "teal" as const,
-            title: "Handed to Ayrshare — it will publish at the scheduled time. Use Check status afterwards to pull in the live link.",
+            title: queued?.scheduled_for
+              ? `Ayrshare is holding this and will publish it at ${new Date(queued.scheduled_for).toLocaleString("en-GB")}. PBOS checks by itself afterwards. Don't send it again — that would post it twice.`
+              : "Ayrshare is holding this and will publish it on its own. PBOS checks by itself afterwards. Don't send it again — that would post it twice.",
           }
         : output.status === "scheduled"
           ? {
@@ -79,25 +86,36 @@ export function ContentOutputRow({
 
   function handleAyrsharePublish() {
     const scheduled = output.scheduled_at && new Date(output.scheduled_at).getTime() > Date.now() + 60_000;
-    if (
-      handedToAyrshare &&
-      !window.confirm(
-        "This version has already been handed to Ayrshare. Sending it again creates a second post there — only do this if the first one was deleted in Ayrshare. Continue?"
-      )
-    ) {
-      return;
-    }
-    if (
-      !handedToAyrshare &&
-      !scheduled &&
-      !window.confirm("Publish this version to the connected social account right now?")
-    ) {
+    if (!scheduled && !window.confirm("Publish this version to the connected social account right now?")) {
       return;
     }
     setError(null);
     setNotice(null);
     startTransition(async () => {
       const result = await sendOutputToAyrshare(clientId, output.id);
+      if (!result.ok) setError(result.message);
+      else setNotice(result.data ?? "Done.");
+    });
+  }
+
+  /**
+   * The deliberate re-send: cancel what Ayrshare is holding, then send a new
+   * one. Separated from the ordinary publish button because the old single
+   * button plus a confirm dialog is exactly how Jonny's posts went out twice
+   * — the label said "Publish now" while a real post sat in the queue.
+   */
+  function handleAyrshareReplace() {
+    if (
+      !window.confirm(
+        "Cancel the post Ayrshare is currently holding for this version and send a replacement?\n\nIf it has already gone out, PBOS will stop and tell you — it won't post a second copy."
+      )
+    ) {
+      return;
+    }
+    setError(null);
+    setNotice(null);
+    startTransition(async () => {
+      const result = await sendOutputToAyrshare(clientId, output.id, true);
       if (!result.ok) setError(result.message);
       else setNotice(result.data ?? "Done.");
     });
@@ -250,13 +268,19 @@ export function ContentOutputRow({
               View live post →
             </a>
           )}
-          {ayrshareEnabled && output.status !== "published" && output.social_account_id && (
-            <Button variant={handedToAyrshare ? "ghost" : "secondary"} size="sm" onClick={handleAyrsharePublish} disabled={isBusy}>
-              {handedToAyrshare
-                ? "Resend to Ayrshare…"
-                : output.scheduled_at && new Date(output.scheduled_at).getTime() > Date.now() + 60_000
-                  ? "Send to Ayrshare (auto-publishes at the scheduled time)"
-                  : "Publish now via Ayrshare"}
+          {/* Two distinct actions, never one button that changes meaning.
+              While Ayrshare is holding a post there is no "publish" offered
+              at all — only replacing it, which cancels the held one first. */}
+          {ayrshareEnabled && output.status !== "published" && output.social_account_id && !handedToAyrshare && (
+            <Button variant="secondary" size="sm" onClick={handleAyrsharePublish} disabled={isBusy}>
+              {output.scheduled_at && new Date(output.scheduled_at).getTime() > Date.now() + 60_000
+                ? "Send to Ayrshare (auto-publishes at the scheduled time)"
+                : "Publish now via Ayrshare"}
+            </Button>
+          )}
+          {ayrshareEnabled && output.status !== "published" && output.social_account_id && handedToAyrshare && (
+            <Button variant="ghost" size="sm" onClick={handleAyrshareReplace} disabled={isBusy}>
+              Replace at Ayrshare…
             </Button>
           )}
           {ayrshareEnabled && output.ayrshare_post_id && output.status !== "published" && (

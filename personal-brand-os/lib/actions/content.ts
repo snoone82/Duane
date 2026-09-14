@@ -10,6 +10,8 @@ import { CONTENT_STATUS, CONTENT_PRIORITY, MEDIA_STATE, type OutputStatus, type 
 import { fieldPatch } from "@/lib/field-patch";
 import { isPlanLocked } from "@/lib/monthly-plan-format";
 import { PRODUCTION_CHECKLIST_STEPS, productionChecklistItemDone } from "@/lib/production-checklist";
+import { cancelOpenHandover, resolveProfileKey } from "@/lib/ayrshare-handover";
+import { openHandover, readHistory } from "@/lib/ayrshare-history";
 
 function revalidateContent(clientId: string) {
   revalidatePath(`/clients/${clientId}/content`);
@@ -732,10 +734,41 @@ export async function removeOutputMedia(clientId: string, outputId: string, kind
   });
 }
 
-/** Undo a schedule (back to the Ready-to-Schedule queue). */
+/**
+ * Undo a schedule (back to the Ready-to-Schedule queue).
+ *
+ * Also cancels the post at Ayrshare, which it never used to do. Taking a
+ * post off the PBOS calendar while leaving it queued at Ayrshare meant it
+ * published anyway — and because the row then looked unscheduled, sending it
+ * again was the natural next move. That is one of the two ways Jonny's
+ * LinkedIn posts went out twice.
+ */
 export async function unscheduleContentOutput(clientId: string, outputId: string): Promise<ActionResult> {
   return runAction(async () => {
     const supabase = await createClient();
+
+    const { data: handed, error: readError } = await supabase
+      .from("content_outputs")
+      .select("id,ayrshare_post_id,ayrshare_history,social:social_strategies(ayrshare_profile_id)")
+      .eq("id", outputId)
+      .eq("client_id", clientId)
+      .single();
+    if (readError) throw new Error(readError.message);
+
+    if (openHandover(readHistory(handed.ayrshare_history))) {
+      const profileKey = await resolveProfileKey(supabase, handed.social?.ayrshare_profile_id);
+      const cancelled = await cancelOpenHandover(supabase, handed, profileKey);
+      // Already live: unscheduling can't un-publish it, and pretending
+      // otherwise is what leads to a second post. Leave the row alone and
+      // say so — "Check status" will bring in the live link.
+      if (cancelled.alreadyPublished) {
+        revalidateContent(clientId);
+        throw new UserFacingError(
+          `This one has already gone out — Ayrshare can't cancel a published post, so it can't be unscheduled. Use "Check status" to pull in the live link.`
+        );
+      }
+    }
+
     const { data: output, error } = await supabase
       .from("content_outputs")
       .update({ scheduled_at: null, status: "pending" })

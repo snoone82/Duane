@@ -10,6 +10,7 @@ import { getApproverOptions } from "@/lib/data/approvers";
 import { socialAccountLabel } from "@/lib/format";
 import { isAyrshareConfigured } from "@/lib/ayrshare";
 import { CadenceStrip } from "@/components/clients/CadenceStrip";
+import { ReconcileHandovers } from "@/components/clients/ReconcileHandovers";
 import { SendToProductionPanel } from "@/components/production/SendToProductionPanel";
 import { getCadenceForClient } from "@/lib/data/cadence";
 
@@ -146,8 +147,23 @@ export default async function ContentPage({ params }: { params: Promise<{ id: st
     .filter((idea) => producibleStatuses.has(idea.status) && !scheduledForProduction.has(idea.id))
     .map((idea) => ({ id: idea.id, title: idea.title, outputCount: outputsPerIdea.get(idea.id) ?? 0 }));
 
+  // Anything Ayrshare is holding whose moment has passed may already have
+  // published without PBOS noticing — which is what made re-sending look
+  // correct and posted Jonny's LinkedIn twice. Count them here; the client
+  // component asks Ayrshare on load.
+  const dueForReconcile = isAyrshareConfigured()
+    ? (outputs ?? []).filter(
+        (o) =>
+          o.status !== "published" &&
+          Boolean(o.ayrshare_post_id) &&
+          (!o.scheduled_at || new Date(o.scheduled_at).getTime() <= Date.now())
+      ).length
+    : 0;
+
   return (
     <div className="max-w-4xl space-y-8">
+      <ReconcileHandovers clientId={id} dueCount={dueForReconcile} />
+
       <CadenceStrip
         data={cadence}
         emptyHref={`/clients/${id}/social`}
