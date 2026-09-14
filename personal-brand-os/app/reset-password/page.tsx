@@ -27,7 +27,10 @@ export default function ResetPasswordPage() {
     startSubmitting(async () => {
       const supabase = createClient();
       const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-        redirectTo: `${window.location.origin}/reset-password/confirm`,
+        // Points at the server route, not the page. That route completes the
+        // link itself, which is what lets a reset requested here be opened on
+        // a different device. See app/auth/confirm/route.ts.
+        redirectTo: `${window.location.origin}/auth/confirm?next=${encodeURIComponent("/reset-password/confirm")}`,
       });
 
       // Supabase responds identically whether or not the address has an
@@ -64,6 +67,9 @@ export default function ResetPasswordPage() {
             <Notice kind="success">
               If there&rsquo;s an account with that email, a reset link is on its way. Check your inbox.
             </Notice>
+            <p className="mt-3 text-xs text-ink-faint">
+              Open it in this same browser if you can, and soon — links are short-lived and work once.
+            </p>
           </div>
         ) : (
           <>
