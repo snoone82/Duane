@@ -32,7 +32,12 @@ function explain(reason: string | null): { title: string; body: string } {
         title: "This link has expired",
         body: "Reset links are only good for a short window. Request a new one and open it as soon as it arrives.",
       };
+    // pkce_code_verifier_not_found is the one that was masquerading as
+    // "expired" — confirmed against production: a link opened in a browser
+    // that never held the verifier returns exactly this.
+    case "pkce_code_verifier_not_found":
     case "code_exchange_failed":
+    case "validation_failed":
     case "flow_state_not_found":
     case "flow_state_expired":
       return {
