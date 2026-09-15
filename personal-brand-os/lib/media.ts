@@ -61,3 +61,34 @@ export function mediaPreview(output: PreviewHolder, idea?: PreviewHolder | null)
   if (isVideoUrl(url) || isVideoUrl(path)) return { url, kind: "video" };
   return null;
 }
+
+/**
+ * The ASSET itself, ignoring any thumbnail — a video stays a video so the
+ * client can play it in place, rather than being flattened to its cover
+ * still the way mediaPreview does.
+ *
+ * Duane, on the client approval view: "If it is a video, the client should
+ * be able to play the video directly inside PBOS." mediaPreview answers a
+ * different question (what small still represents this?), so both exist.
+ * Same master-media inheritance as publishing: the version's own asset
+ * wins, otherwise the content idea's.
+ */
+export function assetPreview(output: PreviewHolder, idea?: PreviewHolder | null): MediaPreview | null {
+  const holder = hasMedia(output) ? output : hasMedia(idea) ? idea : null;
+  if (!holder) return null;
+  const url = pick(holder.media_url) || pick(holder.media_source_url);
+  if (!url) return null;
+  const path = pick(holder.media_path);
+  if (isVideoUrl(url) || isVideoUrl(path)) return { url, kind: "video" };
+  if (isImageUrl(url) || isImageUrl(path)) return { url, kind: "image" };
+  return null;
+}
+
+/** The cover still for an asset, when one was uploaded separately. */
+export function coverUrl(output: PreviewHolder, idea?: PreviewHolder | null): string | null {
+  for (const holder of [output, idea]) {
+    const thumb = pick(holder?.thumbnail_url) || pick(holder?.thumbnail_source_url);
+    if (thumb) return thumb;
+  }
+  return null;
+}

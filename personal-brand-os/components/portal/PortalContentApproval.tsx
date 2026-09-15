@@ -20,14 +20,17 @@ export function PortalContentApproval({ ideaId }: { ideaId: string }) {
   }
 
   return (
-    <div className="mt-3 space-y-2 border-t border-border pt-3">
+    <div className="mt-4 space-y-3 border-t border-border pt-4">
       {error && <Notice kind="danger">{error}</Notice>}
       {!showComments ? (
-        <div className="flex flex-wrap gap-2">
-          <Button variant="primary" size="sm" onClick={() => respond("approve")} disabled={isPending}>
+        // Approve is the decision this screen exists for, so it carries the
+        // weight — full-size, turquoise, first. Request changes sits beside
+        // it as the quieter alternative rather than a matching twin.
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="primary" onClick={() => respond("approve")} disabled={isPending}>
             {isPending ? "Saving…" : "Approve this content"}
           </Button>
-          <Button variant="secondary" size="sm" onClick={() => setShowComments(true)} disabled={isPending}>
+          <Button variant="ghost" onClick={() => setShowComments(true)} disabled={isPending}>
             Request changes…
           </Button>
         </div>
