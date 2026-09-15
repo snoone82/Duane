@@ -126,3 +126,13 @@ table {
     box-shadow: none !important;
   }
 }
+
+/* Safari draws its own disclosure triangle on <summary> and ignores
+   `list-style: none`, so a row styled as a custom control gets a stray
+   marker wedged in front of it. Every collapsible in the app opts out of
+   the native marker via Tailwind's `list-none`; this makes that stick on
+   WebKit too. Most visible on the client approval cards, which are the
+   ones an actual client looks at. */
+summary.list-none::-webkit-details-marker {
+  display: none;
+}

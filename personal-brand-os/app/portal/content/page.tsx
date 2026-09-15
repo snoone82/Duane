@@ -2,13 +2,14 @@ import { createClient } from "@/lib/supabase/server";
 import { getPortalContext } from "@/lib/data/portal";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { PortalContentApproval } from "@/components/portal/PortalContentApproval";
 import { MediaPreview } from "@/components/clients/OutputMediaSlot";
 import { MediaThumb } from "@/components/portal/MediaThumb";
+import { ApprovalCard } from "@/components/portal/ApprovalCard";
+import { PlatformIcon } from "@/components/ui/PlatformIcon";
 import { AddIdeaButton, EditableIdea } from "@/components/portal/ClientIdeaComposer";
 import { contentStatusMeta, outputStatusMeta, type OutputStatus } from "@/lib/status";
 import { formatDate, formatDateTime, socialAccountLabel } from "@/lib/format";
-import { mediaPreview } from "@/lib/media";
+import { assetPreview, coverUrl, mediaPreview } from "@/lib/media";
 
 export const metadata = { title: "Content" };
 
@@ -63,6 +64,25 @@ export default async function PortalContentPage() {
     return mediaPreview(idea);
   };
 
+  /** The asset the client actually reviews — a video stays a video so it can
+   * be played in the card, rather than collapsing to its cover still. */
+  const primaryAsset = (idea: NonNullable<typeof ideas>[number]) => {
+    for (const output of outputsByContent.get(idea.id) ?? []) {
+      const asset = assetPreview(output, idea);
+      if (asset) return asset;
+    }
+    return assetPreview(idea);
+  };
+
+  /** Its cover still, when one was uploaded separately. */
+  const primaryCover = (idea: NonNullable<typeof ideas>[number]) => {
+    for (const output of outputsByContent.get(idea.id) ?? []) {
+      const cover = coverUrl(output, idea);
+      if (cover) return cover;
+    }
+    return coverUrl(idea);
+  };
+
   /** Expandable per-platform versions — Duane's "open the content item and
    * see the individual platform versions", with their assets. */
   const platformVersions = (contentId: string) => {
@@ -78,11 +98,14 @@ export default async function PortalContentPage() {
           {list.map((output) => (
             <div key={output.id} className="rounded-md bg-surface-muted/50 p-3">
               <div className="flex items-center justify-between gap-2">
-                <p className="text-xs font-semibold text-ink">
-                  {socialAccountLabel(output.platform, output.social?.account_name)}
-                  {output.format ? ` · ${output.format}` : ""}
+                <p className="flex min-w-0 items-center gap-2 text-xs font-semibold text-ink">
+                  <PlatformIcon platform={output.platform} size="sm" />
+                  <span className="truncate">
+                    {socialAccountLabel(output.platform, output.social?.account_name)}
+                    {output.format ? ` · ${output.format}` : ""}
+                  </span>
                 </p>
-                <span className="text-xs text-ink-faint">
+                <span className="flex-none text-xs text-ink-faint">
                   {output.status === "scheduled" && output.scheduled_at
                     ? `scheduled ${formatDateTime(output.scheduled_at)}`
                     : outputStatusMeta(output.status as OutputStatus).label.toLowerCase()}
@@ -127,47 +150,41 @@ export default async function PortalContentPage() {
       ) : (
         <>
           {awaitingApproval.length > 0 && (
-            <div className="rounded-lg border border-accent/40 bg-accent/5 p-4">
-              <h2 className="mb-1 text-sm font-semibold text-ink">Awaiting approval · {awaitingApproval.length}</h2>
-              <p className="mb-3 text-xs text-ink-soft">
-                {canApprove
-                  ? "Read the final copy for each platform below, then approve it for scheduling or send it back with comments."
-                  : "These pieces are waiting for approval — approving content isn't enabled for your account."}
-              </p>
+            <section>
+              <div className="mb-3">
+                <h2 className="text-sm font-semibold text-ink">Awaiting your approval · {awaitingApproval.length}</h2>
+                <p className="mt-1 text-xs text-ink-soft">
+                  {canApprove
+                    ? "Open each one to watch or view the content, read the copy going to each platform, then approve it or send it back with comments."
+                    : "These pieces are waiting for approval — approving content isn't enabled for your account."}
+                </p>
+              </div>
+              {/* Collapsed by default: several pieces can be waiting at once,
+                  and a page of fully expanded captions is unreadable. */}
               <div className="space-y-3">
                 {awaitingApproval.map((idea) => (
-                  <div key={idea.id} id={`idea-${idea.id}`} className="scroll-mt-4 rounded-lg border border-border bg-surface px-4 py-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-sm font-medium text-ink">{idea.title}</p>
-                      {idea.approver_user_id === context.userId && (
-                        <span className="rounded-full bg-accent-soft px-2 py-0.5 text-xs font-medium text-accent-strong">For you to approve</span>
-                      )}
-                    </div>
-                    {idea.hook && <p className="mt-1 text-xs italic text-ink-soft">&ldquo;{idea.hook}&rdquo;</p>}
-                    {(outputsByContent.get(idea.id) ?? []).map((output) => (
-                      <div key={output.id} className="mt-2 rounded-md bg-surface-muted/50 p-3">
-                        <p className="text-xs font-semibold text-ink">
-                          {socialAccountLabel(output.platform, output.social?.account_name)}
-                          {output.format ? ` · ${output.format}` : ""}
-                        </p>
-                        {output.caption ? (
-                          <p className="mt-1 whitespace-pre-wrap text-sm text-ink-soft">{output.caption}</p>
-                        ) : (
-                          <p className="mt-1 text-xs text-ink-faint">Final copy to follow.</p>
-                        )}
-                        {output.cta && <p className="mt-1 text-xs text-ink-faint">CTA: {output.cta}</p>}
-                        {output.media_url && (
-                          <div className="mt-2">
-                            <MediaPreview url={output.media_url} />
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                    {canApprove && <PortalContentApproval ideaId={idea.id} />}
-                  </div>
+                  <ApprovalCard
+                    key={idea.id}
+                    ideaId={idea.id}
+                    title={idea.title}
+                    hook={idea.hook}
+                    forYou={idea.approver_user_id === context.userId}
+                    canApprove={canApprove}
+                    asset={primaryAsset(idea)}
+                    cover={primaryCover(idea)}
+                    versions={(outputsByContent.get(idea.id) ?? []).map((output) => ({
+                      id: output.id,
+                      platform: output.platform,
+                      accountName: output.social?.account_name ?? null,
+                      format: output.format,
+                      caption: output.caption,
+                      cta: output.cta,
+                      scheduledAt: output.status === "scheduled" ? output.scheduled_at : null,
+                    }))}
+                  />
                 ))}
               </div>
-            </div>
+            </section>
           )}
 
           {upcoming.length > 0 && (
@@ -197,8 +214,12 @@ export default async function PortalContentPage() {
                       {scheduled.length > 0 && (
                         <ul className="mt-2 space-y-0.5">
                           {scheduled.map((o) => (
-                            <li key={o.id} className="text-xs text-ink-soft">
-                              {socialAccountLabel(o.platform, o.social?.account_name)} — going out {o.scheduled_at ? formatDateTime(o.scheduled_at) : "soon"}
+                            <li key={o.id} className="flex items-center gap-2 text-xs text-ink-soft">
+                              <PlatformIcon platform={o.platform} size="sm" />
+                              <span>
+                                {socialAccountLabel(o.platform, o.social?.account_name)} — going out{" "}
+                                {o.scheduled_at ? formatDateTime(o.scheduled_at) : "soon"}
+                              </span>
                             </li>
                           ))}
                         </ul>
@@ -233,6 +254,7 @@ export default async function PortalContentPage() {
                             const oMeta = outputStatusMeta(o.status as OutputStatus);
                             return (
                               <li key={o.id} className="flex items-center gap-2 text-xs text-ink-soft">
+                                <PlatformIcon platform={o.platform} size="sm" />
                                 {o.live_url ? (
                                   <a href={o.live_url} target="_blank" rel="noreferrer" className="text-accent underline-offset-2 hover:underline">
                                     {socialAccountLabel(o.platform, o.social?.account_name)}

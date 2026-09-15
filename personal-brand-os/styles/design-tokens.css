@@ -122,3 +122,60 @@
     scroll-behavior: auto !important;
   }
 }
+
+/**
+ * Review surface — a light card inside the dark shell.
+ *
+ * Duane, on the client approval experience: "dark PBOS shell → light or
+ * white content-review card → dark text → turquoise accent for primary
+ * actions". The client is reading captions properly here rather than
+ * scanning a dashboard, and dark-on-dark is the wrong ground for that.
+ *
+ * It works by redefining the same semantic tokens on a subtree, which is
+ * why it needs no changes to Button, Notice, Textarea or anything else —
+ * every component already routes its colours through these names, so they
+ * re-skin themselves inside the card.
+ *
+ * Off-white rather than pure white, as asked, so it reads as paper against
+ * the navy instead of glaring.
+ */
+.review-surface {
+  --color-bg: #f5f7fa;
+  --color-surface: #ffffff;
+  --color-surface-muted: #eef2f7;
+  --color-ink: #0f1b2d;
+  --color-ink-soft: #46546c;
+  --color-ink-faint: #6d7c94;
+  --color-border: #dde4ed;
+  --color-border-strong: #c3cddb;
+
+  /* The brand turquoise stays the primary fill; near-black sits on it, the
+     same inversion the dark theme uses. White text on turquoise would fail
+     contrast, and darkening the fill enough to fix that loses the brand. */
+  --color-accent: #14b8cf;
+  --color-accent-strong: #0e93a8;
+  --color-accent-soft: #e2f7fb;
+  --color-accent-ink: #04141c;
+  --color-focus-ring: #0e93a8;
+
+  /* Feedback, restated for light ground — the dark tints are unreadable
+     here. */
+  --color-info: #15558f;
+  --color-info-bg: #e6f0fb;
+  --color-success: #17693c;
+  --color-success-bg: #e4f5ea;
+  --color-warning: #8a6100;
+  --color-warning-bg: #fdf3dd;
+  --color-danger: #b3261e;
+  --color-danger-bg: #fdeceb;
+
+  background-color: var(--color-bg);
+  color: var(--color-ink);
+}
+
+/* A readable measure for body copy. Captions running the full width of a
+   desktop screen are hard to read back, so they stop at roughly 68
+   characters (Duane: "slightly constrain the caption width"). */
+.review-measure {
+  max-width: 68ch;
+}
