@@ -7,6 +7,10 @@ import { NEEDS_CONFIRMATION, NOT_APPLICABLE, type ImportIssues } from "@/lib/imp
 export interface ParsedContentImport extends ImportIssues {
   ideas: {
     title: string;
+    /** Duane's permanent clip reference (e.g. JG-S10-C03). Optional, but it
+     * is what lets a batch of MP4s be matched to the right records on
+     * import — see lib/import/clip-match.ts. */
+    clip_id: string | null;
     pillar: string | null;
     audience: string | null;
     hook: string;
@@ -131,6 +135,7 @@ export function parseContentImport(input: string): ContentParseResult {
     return [
       {
         title,
+        clip_id: text(record.clip_id, `"${title}" → clip id`, issues) || null,
         pillar: text(record.pillar, `"${title}" → pillar`, issues) || null,
         audience: text(record.audience, `"${title}" → audience`, issues) || null,
         hook: text(record.hook, `"${title}" → hook`, issues),
