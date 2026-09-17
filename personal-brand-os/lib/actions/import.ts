@@ -1441,7 +1441,7 @@ export interface PlatformMixItem {
 export type DuplicateAction = "update" | "add_outputs" | "create_new" | "skip";
 
 export interface ContentImportPreview {
-  ideas: { title: string; mix: PlatformMixItem[]; flags: string[]; duplicate: boolean }[];
+  ideas: { index: number; title: string; clipId: string | null; mix: PlatformMixItem[]; flags: string[]; duplicate: boolean }[];
   needsConfirmation: string[];
   warnings: string[];
   /** Headline for the preview: how the strategy changed the raw import. */
@@ -1540,7 +1540,9 @@ export async function previewContentImport(clientId: string, text: string): Prom
       }
 
       return {
+        index: ideaIndex,
         title: idea.title,
+        clipId: idea.clip_id,
         mix,
         flags,
         duplicate: existingTitles.has(idea.title.toLowerCase()),
@@ -1573,6 +1575,9 @@ export async function commitContentImport(
     outputsCreated: number;
     outputsUpdated: number;
     outputsSkipped: number;
+    /** Which PBOS record each imported entry became, so the caller can attach
+     * master media to it afterwards — the id does not exist until now. */
+    records: { index: number; title: string; clipId: string | null; id: string }[];
   }>
 > {
   const result = parseContentImport(text);
@@ -1604,6 +1609,7 @@ export async function commitContentImport(
     let outputsUpdated = 0;
     let outputsSkipped = 0;
     const skippedDuplicates: string[] = [];
+    const records: { index: number; title: string; clipId: string | null; id: string }[] = [];
 
     // A blank never overwrites. The parser can't tell "field omitted" from
     // "field deliberately emptied" — both arrive as "" — so on an update a
@@ -1675,6 +1681,10 @@ export async function commitContentImport(
         existingByTitle.set(idea.title.toLowerCase(), masterId);
       }
 
+      // Whether created or matched, this is the record the batch media
+      // upload will attach to.
+      records.push({ index: ideaIndex, title: idea.title, clipId: idea.clip_id, id: masterId });
+
       if (keep.length > 0) {
         // Match an existing version before creating one (Duane): platform
         // plus account, so a master that already publishes to LinkedIn — CEG
@@ -1731,6 +1741,6 @@ export async function commitContentImport(
 
     revalidatePath(`/clients/${clientId}/content`);
     revalidatePath("/");
-    return { created, updated, skippedDuplicates, outputsCreated, outputsUpdated, outputsSkipped };
+    return { created, updated, skippedDuplicates, outputsCreated, outputsUpdated, outputsSkipped, records };
   });
 }

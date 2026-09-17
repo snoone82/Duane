@@ -2980,6 +2980,10 @@ export type Database = {
         Args: { perm: string; target_client_id: string }
         Returns: boolean
       }
+      portal_update_output_copy: {
+        Args: { new_caption: string; output_id: string }
+        Returns: undefined
+      }
     }
     Enums: {
       action_status: "not_started" | "in_progress" | "completed" | "waiting"

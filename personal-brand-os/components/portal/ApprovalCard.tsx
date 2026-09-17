@@ -1,6 +1,7 @@
 import { PortalContentApproval } from "@/components/portal/PortalContentApproval";
 import { MediaThumb } from "@/components/portal/MediaThumb";
 import { PlatformIcon, PlatformIconRow } from "@/components/ui/PlatformIcon";
+import { EditablePlatformCopy } from "@/components/portal/EditablePlatformCopy";
 import { formatDateTime } from "@/lib/format";
 import type { MediaPreview } from "@/lib/media";
 
@@ -150,13 +151,14 @@ export function ApprovalCard({
                 )}
               </div>
 
-              {version.caption ? (
-                <p className="review-measure mt-3 whitespace-pre-wrap text-sm leading-relaxed text-ink">
-                  {version.caption}
-                </p>
-              ) : (
-                <p className="mt-3 text-sm text-ink-faint">Final copy to follow.</p>
-              )}
+              {/* The copy is the client's to correct; the video is not.
+                  See EditablePlatformCopy. */}
+              <EditablePlatformCopy
+                outputId={version.id}
+                caption={version.caption}
+                platformLabel={version.accountName ? `${version.platform} — ${version.accountName}` : version.platform}
+                canEdit={canApprove}
+              />
 
               {version.cta && (
                 <p className="review-measure mt-3 rounded-md bg-surface-muted px-3 py-2 text-xs text-ink-soft">
@@ -169,7 +171,12 @@ export function ApprovalCard({
         </div>
 
         {canApprove ? (
-          <PortalContentApproval ideaId={ideaId} />
+          <>
+            <p className="mt-4 text-xs text-ink-faint">
+              Wording is yours to change above — edit any platform and save. Request changes is for the video itself.
+            </p>
+            <PortalContentApproval ideaId={ideaId} />
+          </>
         ) : (
           <p className="mt-4 border-t border-border pt-4 text-xs text-ink-faint">
             Approving content isn&rsquo;t enabled for your account — ask your account manager if that&rsquo;s not right.

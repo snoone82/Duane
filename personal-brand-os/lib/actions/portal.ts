@@ -199,3 +199,32 @@ export async function portalRespondContent(
     return undefined;
   });
 }
+
+/**
+ * The client corrects the copy for one platform, in place.
+ *
+ * Duane's split at approval: a change to the VIDEO goes back to the team
+ * through Request changes; a change to the WORDS the client just makes. So
+ * this writes the live platform version — no duplicate, no parallel draft —
+ * and whatever is saved at the moment they approve is what gets scheduled.
+ *
+ * Goes through portal_update_output_copy (migration 0056) rather than a
+ * direct update: RLS can gate the row but not the column, and a policy wide
+ * enough to allow a caption edit would also allow the client to change the
+ * schedule or the status. The function writes caption and nothing else.
+ */
+export async function portalUpdateOutputCopy(outputId: string, caption: string): Promise<ActionResult> {
+  const previewRefusal = await previewBlock();
+  if (previewRefusal) return previewRefusal;
+
+  return runAction(async () => {
+    const supabase = await createClient();
+    const { error } = await supabase.rpc("portal_update_output_copy", {
+      output_id: outputId,
+      new_caption: caption.trim(),
+    });
+    if (error) throw new UserFacingError(error.message);
+    revalidatePath("/portal/content");
+    return undefined;
+  });
+}

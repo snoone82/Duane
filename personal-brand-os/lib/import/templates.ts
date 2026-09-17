@@ -207,6 +207,7 @@ RULES — follow these exactly:
 3. "pillar" and "audience" must exactly match names that already exist in this client's approved strategy (they will be provided). If unsure, use null — never invent a pillar or audience.
 4. NEVER invent information. Unknown = "NEEDS_CLIENT_CONFIRMATION". Genuinely not applicable = "NOT_APPLICABLE".
 5. Dates must be YYYY-MM-DD.
+6. "clip_id" is the permanent reference for the finished asset, e.g. JG-S10-C03 (client initials, session, clip). Include it whenever it is known — PBOS uses it to match uploaded video files to the right record on import. Never invent one: if it was not supplied, use null.
 
 {
   "pbos_import": "content",
@@ -214,6 +215,7 @@ RULES — follow these exactly:
   "ideas": [
     {
       "title": "REQUIRED — the master idea, e.g. Invisible Authority",
+      "clip_id": "Permanent clip reference if known, e.g. JG-S10-C03 — otherwise null",
       "pillar": "existing pillar name or null",
       "audience": "existing audience name or null",
       "hook": "The opening line / angle",
