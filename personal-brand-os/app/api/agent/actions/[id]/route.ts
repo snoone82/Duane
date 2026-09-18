@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import type { Database } from "@/lib/database.types";
-import { AgentAuthError, assertClientAllowed, authenticateAgent } from "@/lib/agent/auth";
+import { AgentAuthError, OPAQUE_FAILURE, assertClientAllowed, authenticateAgent } from "@/lib/agent/auth";
 import {
   parseDate,
   parsePriority,
@@ -26,12 +26,22 @@ import {
 
 export const maxDuration = 30;
 
+/**
+ * Nothing about an internal failure crosses this boundary.
+ *
+ * These routes hold the service-role key, and a raw error from that client
+ * can carry the credential itself (it has), another client's data, or the
+ * schema. So only errors we deliberately worded are returned; everything
+ * else becomes an opaque 500 and the detail goes to the server log, where
+ * Vercel keeps it and the public does not see it.
+ */
 function fail(error: unknown) {
   if (error instanceof AgentAuthError) {
+    if (error.detail) console.error("[agent-api]", error.code, error.detail);
     return NextResponse.json({ ok: false, error: error.code, message: error.message }, { status: error.status });
   }
-  const message = error instanceof Error ? error.message : "Something went wrong.";
-  return NextResponse.json({ ok: false, error: "internal_error", message }, { status: 500 });
+  console.error("[agent-api] unhandled:", error);
+  return NextResponse.json({ ok: false, error: "internal_error", message: OPAQUE_FAILURE }, { status: 500 });
 }
 
 async function loadAction(
@@ -40,7 +50,7 @@ async function loadAction(
   id: string
 ): Promise<ActionRow & { client?: { name: string } | null }> {
   const { data, error } = await supabase.from("actions").select("*, client:clients(name)").eq("id", id).maybeSingle();
-  if (error) throw new AgentAuthError(500, "query_failed", error.message);
+  if (error) throw new AgentAuthError(500, "query_failed", OPAQUE_FAILURE, error.message);
   if (!data) throw new AgentAuthError(404, "action_not_found", `No action with id ${id}.`);
   return data;
 }
@@ -133,7 +143,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       .eq("id", id)
       .select("*, client:clients(name)")
       .single();
-    if (error) throw new AgentAuthError(500, "update_failed", error.message);
+    if (error) throw new AgentAuthError(500, "update_failed", OPAQUE_FAILURE, error.message);
 
     return NextResponse.json({ ok: true, action: serialiseAction(data, todayInLondon()) });
   } catch (error) {

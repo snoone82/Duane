@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { AgentAuthError, authenticateAgent, scopedClientIds } from "@/lib/agent/auth";
+import { AgentAuthError, OPAQUE_FAILURE, authenticateAgent, scopedClientIds } from "@/lib/agent/auth";
 import {
   OPEN_STATUS_VALUES,
   parseDate,
@@ -28,12 +28,22 @@ import {
 
 export const maxDuration = 30;
 
+/**
+ * Nothing about an internal failure crosses this boundary.
+ *
+ * These routes hold the service-role key, and a raw error from that client
+ * can carry the credential itself (it has), another client's data, or the
+ * schema. So only errors we deliberately worded are returned; everything
+ * else becomes an opaque 500 and the detail goes to the server log, where
+ * Vercel keeps it and the public does not see it.
+ */
 function fail(error: unknown) {
   if (error instanceof AgentAuthError) {
+    if (error.detail) console.error("[agent-api]", error.code, error.detail);
     return NextResponse.json({ ok: false, error: error.code, message: error.message }, { status: error.status });
   }
-  const message = error instanceof Error ? error.message : "Something went wrong.";
-  return NextResponse.json({ ok: false, error: "internal_error", message }, { status: 500 });
+  console.error("[agent-api] unhandled:", error);
+  return NextResponse.json({ ok: false, error: "internal_error", message: OPAQUE_FAILURE }, { status: 500 });
 }
 
 export async function GET(request: NextRequest) {
@@ -101,7 +111,7 @@ export async function GET(request: NextRequest) {
     query = query.limit(limit);
 
     const { data, error } = await query;
-    if (error) throw new AgentAuthError(500, "query_failed", error.message);
+    if (error) throw new AgentAuthError(500, "query_failed", OPAQUE_FAILURE, error.message);
 
     const actions = (data ?? []).map((row) => serialiseAction(row, today));
     return NextResponse.json({
@@ -158,7 +168,7 @@ export async function POST(request: NextRequest) {
     };
 
     const { data, error } = await supabase.from("actions").insert(insert).select("*, client:clients(name)").single();
-    if (error) throw new AgentAuthError(500, "insert_failed", error.message);
+    if (error) throw new AgentAuthError(500, "insert_failed", OPAQUE_FAILURE, error.message);
 
     return NextResponse.json({ ok: true, action: serialiseAction(data, todayInLondon()) }, { status: 201 });
   } catch (error) {
