@@ -140,8 +140,17 @@ export async function authenticateAgent(
     );
   }
 
-  // Best effort — a failed stamp must never block a valid request.
-  void supabase.from("agent_tokens").update({ last_used_at: new Date().toISOString() }).eq("id", row.id);
+  // Awaited, not fired and forgotten. As a floating promise this never
+  // landed: a serverless function returns its response and the runtime
+  // freezes before the write goes out, so last_used_at stayed null through
+  // eight live calls during acceptance testing. That column is how you spot
+  // a token that has gone quiet, or one being used when it shouldn't be —
+  // worth one round trip. A failed stamp still must not block the request.
+  const { error: stampError } = await supabase
+    .from("agent_tokens")
+    .update({ last_used_at: new Date().toISOString() })
+    .eq("id", row.id);
+  if (stampError) console.error("[agent-api] last_used_at:", stampError.message);
 
   return {
     identity: {
