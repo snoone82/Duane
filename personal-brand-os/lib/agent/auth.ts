@@ -42,12 +42,27 @@ export interface AgentIdentity {
 export class AgentAuthError extends Error {
   readonly status: number;
   readonly code: string;
-  constructor(status: number, code: string, message: string) {
+  /**
+   * Detail for the server log only — NEVER returned to the caller.
+   *
+   * This exists because of a real leak: a malformed service-role key made
+   * the Supabase client throw "invalid header value: <the key>", and that
+   * message was passed straight into the 500 response body, handing the key
+   * to an unauthenticated request. Underlying error text from a
+   * service-role client can contain the credential, other clients' data, or
+   * the schema, so none of it crosses the boundary now.
+   */
+  readonly detail?: string;
+  constructor(status: number, code: string, message: string, detail?: string) {
     super(message);
     this.status = status;
     this.code = code;
+    this.detail = detail;
   }
 }
+
+/** What a caller is allowed to be told about a server-side failure. */
+export const OPAQUE_FAILURE = "PBOS couldn't complete that request. The detail is in the server log.";
 
 /** The token as stored. Never store or log the token itself. */
 export function hashToken(token: string): string {
@@ -59,7 +74,11 @@ export function hashToken(token: string): string {
  * so it is confined to this module and handed only to the agent routes.
  */
 export function createAgentClient() {
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+  // Strip ALL whitespace, not just the ends. A key pasted into a Vercel
+  // field can arrive with a line break wrapped into the middle of it, which
+  // fails later as an invalid HTTP header rather than as a config error —
+  // and that failure used to carry the key into the response body.
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.replace(/\s+/g, "");
   if (!serviceKey) {
     throw new AgentAuthError(
       503,
@@ -102,7 +121,7 @@ export async function authenticateAgent(
     .select("id,name,token_hash,scopes,client_ids,revoked_at")
     .eq("token_hash", presented)
     .maybeSingle();
-  if (error) throw new AgentAuthError(500, "lookup_failed", error.message);
+  if (error) throw new AgentAuthError(500, "lookup_failed", OPAQUE_FAILURE, error.message);
 
   // Compare again in constant time. The lookup above is an indexed equality
   // match on a hash, which is fine, but this keeps the decision itself
