@@ -19,61 +19,76 @@ export type Database = {
           checklist: Json
           client_id: string
           completed_at: string | null
+          completion_evidence: string
           consultation_id: string | null
           content_id: string | null
           created_at: string
+          created_by_agent: boolean
           description: string
           due_date: string | null
           id: string
+          last_checked_at: string | null
           owner_name: string | null
           owner_user_id: string | null
           portal_notes: string
           priority: string
           source: string
+          source_reference: string
           status: Database["public"]["Enums"]["action_status"]
           title: string
           updated_at: string
           visibility: string
+          waiting_on: string
         }
         Insert: {
           checklist?: Json
           client_id: string
           completed_at?: string | null
+          completion_evidence?: string
           consultation_id?: string | null
           content_id?: string | null
           created_at?: string
+          created_by_agent?: boolean
           description?: string
           due_date?: string | null
           id?: string
+          last_checked_at?: string | null
           owner_name?: string | null
           owner_user_id?: string | null
           portal_notes?: string
           priority?: string
           source?: string
+          source_reference?: string
           status?: Database["public"]["Enums"]["action_status"]
           title: string
           updated_at?: string
           visibility?: string
+          waiting_on?: string
         }
         Update: {
           checklist?: Json
           client_id?: string
           completed_at?: string | null
+          completion_evidence?: string
           consultation_id?: string | null
           content_id?: string | null
           created_at?: string
+          created_by_agent?: boolean
           description?: string
           due_date?: string | null
           id?: string
+          last_checked_at?: string | null
           owner_name?: string | null
           owner_user_id?: string | null
           portal_notes?: string
           priority?: string
           source?: string
+          source_reference?: string
           status?: Database["public"]["Enums"]["action_status"]
           title?: string
           updated_at?: string
           visibility?: string
+          waiting_on?: string
         }
         Relationships: [
           {
@@ -154,6 +169,42 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      agent_tokens: {
+        Row: {
+          client_ids: string[] | null
+          created_at: string
+          created_by: string | null
+          id: string
+          last_used_at: string | null
+          name: string
+          revoked_at: string | null
+          scopes: string[]
+          token_hash: string
+        }
+        Insert: {
+          client_ids?: string[] | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          last_used_at?: string | null
+          name: string
+          revoked_at?: string | null
+          scopes?: string[]
+          token_hash: string
+        }
+        Update: {
+          client_ids?: string[] | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          last_used_at?: string | null
+          name?: string
+          revoked_at?: string | null
+          scopes?: string[]
+          token_hash?: string
+        }
+        Relationships: []
       }
       audiences: {
         Row: {
@@ -2986,7 +3037,13 @@ export type Database = {
       }
     }
     Enums: {
-      action_status: "not_started" | "in_progress" | "completed" | "waiting"
+      action_status:
+        | "not_started"
+        | "in_progress"
+        | "completed"
+        | "waiting"
+        | "blocked"
+        | "cancelled"
       authority_status:
         | "identified"
         | "pitched"
@@ -3161,7 +3218,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      action_status: ["not_started", "in_progress", "completed", "waiting"],
+      action_status: ["not_started", "in_progress", "completed", "waiting", "blocked", "cancelled"],
       authority_status: [
         "identified",
         "pitched",

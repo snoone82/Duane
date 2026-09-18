@@ -65,7 +65,12 @@ export const ACTION_STATUS: { value: ActionStatus; label: string; color: TagColo
   { value: "not_started", label: "Not Started", color: "slate" },
   { value: "in_progress", label: "In Progress", color: "blue" },
   { value: "waiting", label: "Waiting", color: "amber" },
+  // Added for the agent loop (Duane, 18 Sep 2026): he needs to tell "nobody
+  // has started it" apart from "something is stopping it", and to close an
+  // action that is never going to happen without pretending it was done.
+  { value: "blocked", label: "Blocked", color: "red" },
   { value: "completed", label: "Completed", color: "green" },
+  { value: "cancelled", label: "Cancelled", color: "slate" },
 ];
 
 export const CONTENT_PRIORITY: { value: ContentPriority; label: string; color: TagColor }[] = [
