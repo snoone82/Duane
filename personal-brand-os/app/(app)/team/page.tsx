@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentProfile } from "@/lib/current-user";
 import { RoleSelect } from "@/components/team/RoleSelect";
+import { AgentTokenPanel } from "@/components/team/AgentTokenPanel";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { Table, Thead, Th, Td, Tr } from "@/components/ui/Table";
 import { formatDate } from "@/lib/format";
@@ -13,9 +14,13 @@ export default async function TeamPage() {
   if (profile?.role !== "admin") redirect("/");
 
   const supabase = await createClient();
-  const [{ data: profiles }, { data: portalLinks }] = await Promise.all([
+  const [{ data: profiles }, { data: portalLinks }, { data: agentTokens }] = await Promise.all([
     supabase.from("profiles").select("id,full_name,email,role,created_at").order("created_at", { ascending: true }),
     supabase.from("clients").select("name,portal_user_id").not("portal_user_id", "is", null),
+    supabase
+      .from("agent_tokens")
+      .select("id,name,created_at,last_used_at,revoked_at,scopes")
+      .order("created_at", { ascending: false }),
   ]);
 
   const portalClientByUser = new Map((portalLinks ?? []).map((c) => [c.portal_user_id as string, c.name]));
@@ -73,6 +78,8 @@ export default async function TeamPage() {
           </tbody>
         </Table>
       </div>
+
+      <AgentTokenPanel tokens={agentTokens ?? []} />
 
       <div className="mt-4 rounded-lg border border-border bg-surface p-4 text-sm text-ink-soft">
         <p className="mb-1 font-medium text-ink">Adding a new login</p>
