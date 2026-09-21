@@ -6,6 +6,43 @@ completion → close or escalate.*
 
 Base URL: `https://app.thealignedmedia.com`
 
+## Connecting ChatGPT to this API
+
+The endpoints alone do nothing — ChatGPT has to be *told they exist*. PBOS
+serves its own OpenAPI description for that, from the live deployment, so it
+cannot drift from the code:
+
+    https://app.thealignedmedia.com/api/agent/openapi.json
+
+That URL is deliberately public: ChatGPT fetches it while setting the action
+up, before it holds a token, and it describes shapes rather than data.
+
+### As a GPT Action (ChatGPT)
+
+1. ChatGPT → **Create a GPT** → **Configure** → **Create new action**
+2. **Import from URL** → paste the URL above
+3. **Authentication** → **API Key** → Auth Type **Bearer** → paste a PBOS
+   agent token (Team & access → Agent access)
+4. Save. The four operations appear as `listActions`, `createAction`,
+   `getAction`, `updateAction`.
+
+A privacy-policy URL is only required to publish a GPT publicly; a private
+one needs none.
+
+### Worth putting in the GPT instructions
+
+> PBOS is the permanent record of commitments. Before answering anything
+> about outstanding, overdue or waiting work, read it with listActions —
+> never answer from memory of this conversation. Before creating an action,
+> search with `q=` to check it is not already there. When updating, send only
+> the fields that changed.
+
+### As an MCP server (ChatGPT Work, later)
+
+Not built. When it is wanted, it wraps these same endpoints — the auth,
+scoping and validation stay exactly where they are, and only the transport
+differs.
+
 ## Authentication
 
 ```
