@@ -31,11 +31,31 @@ one needs none.
 
 ### Worth putting in the GPT instructions
 
-> PBOS is the permanent record of commitments. Before answering anything
-> about outstanding, overdue or waiting work, read it with listActions —
-> never answer from memory of this conversation. Before creating an action,
-> search with `q=` to check it is not already there. When updating, send only
-> the fields that changed.
+The GPT Action editor caps each operation `description` at **300 characters**,
+so the operation descriptions carry only what decides *which* operation to
+call. Everything else belongs here, where there is no limit — paste this into
+the GPT's Instructions:
+
+> PBOS is the permanent record of commitments. Before answering anything about
+> outstanding, overdue or waiting work, read it with listActions — never answer
+> from memory of this conversation.
+>
+> Before creating an action, search with `q=` to check it is not already there.
+>
+> When updating, send only the fields that changed. Setting `waiting_on` alone
+> is enough to move something to waiting. When marking something complete,
+> always include `completion_evidence` saying how you know — "user confirmed",
+> "email sent", "client replied", "content published".
+>
+> If nothing has changed but you have checked, still call updateAction with no
+> changes: that records the check, which is what makes "promised Friday, no
+> evidence since Tuesday" answerable.
+>
+> For a daily review, call listActions four times: `due=today`, `due=overdue`,
+> `status=waiting`, `status=blocked`.
+>
+> If a client name matches more than one client, PBOS returns 409 — ask which
+> one rather than choosing.
 
 ### As an MCP server (ChatGPT Work, later)
 
