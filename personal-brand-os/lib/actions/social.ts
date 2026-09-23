@@ -11,6 +11,7 @@ const FIELDS = [
   "account_name",
   "owner_brand",
   "url",
+  "bio",
   "account_type",
   "account_status",
   "objective",

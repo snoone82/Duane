@@ -2736,6 +2736,8 @@ export type Database = {
           account_type: string
           ai_instructions: string
           audience: string
+          bio: string
+          bio_updated_at: string | null
           ayrshare_platform: string
           ayrshare_profile_id: string | null
           cadence_period: string
@@ -2776,6 +2778,8 @@ export type Database = {
           account_type?: string
           ai_instructions?: string
           audience?: string
+          bio?: string
+          bio_updated_at?: string | null
           ayrshare_platform?: string
           ayrshare_profile_id?: string | null
           cadence_period?: string
@@ -2816,6 +2820,8 @@ export type Database = {
           account_type?: string
           ai_instructions?: string
           audience?: string
+          bio?: string
+          bio_updated_at?: string | null
           ayrshare_platform?: string
           ayrshare_profile_id?: string | null
           cadence_period?: string

@@ -122,6 +122,80 @@ const DOCUMENT = {
         },
       },
     },
+    "/api/agent/clients": {
+      get: {
+        operationId: "findClient",
+        summary: "Find a client and get its PBOS id",
+        description:
+          "Search clients by name or company. Always returns a list — check it before acting. Use this first when a " +
+          "request names a client, then work from the returned id rather than the name.",
+        parameters: [
+          { name: "q", in: "query", description: "Partial name or company. Omit to list all clients.", schema: { type: "string" } },
+        ],
+        responses: {
+          "200": {
+            description: "Matching clients.",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    ok: { type: "boolean" },
+                    count: { type: "integer" },
+                    clients: { type: "array", items: { $ref: "#/components/schemas/ClientMatch" } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    "/api/agent/clients/{id}/{section}": {
+      get: {
+        operationId: "getClientSection",
+        summary: "Read a client's approved record",
+        description:
+          "Read live client data from PBOS: 'overview' (north star, commercial priority, tier), 'profile' " +
+          "(positioning, vision, goals), 'content-strategy' (audiences, pillars, guidelines), 'social-profiles' " +
+          "(accounts, live bios, cadence). Read these before writing any content.",
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            description: "PBOS client id, or a client name. A name matching two clients returns 409 — ask which, then use the id.",
+            schema: { type: "string" },
+          },
+          {
+            name: "section",
+            in: "path",
+            required: true,
+            description:
+              "Which part to read. Use overview for commercial context, profile for positioning and long-term goals, content-strategy for audiences, pillars, tone and things to avoid, social-profiles for each account's current bio, cadence and format rules.",
+            schema: { type: "string", enum: ["overview", "profile", "content-strategy", "social-profiles"] },
+          },
+        ],
+        responses: {
+          "200": {
+            description: "The requested section. Fields carry updated_at where PBOS records one — check it before treating a value as current.",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    ok: { type: "boolean" },
+                    client: { $ref: "#/components/schemas/ClientRef" },
+                    section: { type: "string" },
+                    data: { type: "object", description: "Shape depends on the section requested." },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
     "/api/agent/actions/{id}": {
       get: {
         operationId: "getAction",
@@ -158,6 +232,20 @@ const DOCUMENT = {
   },
   components: {
     schemas: {
+      ClientMatch: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "The canonical PBOS client id. Use this for every subsequent call." },
+          name: { type: "string" },
+          company: { type: "string", nullable: true },
+          status: { type: "string" },
+        },
+      },
+      ClientRef: {
+        type: "object",
+        description: "Which client was actually read — confirm it is the one you meant.",
+        properties: { id: { type: "string" }, name: { type: "string" } },
+      },
       Action: {
         type: "object",
         properties: {
