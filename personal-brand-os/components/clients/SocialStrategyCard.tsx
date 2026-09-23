@@ -87,7 +87,7 @@ export function SocialStrategyCard({
   };
 
   const save = (
-    field: "platform" | "account_name" | "owner_brand" | "url" | "account_type" | "account_status" | "objective" | "audience" | "content_types" | "posting_frequency" | "growth_strategy" | "engagement_strategy" | "cta_strategy"
+    field: "platform" | "account_name" | "owner_brand" | "url" | "bio" | "account_type" | "account_status" | "objective" | "audience" | "content_types" | "posting_frequency" | "growth_strategy" | "engagement_strategy" | "cta_strategy"
   ) => (value: string) => updateSocialStrategyField(clientId, strategy.id, field, value);
 
   const toggle = (flag: "is_primary" | "show_on_overview" | "publishing_enabled") => (value: boolean) =>
@@ -196,6 +196,19 @@ export function SocialStrategyCard({
             </div>
           </div>
         )}
+
+        {/* The bio actually live on the account. Held here so content and
+            bios are written from the same record, and so the Command Centre
+            can answer "what is Daniel's current LinkedIn bio?" without
+            anyone pasting it into a chat. */}
+        <AutosaveTextarea
+          id={`soc-bio-${strategy.id}`}
+          label="Current bio"
+          helpText="The approved bio live on this profile right now. Keep it in step with the account — this is what the team and the assistant both work from."
+          initialValue={strategy.bio}
+          onSave={save("bio")}
+          rows={3}
+        />
 
         <PlatformStrategyPanel clientId={clientId} strategy={strategy} audiences={audiences} />
 
