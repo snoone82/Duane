@@ -228,3 +228,128 @@ export async function portalUpdateOutputCopy(outputId: string, caption: string):
     return undefined;
   });
 }
+
+// ---------------------------------------------------------------------------
+// Developing an idea into production (Duane + Jonny, 24 Sep 2026)
+// ---------------------------------------------------------------------------
+
+/** What a client may set while developing their own idea. Deliberately not
+ * the admin field list: dates, priority, owner and approver stay internal,
+ * and the database enforces that independently in
+ * enforce_content_approval_transition. */
+const DEVELOP_FIELDS = ["title", "hook", "body", "notes", "pillar_id", "audience_id"] as const;
+type DevelopField = (typeof DEVELOP_FIELDS)[number];
+
+/**
+ * Save one field while the client develops their own idea.
+ *
+ * Separate from portalUpdateContentIdea (title/body only) rather than
+ * widening it, because the two answer different questions: that one is "tidy
+ * up what I submitted", this one is "turn it into something producible".
+ */
+export async function portalDevelopIdeaField(
+  ideaId: string,
+  field: DevelopField,
+  value: string
+): Promise<ActionResult> {
+  const previewRefusal = await previewBlock();
+  if (previewRefusal) return previewRefusal;
+  if (!DEVELOP_FIELDS.includes(field)) return { ok: false, message: "That field can't be edited here." };
+  if (field === "title" && !value.trim()) return { ok: false, message: "The title can't be empty." };
+
+  return runAction(async () => {
+    const supabase = await createClient();
+    // Empty select means "clear it" for the two reference fields; a blank
+    // pillar is a real state, not a validation failure.
+    const patch =
+      field === "pillar_id" || field === "audience_id"
+        ? { [field]: value || null }
+        : { [field]: field === "title" ? value.trim() : value };
+    const { data: updated, error } = await supabase
+      .from("content_ideas")
+      .update(patch as never)
+      .eq("id", ideaId)
+      .select("id")
+      .maybeSingle();
+    if (error) throw new UserFacingError(error.message);
+    if (!updated) throw new UserFacingError("This is now with the team — it can't be edited here any more.");
+    revalidatePath("/portal/content");
+    return undefined;
+  });
+}
+
+/** Attach master media or a thumbnail the client uploaded to their own idea.
+ * The file itself goes browser → storage; this records where it landed. */
+export async function portalAttachIdeaMedia(
+  ideaId: string,
+  kind: "media" | "thumbnail",
+  storagePath: string
+): Promise<ActionResult> {
+  const previewRefusal = await previewBlock();
+  if (previewRefusal) return previewRefusal;
+  if (kind !== "media" && kind !== "thumbnail") return { ok: false, message: "Unknown media slot." };
+
+  return runAction(async () => {
+    const supabase = await createClient();
+    const { data: signed } = await supabase.storage.from("client-files").createSignedUrl(storagePath, 60 * 60 * 24 * 365);
+    const patch =
+      kind === "media"
+        ? { media_path: storagePath, media_url: signed?.signedUrl ?? null }
+        : { thumbnail_path: storagePath, thumbnail_url: signed?.signedUrl ?? null };
+    const { data: updated, error } = await supabase
+      .from("content_ideas")
+      .update(patch as never)
+      .eq("id", ideaId)
+      .select("id")
+      .maybeSingle();
+    if (error) throw new UserFacingError(error.message);
+    if (!updated) throw new UserFacingError("This is now with the team — media can't be changed here any more.");
+    revalidatePath("/portal/content");
+    return undefined;
+  });
+}
+
+/**
+ * "Send to production" — the client says this is no longer just an idea.
+ *
+ * The same record moves to approved_production; nothing is copied, which is
+ * the whole point of the request. From here the RLS USING clause stops
+ * matching, so it becomes read-only to the client and picks up in the team's
+ * pipeline exactly where an internally-progressed item would.
+ */
+export async function portalSendIdeaToProduction(ideaId: string): Promise<ActionResult> {
+  const previewRefusal = await previewBlock();
+  if (previewRefusal) return previewRefusal;
+
+  return runAction(async () => {
+    const supabase = await createClient();
+    const { data: idea, error: readError } = await supabase
+      .from("content_ideas")
+      .select("id,title,body,hook,media_path")
+      .eq("id", ideaId)
+      .maybeSingle();
+    if (readError) throw new UserFacingError(readError.message);
+    if (!idea) throw new UserFacingError("That idea is no longer yours to send.");
+    if (!idea.title.trim()) throw new UserFacingError("Give it a title before sending it to production.");
+    // Something to produce FROM. A title alone gives the team nothing to
+    // work with, and a silent empty brief wastes a round trip.
+    if (!idea.body.trim() && !idea.hook.trim() && !idea.media_path) {
+      throw new UserFacingError(
+        "Add the content first — some copy, a hook, or the video or image you want produced — then send it."
+      );
+    }
+
+    const { data: updated, error } = await supabase
+      .from("content_ideas")
+      .update({ status: "approved_production" })
+      .eq("id", ideaId)
+      .select("id")
+      .maybeSingle();
+    if (error) throw new UserFacingError(error.message);
+    if (!updated) throw new UserFacingError("That idea is no longer yours to send.");
+
+    revalidatePath("/portal/content");
+    revalidatePath("/");
+    return undefined;
+  });
+}
