@@ -1,4 +1,5 @@
 import type { SupabaseServerClient } from "@/lib/supabase/server";
+import { isoToLondonInput } from "@/lib/datetime";
 import type { TagColor } from "@/lib/status";
 import { getClientsMap } from "@/lib/data/shared";
 import { socialAccountLabel } from "@/lib/format";
@@ -42,12 +43,30 @@ export const CALENDAR_TYPE_META: Record<CalendarItemType, { label: string; color
   milestone: { label: "Milestones", color: "blue" },
 };
 
+/**
+ * Which London day and time an instant falls on.
+ *
+ * These used to slice the raw ISO string, which reads the UTC components
+ * straight off the wire: a post stored at 07:00Z (08:00 UK, BST) showed as
+ * 07:00 on the calendar while Content correctly showed 08:00 — Duane
+ * spotted the two views disagreeing.
+ *
+ * The date matters as much as the time. Slicing also put a 00:30 UK post,
+ * stored as 23:30Z the previous day, on the wrong calendar day entirely —
+ * a whole day out, not an hour.
+ */
+function londonDayAndTime(iso: string): { date: string; time: string } {
+  const input = isoToLondonInput(iso);
+  if (!input) return { date: iso.slice(0, 10), time: iso.slice(11, 16) };
+  return { date: input.slice(0, 10), time: input.slice(11, 16) };
+}
+
 function datePart(iso: string): string {
-  return iso.slice(0, 10);
+  return londonDayAndTime(iso).date;
 }
 
 function timePart(iso: string): string {
-  return iso.slice(11, 16);
+  return londonDayAndTime(iso).time;
 }
 
 /**
