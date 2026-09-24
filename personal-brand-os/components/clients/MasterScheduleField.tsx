@@ -4,7 +4,9 @@ import { useState, useTransition } from "react";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
 import { setMasterSchedule, scheduleAllOutputs } from "@/lib/actions/content";
+import { applyMasterScheduleAndSend } from "@/lib/actions/publishing";
 import { formatDateTime } from "@/lib/format";
+import { isoToLondonInput } from "@/lib/datetime";
 
 /**
  * Master post schedule (Duane, 3 Sep 2026), sitting directly under Master
@@ -30,27 +32,54 @@ export function MasterScheduleField({
   /** Versions already handed to Ayrshare's scheduler — left alone. */
   handedToAyrshare: number;
 }) {
-  const [when, setWhen] = useState(toLocalInputValue(scheduledAt));
+  const [when, setWhen] = useState(isoToLondonInput(scheduledAt));
   const [notice, setNotice] = useState<string | null>(null);
+  const [attention, setAttention] = useState<{ label: string; reason: string }[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
+  /**
+   * Apply the time, put every version on the calendar, and hand the eligible
+   * ones to Ayrshare — one press.
+   *
+   * Duane: applying the time alone "defeats most of the purpose", because it
+   * left five more rounds of Schedule → Send to Ayrshare to do by hand.
+   */
   function apply(value: string) {
     setError(null);
     setNotice(null);
+    setAttention([]);
     startTransition(async () => {
-      const result = await setMasterSchedule(clientId, ideaId, value);
+      // Clearing is only ever the time — nothing to schedule or send.
+      if (!value) {
+        const cleared = await setMasterSchedule(clientId, ideaId, "");
+        if (!cleared.ok) setError(cleared.message);
+        else
+          setNotice(
+            `Master schedule cleared${cleared.data.applied > 0 ? ` — removed from ${cleared.data.applied} version${cleared.data.applied === 1 ? "" : "s"} not yet on the calendar` : ""}.`
+          );
+        return;
+      }
+
+      const result = await applyMasterScheduleAndSend(clientId, ideaId, value);
       if (!result.ok) {
         setError(result.message);
         return;
       }
-      const { applied, skipped } = result.data;
+      const { scheduled, sent, needsAttention, alreadyWithAyrshare } = result.data;
       const versions = (n: number) => `${n} platform version${n === 1 ? "" : "s"}`;
       setNotice(
-        value
-          ? `Applied to ${versions(applied)}.${skipped > 0 ? ` ${versions(skipped)} already handed to Ayrshare left as ${skipped === 1 ? "it is" : "they are"}.` : ""} Adjust any platform below if it needs a different time.`
-          : `Master schedule cleared${applied > 0 ? ` — removed from ${versions(applied)} not yet on the calendar` : ""}.`
+        [
+          `${versions(scheduled)} scheduled`,
+          sent > 0 ? `${sent} handed to Ayrshare to publish automatically` : null,
+          alreadyWithAyrshare > 0
+            ? `${alreadyWithAyrshare} already with Ayrshare, left alone — reschedule ${alreadyWithAyrshare === 1 ? "it" : "them"} from ${alreadyWithAyrshare === 1 ? "its" : "their"} own row`
+            : null,
+        ]
+          .filter(Boolean)
+          .join(" · ") + ". Any platform can still be moved on its own below."
       );
+      setAttention(needsAttention);
     });
   }
 
@@ -72,9 +101,9 @@ export function MasterScheduleField({
       <div>
         <p className="text-xs font-semibold uppercase tracking-[0.14em] text-accent-strong">Master post schedule</p>
         <p className="mt-0.5 text-xs text-ink-faint">
-          Set once here and every platform version takes this date and time. Each platform stays editable below, so
-          Instagram or TikTok can be moved on their own afterwards. Changing this re-applies it to every unpublished
-          version.
+One press sets the time on every platform version, puts them on the calendar, and hands the connected ones to
+          Ayrshare to publish automatically. Each platform stays editable below, so Instagram or TikTok can be moved on
+          their own afterwards. Times are UK.
         </p>
       </div>
       <div className="flex flex-wrap items-end gap-2">
@@ -89,7 +118,9 @@ export function MasterScheduleField({
           />
         </div>
         <Button variant="primary" size="sm" onClick={() => apply(when)} disabled={isPending || !when}>
-          {isPending ? "Applying…" : `Apply to ${versionCount === 1 ? "the platform version" : `all ${versionCount} platform versions`}`}
+          {isPending
+            ? "Scheduling…"
+            : `Schedule ${versionCount === 1 ? "the platform version" : `all ${versionCount} platform versions`} & send`}
         </Button>
         {scheduledAt && (
           <Button
@@ -126,15 +157,23 @@ export function MasterScheduleField({
         </div>
       )}
       {notice && <p className="text-xs text-success">{notice}</p>}
+      {attention.length > 0 && (
+        <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2">
+          <p className="text-xs font-medium text-ink">
+            {attention.length} version{attention.length === 1 ? "" : "s"} need{attention.length === 1 ? "s" : ""} attention — the
+            rest went out.
+          </p>
+          <ul className="mt-1 space-y-0.5">
+            {attention.map((item) => (
+              <li key={item.label} className="text-xs text-ink-soft">
+                <span className="font-medium text-ink">{item.label}</span> — {item.reason}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {error && <p className="text-xs text-danger">{error}</p>}
     </div>
   );
 }
 
-function toLocalInputValue(iso: string | null): string {
-  if (!iso) return "";
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}

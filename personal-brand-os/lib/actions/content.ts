@@ -11,6 +11,7 @@ import { fieldPatch } from "@/lib/field-patch";
 import { isPlanLocked } from "@/lib/monthly-plan-format";
 import { PRODUCTION_CHECKLIST_STEPS, productionChecklistItemDone } from "@/lib/production-checklist";
 import { cancelOpenHandover, resolveProfileKey } from "@/lib/ayrshare-handover";
+import { parseAppDateTime } from "@/lib/datetime";
 import { openHandover, readHistory } from "@/lib/ayrshare-history";
 
 function revalidateContent(clientId: string) {
@@ -536,8 +537,9 @@ export async function scheduleContentOutput(
   scheduledAt: string
 ): Promise<ActionResult> {
   if (!scheduledAt) return { ok: false, message: "Pick a date and time." };
-  const when = new Date(scheduledAt);
-  if (Number.isNaN(when.getTime())) return { ok: false, message: "That date didn't parse." };
+  // A bare wall clock from datetime-local is London, not the server's UTC.
+  const when = parseAppDateTime(scheduledAt);
+  if (!when) return { ok: false, message: "That date didn't parse." };
 
   return runAction(async () => {
     const supabase = await createClient();
@@ -560,8 +562,8 @@ export async function publishContentOutput(_prev: ActionResult | null, formData:
   const liveUrl = String(formData.get("live_url") ?? "").trim();
   const publishedAtRaw = String(formData.get("published_at") ?? "");
   const notes = String(formData.get("notes") ?? "").trim();
-  const publishedAt = publishedAtRaw ? new Date(publishedAtRaw) : new Date();
-  if (Number.isNaN(publishedAt.getTime())) return { ok: false, message: "That date didn't parse." };
+  const publishedAt = publishedAtRaw ? parseAppDateTime(publishedAtRaw) : new Date();
+  if (!publishedAt) return { ok: false, message: "That date didn't parse." };
 
   return runAction(async () => {
     const supabase = await createClient();
@@ -913,8 +915,8 @@ export async function setMasterSchedule(
   scheduledAt: string
 ): Promise<ActionResult<{ applied: number; skipped: number }>> {
   const value = scheduledAt.trim();
-  const when = value ? new Date(value) : null;
-  if (when && Number.isNaN(when.getTime())) return { ok: false, message: "That date didn't parse." };
+  const when = value ? parseAppDateTime(value) : null;
+  if (value && !when) return { ok: false, message: "That date didn't parse." };
   const iso = when ? when.toISOString() : null;
 
   return runAction(async () => {
