@@ -1,3 +1,4 @@
+import { APP_TIME_ZONE } from "@/lib/datetime";
 /** Small, boring formatting helpers used across every tab. */
 
 export function formatDate(value: string | null | undefined): string {
@@ -11,7 +12,16 @@ export function formatDateTime(value: string | null | undefined): string {
   if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "—";
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
+  // Pinned to London so a timestamp reads the same whether this ran on
+  // the server or in the browser, and the same wherever the reader is.
+  return date.toLocaleDateString("en-US", {
+    timeZone: APP_TIME_ZONE,
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
 export function formatRelativeToToday(value: string | null | undefined): string {

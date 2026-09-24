@@ -27,6 +27,7 @@ import { RegenerateItemDialog } from "@/components/clients/RegenerateItemDialog"
 import { formatDate, formatDateTime } from "@/lib/format";
 import type { Database } from "@/lib/database.types";
 import { openHandover, readHistory } from "@/lib/ayrshare-history";
+import { isoToLondonInput } from "@/lib/datetime";
 
 type Output = Database["public"]["Tables"]["content_outputs"]["Row"];
 
@@ -486,15 +487,8 @@ export function ContentOutputRow({
   );
 }
 
-function toLocalInputValue(iso: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
 function ScheduleModal({ clientId, output, onClose }: { clientId: string; output: Output; onClose: () => void }) {
-  const [when, setWhen] = useState(toLocalInputValue(output.scheduled_at));
+  const [when, setWhen] = useState(isoToLondonInput(output.scheduled_at));
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -558,7 +552,7 @@ function PublishModal({ clientId, output, onClose }: { clientId: string; output:
         </div>
         <div>
           <Label htmlFor={`pub-at-${output.id}`}>Actual publication date &amp; time</Label>
-          <Input id={`pub-at-${output.id}`} name="published_at" type="datetime-local" defaultValue={toLocalInputValue(output.scheduled_at) || toLocalInputValue(new Date().toISOString())} />
+          <Input id={`pub-at-${output.id}`} name="published_at" type="datetime-local" defaultValue={isoToLondonInput(output.scheduled_at) || isoToLondonInput(new Date().toISOString())} />
         </div>
         <div>
           <Label htmlFor={`pub-notes-${output.id}`}>Publication notes</Label>

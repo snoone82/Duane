@@ -6,7 +6,8 @@ import { getCurrentProfile } from "@/lib/current-user";
 import { runAction, type ActionResult } from "@/lib/action-result";
 import { UserFacingError } from "@/lib/errors";
 import { inspectMediaUrl, isVideoMedia, resolveMedia } from "@/lib/media-source";
-import { rollUpMasterStatus } from "@/lib/actions/content";
+import { rollUpMasterStatus, setMasterSchedule } from "@/lib/actions/content";
+import { socialAccountLabel } from "@/lib/format";
 import type { Database, Json } from "@/lib/database.types";
 import {
   AyrshareError,
@@ -17,6 +18,7 @@ import {
   createAyrshareProfile,
   getAyrshareLinkUrl,
   getLinkedNetworks,
+  isAyrshareConfigured,
   sendAyrsharePost,
   getAyrsharePostUrl,
   getAyrshareHistory,
@@ -728,5 +730,110 @@ export async function reconcileDueHandovers(clientId: string): Promise<ActionRes
 
     if (published > 0) revalidateContent(clientId);
     return published;
+  });
+}
+
+/**
+ * Master schedule → every platform version scheduled AND handed to Ayrshare.
+ *
+ * Duane: "Set master time → Apply to all → all five versions scheduled → all
+ * eligible versions sent to Ayrshare. There shouldn't normally be another
+ * five rounds of Schedule → Send to Ayrshare."
+ *
+ * Applying the time was all this used to do, which left the operator doing
+ * the actual work five more times. The three steps are one step now.
+ *
+ * Nothing here fails the batch. A version with no media, no connected
+ * account or a caption Ayrshare rejects is reported by name and the rest go
+ * out — Duane's safeguard, and the right default when four good posts are
+ * held hostage by one broken one.
+ */
+export async function applyMasterScheduleAndSend(
+  clientId: string,
+  ideaId: string,
+  scheduledAt: string
+): Promise<
+  ActionResult<{
+    scheduled: number;
+    sent: number;
+    needsAttention: { label: string; reason: string }[];
+    alreadyWithAyrshare: number;
+  }>
+> {
+  // Step one: the time itself. Its own validation and timezone handling
+  // stay in one place rather than being repeated here.
+  const applied = await setMasterSchedule(clientId, ideaId, scheduledAt);
+  if (!applied.ok) return applied;
+
+  return runAction(async () => {
+    const supabase = await createClient();
+    const { data: outputs, error } = await supabase
+      .from("content_outputs")
+      .select(
+        "id,platform,status,scheduled_at,ayrshare_post_id,ayrshare_history,social_account_id,social:social_strategies(account_name,ayrshare_platform,publishing_enabled)"
+      )
+      .eq("content_id", ideaId)
+      .eq("client_id", clientId)
+      .order("sort_order");
+    if (error) throw new UserFacingError(error.message);
+
+    const label = (row: { platform: string; social?: { account_name: string | null } | null }) =>
+      socialAccountLabel(row.platform, row.social?.account_name);
+
+    const needsAttention: { label: string; reason: string }[] = [];
+    let scheduled = 0;
+    let sent = 0;
+    let alreadyWithAyrshare = 0;
+
+    for (const output of outputs ?? []) {
+      if (output.status === "published") continue;
+
+      // Already queued at Ayrshare: left exactly as it is. Re-sending is how
+      // the same post goes out twice, and rescheduling one of these is a
+      // deliberate act on its own row.
+      if (openHandover(readHistory(output.ayrshare_history))) {
+        alreadyWithAyrshare += 1;
+        continue;
+      }
+
+      if (output.status !== "scheduled") {
+        const { error: markError } = await supabase
+          .from("content_outputs")
+          .update({ status: "scheduled" })
+          .eq("id", output.id);
+        if (markError) {
+          needsAttention.push({ label: label(output), reason: markError.message });
+          continue;
+        }
+      }
+      scheduled += 1;
+
+      // Only an account actually wired up for publishing can be sent. The
+      // rest are legitimately PBOS-only and are not failures — saying so
+      // keeps the report about things that need doing.
+      if (!isAyrshareConfigured()) continue;
+      if (!output.social_account_id || !output.social?.ayrshare_platform) {
+        needsAttention.push({
+          label: label(output),
+          reason: "No publishing account connected — scheduled in PBOS only.",
+        });
+        continue;
+      }
+      if (output.social.publishing_enabled === false) {
+        needsAttention.push({
+          label: label(output),
+          reason: "Publishing is switched off for this account — scheduled in PBOS only.",
+        });
+        continue;
+      }
+
+      const result = await sendOutputToAyrshare(clientId, output.id);
+      if (result.ok) sent += 1;
+      else needsAttention.push({ label: label(output), reason: result.message });
+    }
+
+    await rollUpMasterStatus(supabase, ideaId);
+    revalidateContent(clientId);
+    return { scheduled, sent, needsAttention, alreadyWithAyrshare };
   });
 }
