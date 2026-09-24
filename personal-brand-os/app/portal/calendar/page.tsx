@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { isoToLondonInput } from "@/lib/datetime";
 import { createClient } from "@/lib/supabase/server";
 import { getPortalContext } from "@/lib/data/portal";
 import { MediaThumb } from "@/components/portal/MediaThumb";
@@ -153,8 +154,8 @@ export default async function PortalCalendarPage({
   for (const o of (scheduled ?? []) as OutputRow[]) {
     const when = o.scheduled_at as string;
     items.push({
-      date: when.slice(0, 10),
-      time: when.slice(11, 16),
+      date: isoToLondonInput(when).slice(0, 10),
+      time: isoToLondonInput(when).slice(11, 16),
       type: "content",
       label: `${o.content?.title ?? "Content"} · ${socialAccountLabel(o.platform, o.social?.account_name)}`,
       platform: o.platform,
@@ -166,8 +167,8 @@ export default async function PortalCalendarPage({
   for (const o of (publishedOut ?? []) as OutputRow[]) {
     const when = o.published_at as string;
     items.push({
-      date: when.slice(0, 10),
-      time: when.slice(11, 16),
+      date: isoToLondonInput(when).slice(0, 10),
+      time: isoToLondonInput(when).slice(11, 16),
       type: "content",
       label: `Published: ${o.content?.title ?? "Content"} · ${socialAccountLabel(o.platform, o.social?.account_name)}`,
       platform: o.platform,
