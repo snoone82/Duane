@@ -20,7 +20,7 @@ export default async function PortalContentPage() {
   const canApprove = context.can("approve_content");
 
   const supabase = await createClient();
-  const [{ data: ideas }, { data: outputs }] = await Promise.all([
+  const [{ data: ideas }, { data: outputs }, { data: pillars }, { data: audienceRows }] = await Promise.all([
     supabase
       .from("content_ideas")
       .select("*")
@@ -32,6 +32,9 @@ export default async function PortalContentPage() {
       .select("*, social:social_strategies(account_name)")
       .eq("client_id", client.id)
       .order("sort_order", { ascending: true }),
+    // The client picks from their own approved strategy, never free text.
+    supabase.from("brand_pillars").select("id,name").eq("client_id", client.id).order("sort_order"),
+    supabase.from("audiences").select("id,name").eq("client_id", client.id).order("sort_order"),
   ]);
 
   const outputsByContent = new Map<string, NonNullable<typeof outputs>>();
@@ -135,11 +138,28 @@ export default async function PortalContentPage() {
       {myDrafts.length > 0 && (
         <section>
           <h2 className="mb-2 text-xs font-medium uppercase tracking-[0.14em] text-ink-soft">
-            Your ideas · {myDrafts.length}
+            Your ideas · {myDrafts.length} — open one to develop it and send it to production
           </h2>
           <div className="space-y-2">
             {myDrafts.map((idea) => (
-              <EditableIdea key={idea.id} idea={{ id: idea.id, title: idea.title, body: idea.body, created_at: idea.created_at }} />
+              <EditableIdea
+                key={idea.id}
+                clientId={client.id}
+                pillars={pillars ?? []}
+                audiences={audienceRows ?? []}
+                idea={{
+                  id: idea.id,
+                  title: idea.title,
+                  hook: idea.hook,
+                  body: idea.body,
+                  notes: idea.notes,
+                  pillar_id: idea.pillar_id,
+                  audience_id: idea.audience_id,
+                  media_url: idea.media_url,
+                  thumbnail_url: idea.thumbnail_url,
+                  created_at: idea.created_at,
+                }}
+              />
             ))}
           </div>
         </section>
